@@ -14,9 +14,7 @@ type AssignedClient = {
   contacted: boolean
   is_active: boolean
   short_comment: string | null
-  dossier_closed: boolean
   closure_reason: string | null
-  meeting_count: number
 }
 
 type AssignmentRequest = {
@@ -28,8 +26,29 @@ type AssignmentRequest = {
   request_comment: string | null
 }
 
+type EditableClientField =
+  | 'contacted'
+  | 'is_active'
+  | 'short_comment'
+  | 'closure_reason'
+
+const closureReasonOptions = [
+  '',
+  'Aucune réponse après les tentatives de contact',
+  'Client non intéressé par le service',
+  'Client a trouvé un autre service',
+  'Coordonnées invalides',
+  'Autre',
+]
+
+function nullableText(value: string | null): string | null {
+  const trimmedValue = value?.trim() ?? ''
+  return trimmedValue.length > 0 ? trimmedValue : null
+}
+
 export default function ProfessionnelPage() {
   const [clients, setClients] = useState<AssignedClient[]>([])
+  const [currentUserId, setCurrentUserId] = useState('')
   const [hasExistingRequest, setHasExistingRequest] = useState(false)
   const [requestActive, setRequestActive] = useState(false)
   const [requestedCount, setRequestedCount] = useState(0)
@@ -41,6 +60,9 @@ export default function ProfessionnelPage() {
   const [error, setError] = useState('')
   const [requestMessage, setRequestMessage] = useState('')
   const [requestError, setRequestError] = useState('')
+  const [savingClientIds, setSavingClientIds] = useState<Record<string, boolean>>({})
+  const [clientMessages, setClientMessages] = useState<Record<string, string>>({})
+  const [clientErrors, setClientErrors] = useState<Record<string, string>>({})
 
   useEffect(() => {
     const loadData = async () => {
@@ -60,6 +82,8 @@ export default function ProfessionnelPage() {
         return
       }
 
+      setCurrentUserId(user.id)
+
       const [clientsResponse, requestResponse] = await Promise.all([
         supabase
           .from('assigned_clients')
@@ -74,9 +98,7 @@ export default function ProfessionnelPage() {
             contacted,
             is_active,
             short_comment,
-            dossier_closed,
-            closure_reason,
-            meeting_count
+            closure_reason
           `)
           .eq('professional_id', user.id)
           .order('assigned_date', { ascending: false }),
@@ -168,6 +190,76 @@ export default function ProfessionnelPage() {
     setSavingRequest(false)
   }
 
+  const updateClientField = <Field extends EditableClientField>(
+    clientId: string,
+    field: Field,
+    value: AssignedClient[Field]
+  ) => {
+    setClients((currentClients) =>
+      currentClients.map((client) =>
+        client.id === clientId ? { ...client, [field]: value } : client
+      )
+    )
+  }
+
+  const handleSaveClient = async (client: AssignedClient) => {
+    setClientMessages((currentMessages) => ({ ...currentMessages, [client.id]: '' }))
+    setClientErrors((currentErrors) => ({ ...currentErrors, [client.id]: '' }))
+
+    if (!currentUserId) {
+      setClientErrors((currentErrors) => ({
+        ...currentErrors,
+        [client.id]: 'Utilisateur introuvable.',
+      }))
+      return
+    }
+
+    setSavingClientIds((currentSavingIds) => ({
+      ...currentSavingIds,
+      [client.id]: true,
+    }))
+
+    const { error: updateError } = await supabase
+      .from('assigned_clients')
+      .update({
+        contacted: client.contacted,
+        is_active: client.is_active,
+        short_comment: nullableText(client.short_comment),
+        closure_reason: nullableText(client.closure_reason),
+      })
+      .eq('id', client.id)
+      .eq('professional_id', currentUserId)
+
+    setSavingClientIds((currentSavingIds) => ({
+      ...currentSavingIds,
+      [client.id]: false,
+    }))
+
+    if (updateError) {
+      setClientErrors((currentErrors) => ({
+        ...currentErrors,
+        [client.id]: updateError.message,
+      }))
+      return
+    }
+
+    setClients((currentClients) =>
+      currentClients.map((currentClient) =>
+        currentClient.id === client.id
+          ? {
+              ...currentClient,
+              short_comment: nullableText(client.short_comment),
+              closure_reason: nullableText(client.closure_reason),
+            }
+          : currentClient
+      )
+    )
+    setClientMessages((currentMessages) => ({
+      ...currentMessages,
+      [client.id]: 'Client sauvegardé.',
+    }))
+  }
+
   const requestStatusText = requestActive ? 'demande active' : 'demande inactive'
   const requestProgressText =
     assignedCount > 0 && remainingCount > 0
@@ -177,6 +269,137 @@ export default function ProfessionnelPage() {
         : assignedCount === 0 && requestedCount > 0
           ? 'Votre demande est en attente'
           : ''
+  const activeClients = clients.filter((client) => client.is_active)
+  const noResponseClients = clients.filter((client) => !client.is_active)
+
+  const renderClientsTable = (sectionClients: AssignedClient[], emptyMessage: string) => (
+    <div className="overflow-x-auto bg-white rounded-2xl shadow">
+      <table className="min-w-full text-sm text-gray-900">
+        <thead className="bg-gray-200 text-left text-gray-950">
+          <tr>
+            <th className="p-3">Prénom</th>
+            <th className="p-3">Nom</th>
+            <th className="p-3">Courriel</th>
+            <th className="p-3">Téléphone</th>
+            <th className="p-3">Requérant</th>
+            <th className="p-3">Date assignation</th>
+            <th className="p-3">Contact effectué (courriel / téléphone / SMS)</th>
+            <th className="p-3">Service pris</th>
+            <th className="p-3">Motif / commentaire</th>
+            <th className="p-3">Action</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-200 text-gray-900">
+          {sectionClients.length === 0 ? (
+            <tr>
+              <td colSpan={10} className="p-4 text-center text-gray-600">
+                {emptyMessage}
+              </td>
+            </tr>
+          ) : (
+            sectionClients.map((client) => (
+              <tr key={client.id} className="hover:bg-gray-50">
+                <td className="p-3">{client.first_name}</td>
+                <td className="p-3">{client.last_name}</td>
+                <td className="p-3">{client.email || '-'}</td>
+                <td className="p-3">{client.phone || '-'}</td>
+                <td className="p-3">{client.requester_name || '-'}</td>
+                <td className="p-3">{client.assigned_date}</td>
+                <td className="p-3">
+                  <input
+                    type="checkbox"
+                    checked={client.contacted}
+                    onChange={(event) =>
+                      updateClientField(client.id, 'contacted', event.target.checked)
+                    }
+                    className="h-4 w-4 rounded border-gray-400"
+                  />
+                </td>
+                <td className="p-3">
+                  <select
+                    value={client.is_active ? 'yes' : 'no'}
+                    onChange={(event) =>
+                      updateClientField(
+                        client.id,
+                        'is_active',
+                        event.target.value === 'yes'
+                      )
+                    }
+                    className="w-24 rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-900"
+                  >
+                    <option value="yes">Oui</option>
+                    <option value="no">Non</option>
+                  </select>
+                </td>
+                <td className="min-w-72 p-3">
+                  {client.is_active ? (
+                    <span className="text-sm text-gray-500">Service pris</span>
+                  ) : (
+                    <div className="space-y-2">
+                      <label className="block text-xs font-medium text-gray-700">
+                        Motif de non-prise de service
+                        <select
+                          value={client.closure_reason ?? ''}
+                          onChange={(event) =>
+                            updateClientField(
+                              client.id,
+                              'closure_reason',
+                              event.target.value
+                            )
+                          }
+                          className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-900"
+                        >
+                          {closureReasonOptions.map((option) => (
+                            <option key={option || 'empty-reason'} value={option}>
+                              {option || 'Aucun motif sélectionné'}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="block text-xs font-medium text-gray-700">
+                        Commentaire
+                        <textarea
+                          value={client.short_comment ?? ''}
+                          onChange={(event) =>
+                            updateClientField(client.id, 'short_comment', event.target.value)
+                          }
+                          rows={2}
+                          className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-900"
+                        />
+                      </label>
+                    </div>
+                  )}
+                </td>
+                <td className="min-w-40 p-3">
+                  <button
+                    type="button"
+                    onClick={() => handleSaveClient(client)}
+                    disabled={savingClientIds[client.id]}
+                    className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+                  >
+                    {savingClientIds[client.id] ? 'Sauvegarde...' : 'Sauvegarder'}
+                  </button>
+
+                  {clientMessages[client.id] && (
+                    <p className="mt-2 text-xs font-medium text-green-700">
+                      {clientMessages[client.id]}
+                    </p>
+                  )}
+
+                  {clientErrors[client.id] && (
+                    <p className="mt-2 text-xs font-medium text-red-700">
+                      {clientErrors[client.id]}
+                    </p>
+                  )}
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  )
 
   return (
     <main className="min-h-screen bg-gray-50 p-6">
@@ -293,50 +516,22 @@ export default function ProfessionnelPage() {
           </section>
         )}
 
-        {!loading && !error && clients.length === 0 && (
-          <div className="rounded-lg bg-white p-6 shadow">
-            Aucun client assigné pour l&apos;instant.
-          </div>
-        )}
+        {!loading && !error && (
+          <div className="space-y-8">
+            <section>
+              <h2 className="mb-3 text-lg font-semibold text-gray-900">Clients actifs</h2>
+              {renderClientsTable(activeClients, 'Aucun client actif.')}
+            </section>
 
-        {!loading && !error && clients.length > 0 && (
-          <div className="overflow-x-auto bg-white rounded-2xl shadow">
-            <table className="min-w-full text-sm text-gray-900">
-              <thead className="bg-gray-200 text-left text-gray-950">
-                <tr>
-                  <th className="p-3">Prénom</th>
-                  <th className="p-3">Nom</th>
-                  <th className="p-3">Courriel</th>
-                  <th className="p-3">Téléphone</th>
-                  <th className="p-3">Requérant</th>
-                  <th className="p-3">Date assignation</th>
-                  <th className="p-3">Contacté</th>
-                  <th className="p-3">Actif</th>
-                  <th className="p-3">Commentaire</th>
-                  <th className="p-3">Fermé</th>
-                  <th className="p-3">Motif fermeture</th>
-                  <th className="p-3">Rencontres</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 text-gray-900">
-                {clients.map((client) => (
-                  <tr key={client.id} className="hover:bg-gray-50">
-                    <td className="p-3">{client.first_name}</td>
-                    <td className="p-3">{client.last_name}</td>
-                    <td className="p-3">{client.email || '-'}</td>
-                    <td className="p-3">{client.phone || '-'}</td>
-                    <td className="p-3">{client.requester_name || '-'}</td>
-                    <td className="p-3">{client.assigned_date}</td>
-                    <td className="p-3">{client.contacted ? 'Oui' : 'Non'}</td>
-                    <td className="p-3">{client.is_active ? 'Oui' : 'Non'}</td>
-                    <td className="p-3">{client.short_comment || '-'}</td>
-                    <td className="p-3">{client.dossier_closed ? 'Oui' : 'Non'}</td>
-                    <td className="p-3">{client.closure_reason || '-'}</td>
-                    <td className="p-3">{client.meeting_count}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <section>
+              <h2 className="mb-3 text-lg font-semibold text-gray-900">
+                Clients sans réponse / service non pris
+              </h2>
+              {renderClientsTable(
+                noResponseClients,
+                'Aucun client sans réponse ou service non pris.'
+              )}
+            </section>
           </div>
         )}
       </div>
