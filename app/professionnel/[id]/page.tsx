@@ -1,45 +1,82 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
-type ProfileRow = {
+type Profile = {
   id: string;
   full_name: string | null;
   email: string | null;
 };
 
-type AssignedClientRow = {
-  id?: string;
-  client_id?: string;
-  client_name?: string | null;
-  full_name?: string | null;
-  email?: string | null;
-  created_at?: string;
-  [key: string]: unknown;
+type AssignmentRequest = {
+  professional_id: string;
+  is_active: boolean | null;
+  requested_count: number | null;
+  assigned_count: number | null;
+  remaining_count: number | null;
+  request_comment: string | null;
 };
 
-type AssignmentRequestRow = {
-  id?: string;
-  client_id?: string;
-  client_name?: string | null;
-  status?: string | null;
-  created_at?: string;
-  [key: string]: unknown;
+type AssignedClient = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  contacted: boolean | null;
+  is_active: boolean | null;
+  meeting_count: number | null;
+  dossier_closed: boolean | null;
+  short_comment: string | null;
 };
 
-function displayNameFromRow(row: Record<string, unknown>): string {
-  const candidates = [
-    row.client_name,
-    row.full_name,
-    row.name,
-    row.email,
-    row.client_id,
-    row.id,
-  ];
-  const v = candidates.find((x) => typeof x === "string" && x.trim().length > 0);
-  return typeof v === "string" ? v : "—";
+type NewAssignedClientForm = {
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  requester_name: string;
+  short_comment: string;
+};
+
+const emptyClientForm: NewAssignedClientForm = {
+  first_name: "",
+  last_name: "",
+  email: "",
+  phone: "",
+  requester_name: "",
+  short_comment: "",
+};
+
+function formatBoolean(value: boolean | null): string {
+  return value ? "Oui" : "Non";
+}
+
+function formatText(value: string | null): string {
+  return value?.trim() || "-";
+}
+
+function getClientName(client: AssignedClient): string {
+  const fullName = [client.first_name, client.last_name]
+    .map((part) => part?.trim())
+    .filter(Boolean)
+    .join(" ");
+
+  return fullName || "-";
+}
+
+function nullableText(value: string): string | null {
+  const trimmedValue = value.trim();
+  return trimmedValue.length > 0 ? trimmedValue : null;
+}
+
+function getTodayDate(): string {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
 }
 
 function getErrorMessage(error: unknown): string {
@@ -65,160 +102,456 @@ export default function ProfessionnelDetailPage() {
         ? professionalIdRaw[0]
         : "";
 
-  const [profile, setProfile] = useState<ProfileRow | null>(null);
-  const [assignedClients, setAssignedClients] = useState<AssignedClientRow[]>([]);
-  const [requests, setRequests] = useState<AssignmentRequestRow[]>([]);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [assignmentRequest, setAssignmentRequest] =
+    useState<AssignmentRequest | null>(null);
+  const [assignedClients, setAssignedClients] = useState<AssignedClient[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [clientForm, setClientForm] =
+    useState<NewAssignedClientForm>(emptyClientForm);
+  const [savingClient, setSavingClient] = useState(false);
+  const [clientMessage, setClientMessage] = useState<string | null>(null);
+  const [clientError, setClientError] = useState<string | null>(null);
 
-  const fullName = useMemo(() => profile?.full_name ?? "Professionnel", [profile]);
-  const email = useMemo(() => profile?.email ?? "—", [profile]);
+  const professionalName = useMemo(
+    () => profile?.full_name?.trim() || "Professionnel",
+    [profile],
+  );
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadProfessionalProfile = useCallback(
+    async (options?: { showLoading?: boolean }) => {
+      const showLoading = options?.showLoading ?? true;
 
-    async function load() {
-      setLoading(true);
+      if (showLoading) {
+        setLoading(true);
+      }
       setError(null);
 
       try {
-        const { data: profileData, error: profileError } = await supabase
+        const profileResponse = await supabase
           .from("profiles")
           .select("id, full_name, email")
           .eq("id", professionalId)
           .single();
 
-        if (profileError) throw profileError;
-        if (!profileData) throw new Error("Professionnel introuvable.");
+        if (profileResponse.error) throw profileResponse.error;
 
-        const [{ data: assignedData, error: assignedError }, { data: requestsData, error: requestsError }] =
-          await Promise.all([
-            supabase
-              .from("assigned_clients")
-              .select("*")
-              .eq("professional_id", professionalId),
-            supabase
-              .from("assignment_requests")
-              .select("*")
-              .eq("professional_id", professionalId),
-          ]);
+        const [requestResponse, clientsResponse] = await Promise.all([
+          supabase
+            .from("assignment_requests")
+            .select(
+              "professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment",
+            )
+            .eq("professional_id", professionalId)
+            .limit(1)
+            .maybeSingle(),
+          supabase
+            .from("assigned_clients")
+            .select(
+              "id, first_name, last_name, contacted, is_active, meeting_count, dossier_closed, short_comment",
+            )
+            .eq("professional_id", professionalId)
+            .order("last_name", { ascending: true }),
+        ]);
 
-        if (assignedError) throw assignedError;
-        if (requestsError) throw requestsError;
+        if (requestResponse.error) throw requestResponse.error;
+        if (clientsResponse.error) throw clientsResponse.error;
 
-        if (cancelled) return;
-
-        setProfile(profileData as ProfileRow);
-        setAssignedClients((assignedData ?? []) as AssignedClientRow[]);
-        setRequests((requestsData ?? []) as AssignmentRequestRow[]);
-      } catch (e: unknown) {
-        if (cancelled) return;
-        setError(getErrorMessage(e));
+        setProfile(profileResponse.data as Profile);
+        setAssignmentRequest(
+          (requestResponse.data as AssignmentRequest | null) ?? null,
+        );
+        setAssignedClients((clientsResponse.data ?? []) as AssignedClient[]);
+      } catch (caughtError: unknown) {
+        setError(getErrorMessage(caughtError));
       } finally {
-        if (!cancelled) setLoading(false);
+        if (showLoading) {
+          setLoading(false);
+        }
       }
-    }
+    },
+    [professionalId],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
 
     if (!professionalId) {
+      setError("ID manquant dans l'URL.");
       setLoading(false);
-      setError("ID manquant dans l’URL.");
       return;
     }
 
-    load();
+    async function loadInitialData() {
+      await loadProfessionalProfile();
+
+      if (cancelled) {
+        return;
+      }
+    }
+
+    loadInitialData();
 
     return () => {
       cancelled = true;
     };
-  }, [professionalId]);
+  }, [loadProfessionalProfile, professionalId]);
+
+  const handleClientFormChange = (
+    field: keyof NewAssignedClientForm,
+    value: string,
+  ) => {
+    setClientForm((currentForm) => ({
+      ...currentForm,
+      [field]: value,
+    }));
+  };
+
+  const handleAssignClient = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setClientMessage(null);
+    setClientError(null);
+
+    const firstName = clientForm.first_name.trim();
+    const lastName = clientForm.last_name.trim();
+
+    if (!firstName || !lastName) {
+      setClientError("Le prenom et le nom sont obligatoires.");
+      return;
+    }
+
+    setSavingClient(true);
+
+    try {
+      const { error: insertError } = await supabase.from("assigned_clients").insert({
+        professional_id: professionalId,
+        first_name: firstName,
+        last_name: lastName,
+        email: nullableText(clientForm.email),
+        phone: nullableText(clientForm.phone),
+        requester_name: nullableText(clientForm.requester_name),
+        short_comment: nullableText(clientForm.short_comment),
+        assigned_date: getTodayDate(),
+        contacted: false,
+        is_active: true,
+        dossier_closed: false,
+        closure_reason: null,
+        meeting_count: 0,
+      });
+
+      if (insertError) throw insertError;
+
+      if (assignmentRequest) {
+        const requestedCount = assignmentRequest.requested_count ?? 0;
+        const nextAssignedCount = (assignmentRequest.assigned_count ?? 0) + 1;
+        const nextRemainingCount = Math.max(
+          requestedCount - nextAssignedCount,
+          0,
+        );
+
+        const { data: updatedRequest, error: updateError } = await supabase
+          .from("assignment_requests")
+          .update({
+            assigned_count: nextAssignedCount,
+            remaining_count: nextRemainingCount,
+          })
+          .eq("professional_id", professionalId)
+          .select(
+            "professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment",
+          )
+          .maybeSingle();
+
+        if (updateError) throw updateError;
+
+        setAssignmentRequest(
+          (updatedRequest as AssignmentRequest | null) ?? {
+            ...assignmentRequest,
+            assigned_count: nextAssignedCount,
+            remaining_count: nextRemainingCount,
+          },
+        );
+      }
+
+      setClientForm(emptyClientForm);
+      setClientMessage("Client assigne avec succes.");
+      await loadProfessionalProfile({ showLoading: false });
+    } catch (caughtError: unknown) {
+      setClientError(getErrorMessage(caughtError));
+    } finally {
+      setSavingClient(false);
+    }
+  };
 
   return (
-    <main className="min-h-screen bg-gray-50">
-      <div className="mx-auto max-w-4xl px-4 py-10">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold text-gray-900">{fullName}</h1>
-            <p className="mt-1 text-sm text-gray-600">{email}</p>
-            <p className="mt-2 text-xs text-gray-500 break-all">ID: {professionalId}</p>
+    <main className="min-h-screen bg-gray-50 px-4 py-8 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl">
+        <div>
+          <p className="text-sm font-medium text-gray-500">Profil operationnel</p>
+          <h1 className="mt-1 text-2xl font-semibold text-gray-900">
+            {professionalName}
+          </h1>
+        </div>
+
+        {loading && (
+          <div className="mt-6 rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-600 shadow-sm">
+            Chargement des donnees...
           </div>
-        </div>
+        )}
 
-        <div className="mt-6">
-          {loading ? (
-            <div className="rounded-xl border border-gray-200 bg-white p-6">
-              <p className="text-sm text-gray-700">Chargement…</p>
-            </div>
-          ) : error ? (
-            <div className="rounded-xl border border-red-200 bg-red-50 p-6">
-              <p className="text-sm font-medium text-red-900">Erreur</p>
-              <p className="mt-1 text-sm text-red-800">{error}</p>
-            </div>
-          ) : (
-            <>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="rounded-xl border border-gray-200 bg-white p-6">
-                  <p className="text-sm text-gray-600">Clients assignés</p>
-                  <p className="mt-2 text-3xl font-semibold text-gray-900">
-                    {assignedClients.length}
-                  </p>
+        {!loading && error && (
+          <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-6 text-sm text-red-700">
+            Erreur: {error}
+          </div>
+        )}
+
+        {!loading && !error && profile && (
+          <div className="mt-6 space-y-6">
+            <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-gray-900">
+                Informations du professionnel
+              </h2>
+              <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+                <div>
+                  <dt className="text-sm font-medium text-gray-500">Nom complet</dt>
+                  <dd className="mt-1 text-sm text-gray-900">
+                    {formatText(profile.full_name)}
+                  </dd>
                 </div>
-                <div className="rounded-xl border border-gray-200 bg-white p-6">
-                  <p className="text-sm text-gray-600">Demandes</p>
-                  <p className="mt-2 text-3xl font-semibold text-gray-900">
-                    {requests.length}
-                  </p>
+                <div>
+                  <dt className="text-sm font-medium text-gray-500">Email</dt>
+                  <dd className="mt-1 text-sm text-gray-900">
+                    {formatText(profile.email)}
+                  </dd>
                 </div>
+              </dl>
+            </section>
+
+            <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-gray-900">
+                Demande actuelle
+              </h2>
+
+              {assignmentRequest ? (
+                <dl className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Active</dt>
+                    <dd className="mt-1 text-sm text-gray-900">
+                      {formatBoolean(assignmentRequest.is_active)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Demandes</dt>
+                    <dd className="mt-1 text-sm text-gray-900">
+                      {assignmentRequest.requested_count ?? 0}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Assignes</dt>
+                    <dd className="mt-1 text-sm text-gray-900">
+                      {assignmentRequest.assigned_count ?? 0}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Restants</dt>
+                    <dd className="mt-1 text-sm text-gray-900">
+                      {assignmentRequest.remaining_count ?? 0}
+                    </dd>
+                  </div>
+                  <div className="sm:col-span-2 lg:col-span-1">
+                    <dt className="text-sm font-medium text-gray-500">
+                      Commentaire
+                    </dt>
+                    <dd className="mt-1 text-sm text-gray-900">
+                      {formatText(assignmentRequest.request_comment)}
+                    </dd>
+                  </div>
+                </dl>
+              ) : (
+                <p className="mt-4 text-sm text-gray-600">
+                  Aucune demande actuelle pour ce professionnel.
+                </p>
+              )}
+            </section>
+
+            <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-gray-900">
+                Ajouter un client assigne
+              </h2>
+
+              <form onSubmit={handleAssignClient} className="mt-4 space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Prenom
+                    <input
+                      type="text"
+                      value={clientForm.first_name}
+                      onChange={(event) =>
+                        handleClientFormChange("first_name", event.target.value)
+                      }
+                      className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-gray-500 focus:outline-none"
+                      required
+                    />
+                  </label>
+
+                  <label className="block text-sm font-medium text-gray-700">
+                    Nom
+                    <input
+                      type="text"
+                      value={clientForm.last_name}
+                      onChange={(event) =>
+                        handleClientFormChange("last_name", event.target.value)
+                      }
+                      className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-gray-500 focus:outline-none"
+                      required
+                    />
+                  </label>
+
+                  <label className="block text-sm font-medium text-gray-700">
+                    Email
+                    <input
+                      type="email"
+                      value={clientForm.email}
+                      onChange={(event) =>
+                        handleClientFormChange("email", event.target.value)
+                      }
+                      className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-gray-500 focus:outline-none"
+                    />
+                  </label>
+
+                  <label className="block text-sm font-medium text-gray-700">
+                    Telephone
+                    <input
+                      type="tel"
+                      value={clientForm.phone}
+                      onChange={(event) =>
+                        handleClientFormChange("phone", event.target.value)
+                      }
+                      className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-gray-500 focus:outline-none"
+                    />
+                  </label>
+
+                  <label className="block text-sm font-medium text-gray-700">
+                    Requerant
+                    <input
+                      type="text"
+                      value={clientForm.requester_name}
+                      onChange={(event) =>
+                        handleClientFormChange(
+                          "requester_name",
+                          event.target.value,
+                        )
+                      }
+                      className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-gray-500 focus:outline-none"
+                    />
+                  </label>
+
+                  <label className="block text-sm font-medium text-gray-700 sm:col-span-2 lg:col-span-3">
+                    Commentaire court
+                    <textarea
+                      value={clientForm.short_comment}
+                      onChange={(event) =>
+                        handleClientFormChange(
+                          "short_comment",
+                          event.target.value,
+                        )
+                      }
+                      rows={3}
+                      className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-gray-500 focus:outline-none"
+                    />
+                  </label>
+                </div>
+
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <button
+                    type="submit"
+                    disabled={savingClient}
+                    className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+                  >
+                    {savingClient ? "Assignation..." : "Assigner le client"}
+                  </button>
+
+                  {clientMessage && (
+                    <p className="text-sm font-medium text-green-700">
+                      {clientMessage}
+                    </p>
+                  )}
+
+                  {clientError && (
+                    <p className="text-sm font-medium text-red-700">
+                      {clientError}
+                    </p>
+                  )}
+                </div>
+              </form>
+            </section>
+
+            <section className="rounded-lg border border-gray-200 bg-white shadow-sm">
+              <div className="border-b border-gray-200 px-6 py-4">
+                <h2 className="text-lg font-semibold text-gray-900">
+                  Clients assignes
+                </h2>
               </div>
 
-              <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
-                <section className="rounded-xl border border-gray-200 bg-white">
-                  <div className="border-b border-gray-100 px-6 py-4">
-                    <h2 className="text-sm font-semibold text-gray-900">
-                      Liste des clients assignés
-                    </h2>
-                  </div>
-                  <div className="px-6 py-4">
-                    {assignedClients.length === 0 ? (
-                      <p className="text-sm text-gray-600">Aucun client assigné.</p>
-                    ) : (
-                      <ul className="list-disc pl-5 text-sm text-gray-800 space-y-1">
-                        {assignedClients.map((c, idx) => (
-                          <li key={(typeof c.id === "string" && c.id) || `c-${idx}`}>
-                            {displayNameFromRow(c)}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                </section>
-
-                <section className="rounded-xl border border-gray-200 bg-white">
-                  <div className="border-b border-gray-100 px-6 py-4">
-                    <h2 className="text-sm font-semibold text-gray-900">
-                      Liste des demandes
-                    </h2>
-                  </div>
-                  <div className="px-6 py-4">
-                    {requests.length === 0 ? (
-                      <p className="text-sm text-gray-600">Aucune demande.</p>
-                    ) : (
-                      <ul className="list-disc pl-5 text-sm text-gray-800 space-y-1">
-                        {requests.map((r, idx) => (
-                          <li key={(typeof r.id === "string" && r.id) || `r-${idx}`}>
-                            {displayNameFromRow(r)}
-                            {typeof r.status === "string" && r.status.trim().length > 0 ? (
-                              <span className="text-gray-500"> — {r.status}</span>
-                            ) : null}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                </section>
-              </div>
-            </>
-          )}
-        </div>
+              {assignedClients.length === 0 ? (
+                <p className="px-6 py-5 text-sm text-gray-600">
+                  Aucun client assigne pour ce professionnel.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-semibold text-gray-700">
+                          Client
+                        </th>
+                        <th className="px-4 py-3 text-left font-semibold text-gray-700">
+                          Contacte
+                        </th>
+                        <th className="px-4 py-3 text-left font-semibold text-gray-700">
+                          Actif
+                        </th>
+                        <th className="px-4 py-3 text-left font-semibold text-gray-700">
+                          Rencontres
+                        </th>
+                        <th className="px-4 py-3 text-left font-semibold text-gray-700">
+                          Dossier ferme
+                        </th>
+                        <th className="px-4 py-3 text-left font-semibold text-gray-700">
+                          Commentaire
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {assignedClients.map((client) => (
+                        <tr key={client.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 text-gray-900">
+                            {getClientName(client)}
+                          </td>
+                          <td className="px-4 py-3 text-gray-700">
+                            {formatBoolean(client.contacted)}
+                          </td>
+                          <td className="px-4 py-3 text-gray-700">
+                            {formatBoolean(client.is_active)}
+                          </td>
+                          <td className="px-4 py-3 text-gray-700">
+                            {client.meeting_count ?? 0}
+                          </td>
+                          <td className="px-4 py-3 text-gray-700">
+                            {formatBoolean(client.dossier_closed)}
+                          </td>
+                          <td className="px-4 py-3 text-gray-700">
+                            {formatText(client.short_comment)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          </div>
+        )}
       </div>
     </main>
   );

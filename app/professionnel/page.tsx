@@ -34,6 +34,7 @@ export default function ProfessionnelPage() {
   const [requestActive, setRequestActive] = useState(false)
   const [requestedCount, setRequestedCount] = useState(0)
   const [assignedCount, setAssignedCount] = useState(0)
+  const [remainingCount, setRemainingCount] = useState(0)
   const [requestComment, setRequestComment] = useState('')
   const [loading, setLoading] = useState(true)
   const [savingRequest, setSavingRequest] = useState(false)
@@ -107,6 +108,7 @@ export default function ProfessionnelPage() {
       setRequestActive(currentRequest?.is_active ?? false)
       setRequestedCount(currentRequest?.requested_count ?? 0)
       setAssignedCount(currentRequest?.assigned_count ?? 0)
+      setRemainingCount(currentRequest?.remaining_count ?? 0)
       setRequestComment(currentRequest?.request_comment ?? '')
       setLoading(false)
     }
@@ -161,9 +163,20 @@ export default function ProfessionnelPage() {
     setHasExistingRequest(true)
     setRequestedCount(normalizedRequestedCount)
     setAssignedCount(normalizedAssignedCount)
+    setRemainingCount(remainingCount)
     setRequestMessage('Demande sauvegardée.')
     setSavingRequest(false)
   }
+
+  const requestStatusText = requestActive ? 'demande active' : 'demande inactive'
+  const requestProgressText =
+    assignedCount > 0 && remainingCount > 0
+      ? 'Votre demande est partiellement répondue'
+      : remainingCount === 0 && requestedCount > 0
+        ? 'Votre demande est entièrement répondue'
+        : assignedCount === 0 && requestedCount > 0
+          ? 'Votre demande est en attente'
+          : ''
 
   return (
     <main className="min-h-screen bg-gray-50 p-6">
@@ -186,7 +199,7 @@ export default function ProfessionnelPage() {
                   Demande d&apos;assignation
                 </h2>
                 <p className="mt-1 text-sm text-gray-600">
-                  Statut actuel: {requestActive ? 'demande active' : 'aucune demande active'}
+                  Statut actuel: {requestStatusText}
                 </p>
               </div>
 
@@ -200,6 +213,39 @@ export default function ProfessionnelPage() {
                 Demande active
               </label>
             </div>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                <p className="text-xs font-medium uppercase text-gray-600">Demandés</p>
+                <p className="mt-1 text-2xl font-semibold text-gray-950">
+                  {requestedCount}
+                </p>
+              </div>
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                <p className="text-xs font-medium uppercase text-gray-600">Assignés</p>
+                <p className="mt-1 text-2xl font-semibold text-gray-950">
+                  {assignedCount}
+                </p>
+              </div>
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                <p className="text-xs font-medium uppercase text-gray-600">Restants</p>
+                <p className="mt-1 text-2xl font-semibold text-gray-950">
+                  {remainingCount}
+                </p>
+              </div>
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                <p className="text-xs font-medium uppercase text-gray-600">Statut</p>
+                <p className="mt-2 text-sm font-semibold text-gray-950">
+                  {requestStatusText}
+                </p>
+              </div>
+            </div>
+
+            {requestProgressText && (
+              <p className="mt-3 rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm font-medium text-blue-900">
+                {requestProgressText}
+              </p>
+            )}
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <label className="block text-sm font-medium text-gray-700">
@@ -255,8 +301,8 @@ export default function ProfessionnelPage() {
 
         {!loading && !error && clients.length > 0 && (
           <div className="overflow-x-auto bg-white rounded-2xl shadow">
-            <table className="min-w-full text-sm">
-              <thead className="bg-gray-100 text-left">
+            <table className="min-w-full text-sm text-gray-900">
+              <thead className="bg-gray-200 text-left text-gray-950">
                 <tr>
                   <th className="p-3">Prénom</th>
                   <th className="p-3">Nom</th>
@@ -272,9 +318,9 @@ export default function ProfessionnelPage() {
                   <th className="p-3">Rencontres</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-gray-200 text-gray-900">
                 {clients.map((client) => (
-                  <tr key={client.id} className="border-t">
+                  <tr key={client.id} className="hover:bg-gray-50">
                     <td className="p-3">{client.first_name}</td>
                     <td className="p-3">{client.last_name}</td>
                     <td className="p-3">{client.email || '-'}</td>
