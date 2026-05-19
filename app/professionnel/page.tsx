@@ -26,6 +26,15 @@ type AssignmentRequest = {
   request_comment: string | null
 }
 
+type ProfessionalPreferences = {
+  pref_client_types: string | null
+  pref_modalities: string | null
+  pref_followup_types: string | null
+  pref_notes: string | null
+}
+
+type PreferenceField = keyof ProfessionalPreferences
+
 type EditableClientField =
   | 'contacted'
   | 'is_active'
@@ -60,6 +69,15 @@ export default function ProfessionnelPage() {
   const [error, setError] = useState('')
   const [requestMessage, setRequestMessage] = useState('')
   const [requestError, setRequestError] = useState('')
+  const [preferences, setPreferences] = useState<ProfessionalPreferences>({
+    pref_client_types: '',
+    pref_modalities: '',
+    pref_followup_types: '',
+    pref_notes: '',
+  })
+  const [savingPreferences, setSavingPreferences] = useState(false)
+  const [preferencesMessage, setPreferencesMessage] = useState('')
+  const [preferencesError, setPreferencesError] = useState('')
   const [savingClientIds, setSavingClientIds] = useState<Record<string, boolean>>({})
   const [clientMessages, setClientMessages] = useState<Record<string, string>>({})
   const [clientErrors, setClientErrors] = useState<Record<string, string>>({})
@@ -70,6 +88,8 @@ export default function ProfessionnelPage() {
       setError('')
       setRequestMessage('')
       setRequestError('')
+      setPreferencesMessage('')
+      setPreferencesError('')
 
       const {
         data: { user },
@@ -84,7 +104,7 @@ export default function ProfessionnelPage() {
 
       setCurrentUserId(user.id)
 
-      const [clientsResponse, requestResponse] = await Promise.all([
+      const [clientsResponse, requestResponse, profileResponse] = await Promise.all([
         supabase
           .from('assigned_clients')
           .select(`
@@ -109,6 +129,11 @@ export default function ProfessionnelPage() {
           )
           .eq('professional_id', user.id)
           .limit(1),
+        supabase
+          .from('profiles')
+          .select('pref_client_types, pref_modalities, pref_followup_types, pref_notes')
+          .eq('id', user.id)
+          .single(),
       ])
 
       if (clientsResponse.error) {
@@ -123,7 +148,14 @@ export default function ProfessionnelPage() {
         return
       }
 
+      if (profileResponse.error) {
+        setError(profileResponse.error.message)
+        setLoading(false)
+        return
+      }
+
       const currentRequest = (requestResponse.data?.[0] ?? null) as AssignmentRequest | null
+      const currentPreferences = profileResponse.data as ProfessionalPreferences
 
       setClients(clientsResponse.data || [])
       setHasExistingRequest(Boolean(currentRequest))
@@ -132,6 +164,12 @@ export default function ProfessionnelPage() {
       setAssignedCount(currentRequest?.assigned_count ?? 0)
       setRemainingCount(currentRequest?.remaining_count ?? 0)
       setRequestComment(currentRequest?.request_comment ?? '')
+      setPreferences({
+        pref_client_types: currentPreferences.pref_client_types ?? '',
+        pref_modalities: currentPreferences.pref_modalities ?? '',
+        pref_followup_types: currentPreferences.pref_followup_types ?? '',
+        pref_notes: currentPreferences.pref_notes ?? '',
+      })
       setLoading(false)
     }
 
@@ -188,6 +226,50 @@ export default function ProfessionnelPage() {
     setRemainingCount(remainingCount)
     setRequestMessage('Demande sauvegardée.')
     setSavingRequest(false)
+  }
+
+  const updatePreferenceField = (field: PreferenceField, value: string) => {
+    setPreferences((currentPreferences) => ({
+      ...currentPreferences,
+      [field]: value,
+    }))
+  }
+
+  const handleSavePreferences = async () => {
+    setSavingPreferences(true)
+    setPreferencesMessage('')
+    setPreferencesError('')
+
+    if (!currentUserId) {
+      setPreferencesError('Utilisateur introuvable.')
+      setSavingPreferences(false)
+      return
+    }
+
+    const { error: saveError } = await supabase
+      .from('profiles')
+      .update({
+        pref_client_types: nullableText(preferences.pref_client_types),
+        pref_modalities: nullableText(preferences.pref_modalities),
+        pref_followup_types: nullableText(preferences.pref_followup_types),
+        pref_notes: nullableText(preferences.pref_notes),
+      })
+      .eq('id', currentUserId)
+
+    if (saveError) {
+      setPreferencesError(saveError.message)
+      setSavingPreferences(false)
+      return
+    }
+
+    setPreferences((currentPreferences) => ({
+      pref_client_types: nullableText(currentPreferences.pref_client_types) ?? '',
+      pref_modalities: nullableText(currentPreferences.pref_modalities) ?? '',
+      pref_followup_types: nullableText(currentPreferences.pref_followup_types) ?? '',
+      pref_notes: nullableText(currentPreferences.pref_notes) ?? '',
+    }))
+    setPreferencesMessage('Préférences sauvegardées.')
+    setSavingPreferences(false)
   }
 
   const updateClientField = <Field extends EditableClientField>(
@@ -511,6 +593,85 @@ export default function ProfessionnelPage() {
 
               {requestError && (
                 <p className="text-sm font-medium text-red-700">{requestError}</p>
+              )}
+            </div>
+          </section>
+        )}
+
+        {!loading && !error && (
+          <section className="mb-6 rounded-lg bg-white p-6 shadow">
+            <h2 className="text-lg font-semibold text-gray-900">
+              Mes préférences d&apos;assignation
+            </h2>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <label className="block text-sm font-medium text-gray-700">
+                Clientèles souhaitées
+                <textarea
+                  value={preferences.pref_client_types ?? ''}
+                  onChange={(event) =>
+                    updatePreferenceField('pref_client_types', event.target.value)
+                  }
+                  rows={3}
+                  className="mt-1 w-full rounded-lg border border-gray-300 p-3 text-sm"
+                />
+              </label>
+
+              <label className="block text-sm font-medium text-gray-700">
+                Modalités souhaitées
+                <textarea
+                  value={preferences.pref_modalities ?? ''}
+                  onChange={(event) =>
+                    updatePreferenceField('pref_modalities', event.target.value)
+                  }
+                  rows={3}
+                  className="mt-1 w-full rounded-lg border border-gray-300 p-3 text-sm"
+                />
+              </label>
+
+              <label className="block text-sm font-medium text-gray-700">
+                Types de suivis souhaités
+                <textarea
+                  value={preferences.pref_followup_types ?? ''}
+                  onChange={(event) =>
+                    updatePreferenceField('pref_followup_types', event.target.value)
+                  }
+                  rows={3}
+                  className="mt-1 w-full rounded-lg border border-gray-300 p-3 text-sm"
+                />
+              </label>
+
+              <label className="block text-sm font-medium text-gray-700">
+                Notes / précisions
+                <textarea
+                  value={preferences.pref_notes ?? ''}
+                  onChange={(event) =>
+                    updatePreferenceField('pref_notes', event.target.value)
+                  }
+                  rows={3}
+                  className="mt-1 w-full rounded-lg border border-gray-300 p-3 text-sm"
+                />
+              </label>
+            </div>
+
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <button
+                type="button"
+                onClick={handleSavePreferences}
+                disabled={savingPreferences}
+                className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+              >
+                {savingPreferences ? 'Sauvegarde...' : 'Sauvegarder les préférences'}
+              </button>
+
+              {preferencesMessage && (
+                <p className="text-sm font-medium text-green-700">
+                  {preferencesMessage}
+                </p>
+              )}
+
+              {preferencesError && (
+                <p className="text-sm font-medium text-red-700">{preferencesError}</p>
               )}
             </div>
           </section>

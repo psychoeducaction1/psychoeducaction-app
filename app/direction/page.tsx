@@ -12,6 +12,7 @@ type Profile = {
 
 type AssignedClient = {
   professional_id: string | null
+  is_active: boolean | null
 }
 
 type AssignmentRequest = {
@@ -23,11 +24,19 @@ type AssignmentRequest = {
   request_comment: string | null
 }
 
+type ClientStats = {
+  total: number
+  active: number
+  noResponse: number
+}
+
 type DirectionRow = {
   id: string
   fullName: string
   email: string
   totalAssignedClients: number
+  activeClients: number
+  noResponseClients: number
   requestActive: boolean
   requestedCount: number
   assignedCount: number
@@ -69,7 +78,7 @@ export default function DirectionPage() {
       const [assignedClientsResponse, assignmentRequestsResponse] = await Promise.all([
         supabase
           .from('assigned_clients')
-          .select('professional_id')
+          .select('professional_id, is_active')
           .in('professional_id', professionalIds),
         supabase
           .from('assignment_requests')
@@ -94,11 +103,26 @@ export default function DirectionPage() {
       const assignedClients = (assignedClientsResponse.data ?? []) as AssignedClient[]
       const assignmentRequests = (assignmentRequestsResponse.data ?? []) as AssignmentRequest[]
 
-      const assignedCountByProfessionalId = new Map<string, number>()
+      const clientStatsByProfessionalId = new Map<string, ClientStats>()
+
       assignedClients.forEach((client) => {
         if (!client.professional_id) return
-        const currentCount = assignedCountByProfessionalId.get(client.professional_id) ?? 0
-        assignedCountByProfessionalId.set(client.professional_id, currentCount + 1)
+
+        const currentStats = clientStatsByProfessionalId.get(client.professional_id) ?? {
+          total: 0,
+          active: 0,
+          noResponse: 0,
+        }
+
+        currentStats.total += 1
+
+        if (client.is_active) {
+          currentStats.active += 1
+        } else {
+          currentStats.noResponse += 1
+        }
+
+        clientStatsByProfessionalId.set(client.professional_id, currentStats)
       })
 
       const requestByProfessionalId = new Map<string, AssignmentRequest>()
@@ -110,12 +134,15 @@ export default function DirectionPage() {
 
       const nextRows: DirectionRow[] = professionals.map((profile) => {
         const request = requestByProfessionalId.get(profile.id)
+        const clientStats = clientStatsByProfessionalId.get(profile.id)
 
         return {
           id: profile.id,
           fullName: profile.full_name ?? '-',
           email: profile.email ?? '-',
-          totalAssignedClients: assignedCountByProfessionalId.get(profile.id) ?? 0,
+          totalAssignedClients: clientStats?.total ?? 0,
+          activeClients: clientStats?.active ?? 0,
+          noResponseClients: clientStats?.noResponse ?? 0,
           requestActive: request?.is_active ?? false,
           requestedCount: request?.requested_count ?? 0,
           assignedCount: request?.assigned_count ?? 0,
@@ -157,18 +184,36 @@ export default function DirectionPage() {
               <tr>
                 <th className="px-4 py-3 text-left font-semibold text-slate-700">Nom</th>
                 <th className="px-4 py-3 text-left font-semibold text-slate-700">Email</th>
-                <th className="px-4 py-3 text-left font-semibold text-slate-700">Clients assignés</th>
-                <th className="px-4 py-3 text-left font-semibold text-slate-700">Demande active</th>
-                <th className="px-4 py-3 text-left font-semibold text-slate-700">Demandés</th>
-                <th className="px-4 py-3 text-left font-semibold text-slate-700">Assignés</th>
-                <th className="px-4 py-3 text-left font-semibold text-slate-700">Restants</th>
-                <th className="px-4 py-3 text-left font-semibold text-slate-700">Commentaire</th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                  Clients assignés total
+                </th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                  Clients actifs
+                </th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                  Sans réponse / service non pris
+                </th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                  Demande active
+                </th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                  Clients demandés
+                </th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                  Clients assignés via demande
+                </th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                  Clients restants
+                </th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                  Commentaire
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-6 text-center text-slate-500">
+                  <td colSpan={10} className="px-4 py-6 text-center text-slate-500">
                     Aucun professionnel trouvé.
                   </td>
                 </tr>
@@ -184,8 +229,14 @@ export default function DirectionPage() {
                       </Link>
                     </td>
                     <td className="px-4 py-3 text-slate-700">{row.email}</td>
-                    <td className="px-4 py-3 text-slate-700">{row.totalAssignedClients}</td>
-                    <td className="px-4 py-3 text-slate-700">{row.requestActive ? 'Oui' : 'Non'}</td>
+                    <td className="px-4 py-3 text-slate-700">
+                      {row.totalAssignedClients}
+                    </td>
+                    <td className="px-4 py-3 text-slate-700">{row.activeClients}</td>
+                    <td className="px-4 py-3 text-slate-700">{row.noResponseClients}</td>
+                    <td className="px-4 py-3 text-slate-700">
+                      {row.requestActive ? 'Oui' : 'Non'}
+                    </td>
                     <td className="px-4 py-3 text-slate-700">{row.requestedCount}</td>
                     <td className="px-4 py-3 text-slate-700">{row.assignedCount}</td>
                     <td className="px-4 py-3 text-slate-700">{row.remainingCount}</td>
