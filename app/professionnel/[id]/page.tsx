@@ -8,6 +8,10 @@ type Profile = {
   id: string;
   full_name: string | null;
   email: string | null;
+  pref_client_types: string[] | null;
+  pref_modalities: string[] | null;
+  pref_followup_types: string[] | null;
+  pref_notes: string | null;
 };
 
 type AssignmentRequest = {
@@ -52,7 +56,16 @@ function formatBoolean(value: boolean | null): string {
   return value ? "Oui" : "Non";
 }
 
-function formatText(value: string | null): string {
+function formatText(value: string | string[] | null | undefined): string {
+  if (Array.isArray(value)) {
+    const joinedValue = value
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0)
+      .join(", ");
+
+    return joinedValue || "-";
+  }
+
   return value?.trim() || "-";
 }
 
@@ -131,7 +144,9 @@ export default function ProfessionnelDetailPage() {
       try {
         const profileResponse = await supabase
           .from("profiles")
-          .select("id, full_name, email")
+          .select(
+            "id, full_name, email, pref_client_types, pref_modalities, pref_followup_types, pref_notes",
+          )
           .eq("id", professionalId)
           .single();
 
@@ -234,7 +249,7 @@ export default function ProfessionnelDetailPage() {
         short_comment: nullableText(clientForm.short_comment),
         assigned_date: getTodayDate(),
         contacted: false,
-        is_active: true,
+        is_active: false,
         dossier_closed: false,
         closure_reason: null,
         meeting_count: 0,
@@ -329,6 +344,46 @@ export default function ProfessionnelDetailPage() {
 
             <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
               <h2 className="text-lg font-semibold text-gray-900">
+                Préférences d&apos;assignation
+              </h2>
+              <dl className="mt-4 grid gap-4 md:grid-cols-2">
+                <div>
+                  <dt className="text-sm font-medium text-gray-500">
+                    Clientèles souhaitées
+                  </dt>
+                  <dd className="mt-1 whitespace-pre-wrap text-sm text-gray-900">
+                    {formatText(profile.pref_client_types)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-medium text-gray-500">
+                    Modalités souhaitées
+                  </dt>
+                  <dd className="mt-1 whitespace-pre-wrap text-sm text-gray-900">
+                    {formatText(profile.pref_modalities)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-medium text-gray-500">
+                    Types de suivis souhaités
+                  </dt>
+                  <dd className="mt-1 whitespace-pre-wrap text-sm text-gray-900">
+                    {formatText(profile.pref_followup_types)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-medium text-gray-500">
+                    Notes / précisions
+                  </dt>
+                  <dd className="mt-1 whitespace-pre-wrap text-sm text-gray-900">
+                    {formatText(profile.pref_notes)}
+                  </dd>
+                </div>
+              </dl>
+            </section>
+
+            <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-gray-900">
                 Demande actuelle
               </h2>
 
@@ -376,7 +431,7 @@ export default function ProfessionnelDetailPage() {
 
             <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
               <h2 className="text-lg font-semibold text-gray-900">
-                Ajouter un client assigne
+                Nouvelle assignation
               </h2>
 
               <form onSubmit={handleAssignClient} className="mt-4 space-y-4">

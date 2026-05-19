@@ -27,9 +27,16 @@ type AssignmentRequest = {
 }
 
 type ProfessionalPreferences = {
-  pref_client_types: string | null
-  pref_modalities: string | null
-  pref_followup_types: string | null
+  pref_client_types: string
+  pref_modalities: string
+  pref_followup_types: string
+  pref_notes: string
+}
+
+type ProfilePreferencesRow = {
+  pref_client_types: string[] | null
+  pref_modalities: string[] | null
+  pref_followup_types: string[] | null
   pref_notes: string | null
 }
 
@@ -53,6 +60,17 @@ const closureReasonOptions = [
 function nullableText(value: string | null): string | null {
   const trimmedValue = value?.trim() ?? ''
   return trimmedValue.length > 0 ? trimmedValue : null
+}
+
+function arrayToTextareaValue(value: string[] | null): string {
+  return value?.join(', ') ?? ''
+}
+
+function textareaValueToArray(value: string): string[] {
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
 }
 
 export default function ProfessionnelPage() {
@@ -155,7 +173,7 @@ export default function ProfessionnelPage() {
       }
 
       const currentRequest = (requestResponse.data?.[0] ?? null) as AssignmentRequest | null
-      const currentPreferences = profileResponse.data as ProfessionalPreferences
+      const currentPreferences = profileResponse.data as ProfilePreferencesRow
 
       setClients(clientsResponse.data || [])
       setHasExistingRequest(Boolean(currentRequest))
@@ -165,9 +183,11 @@ export default function ProfessionnelPage() {
       setRemainingCount(currentRequest?.remaining_count ?? 0)
       setRequestComment(currentRequest?.request_comment ?? '')
       setPreferences({
-        pref_client_types: currentPreferences.pref_client_types ?? '',
-        pref_modalities: currentPreferences.pref_modalities ?? '',
-        pref_followup_types: currentPreferences.pref_followup_types ?? '',
+        pref_client_types: arrayToTextareaValue(currentPreferences.pref_client_types),
+        pref_modalities: arrayToTextareaValue(currentPreferences.pref_modalities),
+        pref_followup_types: arrayToTextareaValue(
+          currentPreferences.pref_followup_types
+        ),
         pref_notes: currentPreferences.pref_notes ?? '',
       })
       setLoading(false)
@@ -240,36 +260,55 @@ export default function ProfessionnelPage() {
     setPreferencesMessage('')
     setPreferencesError('')
 
-    if (!currentUserId) {
-      setPreferencesError('Utilisateur introuvable.')
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser()
+
+      if (userError || !user) {
+        setPreferencesError('Utilisateur introuvable.')
+        return
+      }
+
+      const { error: saveError } = await supabase
+        .from('profiles')
+        .update({
+          pref_client_types: textareaValueToArray(preferences.pref_client_types),
+          pref_modalities: textareaValueToArray(preferences.pref_modalities),
+          pref_followup_types: textareaValueToArray(preferences.pref_followup_types),
+          pref_notes: nullableText(preferences.pref_notes),
+        })
+        .eq('id', user.id)
+
+      if (saveError) {
+        setPreferencesError(saveError.message)
+        return
+      }
+
+      setCurrentUserId(user.id)
+      setPreferences((currentPreferences) => ({
+        pref_client_types: textareaValueToArray(
+          currentPreferences.pref_client_types
+        ).join(', '),
+        pref_modalities: textareaValueToArray(currentPreferences.pref_modalities).join(
+          ', '
+        ),
+        pref_followup_types: textareaValueToArray(
+          currentPreferences.pref_followup_types
+        ).join(', '),
+        pref_notes: nullableText(currentPreferences.pref_notes) ?? '',
+      }))
+      setPreferencesMessage('Préférences sauvegardées.')
+    } catch (caughtError: unknown) {
+      setPreferencesError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Une erreur est survenue pendant la sauvegarde.'
+      )
+    } finally {
       setSavingPreferences(false)
-      return
     }
-
-    const { error: saveError } = await supabase
-      .from('profiles')
-      .update({
-        pref_client_types: nullableText(preferences.pref_client_types),
-        pref_modalities: nullableText(preferences.pref_modalities),
-        pref_followup_types: nullableText(preferences.pref_followup_types),
-        pref_notes: nullableText(preferences.pref_notes),
-      })
-      .eq('id', currentUserId)
-
-    if (saveError) {
-      setPreferencesError(saveError.message)
-      setSavingPreferences(false)
-      return
-    }
-
-    setPreferences((currentPreferences) => ({
-      pref_client_types: nullableText(currentPreferences.pref_client_types) ?? '',
-      pref_modalities: nullableText(currentPreferences.pref_modalities) ?? '',
-      pref_followup_types: nullableText(currentPreferences.pref_followup_types) ?? '',
-      pref_notes: nullableText(currentPreferences.pref_notes) ?? '',
-    }))
-    setPreferencesMessage('Préférences sauvegardées.')
-    setSavingPreferences(false)
   }
 
   const updateClientField = <Field extends EditableClientField>(
