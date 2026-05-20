@@ -116,6 +116,7 @@ export default function ProfessionnelPage() {
   const [requestComment, setRequestComment] = useState('')
   const [loading, setLoading] = useState(true)
   const [savingRequest, setSavingRequest] = useState(false)
+  const [clearingRequest, setClearingRequest] = useState(false)
   const [error, setError] = useState('')
   const [requestMessage, setRequestMessage] = useState('')
   const [requestError, setRequestError] = useState('')
@@ -244,9 +245,10 @@ export default function ProfessionnelPage() {
 
     const normalizedRequestedCount = Math.max(0, Math.trunc(requestedCount || 0))
     const normalizedAssignedCount = Math.max(0, Math.trunc(assignedCount || 0))
-    const remainingCount = requestActive
-      ? Math.max(normalizedRequestedCount - normalizedAssignedCount, 0)
-      : 0
+    const nextRemainingCount = Math.max(
+      normalizedRequestedCount - normalizedAssignedCount,
+      0
+    )
 
     const {
       data: { user },
@@ -261,10 +263,10 @@ export default function ProfessionnelPage() {
 
     const requestPayload = {
       professional_id: user.id,
-      is_active: requestActive,
+      is_active: true,
       requested_count: normalizedRequestedCount,
       assigned_count: normalizedAssignedCount,
-      remaining_count: remainingCount,
+      remaining_count: nextRemainingCount,
       request_comment: requestComment.trim() || null,
     }
 
@@ -282,11 +284,60 @@ export default function ProfessionnelPage() {
     }
 
     setHasExistingRequest(true)
+    setRequestActive(true)
     setRequestedCount(normalizedRequestedCount)
     setAssignedCount(normalizedAssignedCount)
-    setRemainingCount(remainingCount)
-    setRequestMessage('Demande sauvegardée.')
+    setRemainingCount(nextRemainingCount)
+    setRequestMessage('Demande active sauvegardée.')
     setSavingRequest(false)
+  }
+
+  const handleClearRequest = async () => {
+    setClearingRequest(true)
+    setRequestMessage('')
+    setRequestError('')
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
+
+    if (userError || !user) {
+      setRequestError('Utilisateur introuvable.')
+      setClearingRequest(false)
+      return
+    }
+
+    const clearPayload = {
+      professional_id: user.id,
+      is_active: false,
+      requested_count: 0,
+      assigned_count: 0,
+      remaining_count: 0,
+      request_comment: null,
+    }
+
+    const { error: clearError } = hasExistingRequest
+      ? await supabase
+          .from('assignment_requests')
+          .update(clearPayload)
+          .eq('professional_id', user.id)
+      : await supabase.from('assignment_requests').insert(clearPayload)
+
+    if (clearError) {
+      setRequestError(clearError.message)
+      setClearingRequest(false)
+      return
+    }
+
+    setHasExistingRequest(true)
+    setRequestActive(false)
+    setRequestedCount(0)
+    setAssignedCount(0)
+    setRemainingCount(0)
+    setRequestComment('')
+    setRequestMessage('Demande effacée.')
+    setClearingRequest(false)
   }
 
   const updatePreferenceField = (field: PreferenceField, value: string) => {
@@ -471,7 +522,7 @@ export default function ProfessionnelPage() {
       : null,
     activeClients.length === 0
       ? {
-          title: 'Aucun client actif',
+          title: 'Aucun client ayant pris le service',
           description: 'Aucun client avec service pris actuellement.',
           tone: 'muted' as const,
         }
@@ -652,7 +703,7 @@ export default function ProfessionnelPage() {
 
         {!loading && !error && (
           <section className="mb-6 rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-6 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
-            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div>
               <div>
                 <h2 className="text-lg font-semibold text-[#332820]">
                   Demande d&apos;assignation
@@ -663,17 +714,11 @@ export default function ProfessionnelPage() {
                     {requestStatus.label}
                   </Badge>
                 </p>
+                <p className="mt-2 text-sm text-[#7a6859]">
+                  Sauvegarder crée ou met à jour une demande active. Effacer
+                  désactive la demande actuelle.
+                </p>
               </div>
-
-              <label className="flex items-center gap-2 text-sm font-medium text-[#5d4a3d]">
-                <input
-                  type="checkbox"
-                  checked={requestActive}
-                  onChange={(event) => setRequestActive(event.target.checked)}
-                  className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
-                />
-                Demande active
-              </label>
             </div>
 
             <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -742,10 +787,19 @@ export default function ProfessionnelPage() {
               <button
                 type="button"
                 onClick={handleSaveRequest}
-                disabled={savingRequest}
+                disabled={savingRequest || clearingRequest}
                 className={buttonClass('primary')}
               >
                 {savingRequest ? 'Sauvegarde...' : 'Sauvegarder la demande'}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleClearRequest}
+                disabled={savingRequest || clearingRequest}
+                className={buttonClass('secondary')}
+              >
+                {clearingRequest ? 'Effacement...' : 'Effacer la demande'}
               </button>
 
               {requestMessage && (
@@ -841,8 +895,13 @@ export default function ProfessionnelPage() {
         {!loading && !error && (
           <div className="space-y-8">
             <section>
-              <h2 className="mb-3 text-lg font-semibold text-[#332820]">Clients actifs</h2>
-              {renderClientsTable(activeClients, 'Aucun client actif.')}
+              <h2 className="mb-3 text-lg font-semibold text-[#332820]">
+                Clients ayant pris le service
+              </h2>
+              {renderClientsTable(
+                activeClients,
+                'Aucun client ayant pris le service.'
+              )}
             </section>
 
             <section>
