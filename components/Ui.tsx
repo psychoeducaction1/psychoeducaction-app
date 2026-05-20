@@ -54,6 +54,39 @@ export function EmptyState({
   )
 }
 
+export function AlertCard({
+  title,
+  description,
+  tone = 'warning',
+}: {
+  title: string
+  description: string
+  tone?: BadgeTone
+}) {
+  const markerClass =
+    tone === 'success'
+      ? 'bg-[#f1ead9] text-[#5f5932]'
+      : tone === 'muted'
+        ? 'bg-[#fffdf9] text-[#8a6f5d]'
+        : tone === 'neutral'
+          ? 'bg-[#fbf6ef] text-[#6c5a4d]'
+          : 'bg-[#fbf1e7] text-[#8a5633]'
+
+  return (
+    <div className="flex gap-3 rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-4 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
+      <span
+        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${markerClass}`}
+      >
+        !
+      </span>
+      <div>
+        <p className="text-sm font-semibold text-[#332820]">{title}</p>
+        <p className="mt-1 text-sm leading-6 text-[#7a6859]">{description}</p>
+      </div>
+    </div>
+  )
+}
+
 export function buttonClass(tone: ButtonTone = 'primary'): string {
   return `inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-[#ead2bd] disabled:cursor-not-allowed ${buttonTones[tone]}`
 }

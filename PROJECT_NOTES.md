@@ -20,7 +20,10 @@ Plateforme interne de gestion des demandes d'assignation et de suivi des clients
 
 - `/login`
 - `/`
-- `/direction`
+- `/direction` : dashboard resume pour la direction
+- `/direction/professionnels` : gestion detaillee des professionnels
+- `/direction/assignations` : suivi des demandes d'assignation
+- `/direction/parametres` : parametres et informations administratives
 - `/professionnel`
 - `/professionnel/[id]`
 
@@ -57,9 +60,16 @@ Plateforme interne de gestion des demandes d'assignation et de suivi des clients
 
 - Design global clinique moderne, doux et professionnel.
 - Navigation laterale sur desktop et navigation compacte sur mobile.
-- Navigation conditionnelle selon le role connecte :
-  - `direction` voit seulement le dashboard direction;
-  - `professionnel` voit seulement l'espace professionnel.
+- Navigation conditionnelle selon le role connecte.
+- Navigation cote direction :
+  - Dashboard direction : `/direction`;
+  - Assignations : `/direction/assignations`;
+  - Professionnels : `/direction/professionnels`;
+  - Parametres : `/direction/parametres`;
+  - Deconnexion.
+- Navigation cote professionnel :
+  - Espace professionnel : `/professionnel`;
+  - Deconnexion.
 - Tableaux modernises avec badges, etats vides, meilleur espacement et scroll horizontal.
 - Couleurs inspirees du branding PsychoEducAction : brun chaud, cuivre, beige pale et gris chauds.
 

@@ -52,6 +52,7 @@ export function AppNav() {
           { href: '/direction', label: 'Dashboard direction' },
           { href: '/direction/assignations', label: 'Assignations' },
           { href: '/direction/professionnels', label: 'Professionnels' },
+          { href: '/direction/parametres', label: 'Parametres' },
         ]
       : role === 'professionnel'
         ? [{ href: '/professionnel', label: 'Espace professionnel' }]
@@ -67,8 +68,10 @@ export function AppNav() {
             ? pathname === '/direction'
             : link.href === '/direction/assignations'
               ? pathname?.startsWith('/direction/assignations')
-              : pathname?.startsWith('/direction/professionnels') ||
-                pathname?.startsWith('/professionnel/')
+              : link.href === '/direction/professionnels'
+                ? pathname?.startsWith('/direction/professionnels') ||
+                  pathname?.startsWith('/professionnel/')
+                : pathname?.startsWith('/direction/parametres')
           : link.href === '/professionnel' &&
             pathname?.startsWith('/professionnel')
 

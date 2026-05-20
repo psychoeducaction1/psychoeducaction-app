@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { AppNav } from '@/components/AppNav'
 import {
   Badge,
+  AlertCard,
   EmptyState,
   buttonClass,
   getAssignmentRequestStatus,
@@ -87,6 +88,20 @@ function textareaValueToArray(value: string): string[] {
     .split(',')
     .map((item) => item.trim())
     .filter((item) => item.length > 0)
+}
+
+function isRecentDate(value: string): boolean {
+  const assignedDate = new Date(`${value}T00:00:00`)
+
+  if (Number.isNaN(assignedDate.getTime())) {
+    return false
+  }
+
+  const sevenDaysAgo = new Date()
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+  sevenDaysAgo.setHours(0, 0, 0, 0)
+
+  return assignedDate >= sevenDaysAgo
 }
 
 export default function ProfessionnelPage() {
@@ -422,6 +437,48 @@ export default function ProfessionnelPage() {
           : ''
   const activeClients = clients.filter((client) => client.is_active)
   const noResponseClients = clients.filter((client) => !client.is_active)
+  const recentAssignmentsCount = clients.filter((client) =>
+    isRecentDate(client.assigned_date)
+  ).length
+  const notContactedClientsCount = clients.filter((client) => !client.contacted).length
+  const professionalAlerts = [
+    recentAssignmentsCount > 0
+      ? {
+          title: 'Nouvelle assignation recente',
+          description: `${recentAssignmentsCount} client${
+            recentAssignmentsCount > 1 ? 's ont' : ' a'
+          } ete assigne${
+            recentAssignmentsCount > 1 ? 's' : ''
+          } dans les 7 derniers jours.`,
+          tone: 'warning' as const,
+        }
+      : null,
+    notContactedClientsCount > 0
+      ? {
+          title: 'Clients a contacter',
+          description: `${notContactedClientsCount} client${
+            notContactedClientsCount > 1 ? 's ne sont' : " n'est"
+          } pas encore contacte${notContactedClientsCount > 1 ? 's' : ''}.`,
+          tone: 'warning' as const,
+        }
+      : null,
+    requestStatus.label === 'demande complétée'
+      ? {
+          title: 'Demande completee',
+          description: 'Votre demande actuelle est entierement repondue.',
+          tone: 'success' as const,
+        }
+      : null,
+    activeClients.length === 0
+      ? {
+          title: 'Aucun client actif',
+          description: 'Aucun client avec service pris actuellement.',
+          tone: 'muted' as const,
+        }
+      : null,
+  ].filter((alert): alert is { title: string; description: string; tone: 'warning' | 'success' | 'muted' } =>
+    Boolean(alert)
+  )
 
   const renderClientsTable = (sectionClients: AssignedClient[], emptyMessage: string) => (
     <div className={tableShellClass}>
@@ -578,6 +635,19 @@ export default function ProfessionnelPage() {
           <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
             {error}
           </div>
+        )}
+
+        {!loading && !error && professionalAlerts.length > 0 && (
+          <section className="mb-6 grid gap-3 lg:grid-cols-2">
+            {professionalAlerts.map((alert) => (
+              <AlertCard
+                key={alert.title}
+                title={alert.title}
+                description={alert.description}
+                tone={alert.tone}
+              />
+            ))}
+          </section>
         )}
 
         {!loading && !error && (

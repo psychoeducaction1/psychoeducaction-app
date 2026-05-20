@@ -56,6 +56,15 @@ type NewAssignedClientForm = {
   short_comment: string;
 };
 
+type ProfessionalProfileForm = {
+  full_name: string;
+  email: string;
+  pref_client_types: string;
+  pref_modalities: string;
+  pref_followup_types: string;
+  pref_notes: string;
+};
+
 const emptyClientForm: NewAssignedClientForm = {
   first_name: "",
   last_name: "",
@@ -63,6 +72,15 @@ const emptyClientForm: NewAssignedClientForm = {
   phone: "",
   requester_name: "",
   short_comment: "",
+};
+
+const emptyProfessionalProfileForm: ProfessionalProfileForm = {
+  full_name: "",
+  email: "",
+  pref_client_types: "",
+  pref_modalities: "",
+  pref_followup_types: "",
+  pref_notes: "",
 };
 
 function formatBoolean(value: boolean | null): string {
@@ -94,6 +112,17 @@ function getClientName(client: AssignedClient): string {
 function nullableText(value: string): string | null {
   const trimmedValue = value.trim();
   return trimmedValue.length > 0 ? trimmedValue : null;
+}
+
+function arrayToTextareaValue(value: string[] | null): string {
+  return value?.join(", ") ?? "";
+}
+
+function textareaValueToArray(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
 }
 
 function getTodayDate(): string {
@@ -135,6 +164,14 @@ export default function ProfessionnelDetailPage() {
   const [assignedClients, setAssignedClients] = useState<AssignedClient[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [professionalProfileForm, setProfessionalProfileForm] =
+    useState<ProfessionalProfileForm>(emptyProfessionalProfileForm);
+  const [savingProfessionalProfile, setSavingProfessionalProfile] =
+    useState(false);
+  const [professionalProfileMessage, setProfessionalProfileMessage] =
+    useState<string | null>(null);
+  const [professionalProfileError, setProfessionalProfileError] =
+    useState<string | null>(null);
   const [clientForm, setClientForm] =
     useState<NewAssignedClientForm>(emptyClientForm);
   const [savingClient, setSavingClient] = useState(false);
@@ -221,7 +258,19 @@ export default function ProfessionnelDetailPage() {
         if (requestResponse.error) throw requestResponse.error;
         if (clientsResponse.error) throw clientsResponse.error;
 
-        setProfile(profileResponse.data as Profile);
+        const loadedProfile = profileResponse.data as Profile;
+
+        setProfile(loadedProfile);
+        setProfessionalProfileForm({
+          full_name: loadedProfile.full_name ?? "",
+          email: loadedProfile.email ?? "",
+          pref_client_types: arrayToTextareaValue(loadedProfile.pref_client_types),
+          pref_modalities: arrayToTextareaValue(loadedProfile.pref_modalities),
+          pref_followup_types: arrayToTextareaValue(
+            loadedProfile.pref_followup_types,
+          ),
+          pref_notes: loadedProfile.pref_notes ?? "",
+        });
         setAssignmentRequest(
           (requestResponse.data as AssignmentRequest | null) ?? null,
         );
@@ -269,6 +318,69 @@ export default function ProfessionnelDetailPage() {
       ...currentForm,
       [field]: value,
     }));
+  };
+
+  const handleProfessionalProfileFormChange = (
+    field: keyof ProfessionalProfileForm,
+    value: string,
+  ) => {
+    setProfessionalProfileForm((currentForm) => ({
+      ...currentForm,
+      [field]: value,
+    }));
+  };
+
+  const handleSaveProfessionalProfile = async (
+    event: FormEvent<HTMLFormElement>,
+  ) => {
+    event.preventDefault();
+    setProfessionalProfileMessage(null);
+    setProfessionalProfileError(null);
+    setSavingProfessionalProfile(true);
+
+    try {
+      const { data: updatedProfile, error: updateError } = await supabase
+        .from("profiles")
+        .update({
+          full_name: nullableText(professionalProfileForm.full_name),
+          email: nullableText(professionalProfileForm.email),
+          pref_client_types: textareaValueToArray(
+            professionalProfileForm.pref_client_types,
+          ),
+          pref_modalities: textareaValueToArray(
+            professionalProfileForm.pref_modalities,
+          ),
+          pref_followup_types: textareaValueToArray(
+            professionalProfileForm.pref_followup_types,
+          ),
+          pref_notes: nullableText(professionalProfileForm.pref_notes),
+        })
+        .eq("id", professionalId)
+        .select(
+          "id, full_name, email, pref_client_types, pref_modalities, pref_followup_types, pref_notes",
+        )
+        .single();
+
+      if (updateError) throw updateError;
+
+      const nextProfile = updatedProfile as Profile;
+      setProfile(nextProfile);
+      setProfessionalProfileForm({
+        full_name: nextProfile.full_name ?? "",
+        email: nextProfile.email ?? "",
+        pref_client_types: arrayToTextareaValue(nextProfile.pref_client_types),
+        pref_modalities: arrayToTextareaValue(nextProfile.pref_modalities),
+        pref_followup_types: arrayToTextareaValue(
+          nextProfile.pref_followup_types,
+        ),
+        pref_notes: nextProfile.pref_notes ?? "",
+      });
+      setProfessionalProfileMessage("Informations sauvegardees.");
+    } catch (caughtError: unknown) {
+      setProfessionalProfileError(getErrorMessage(caughtError));
+    } finally {
+      setSavingProfessionalProfile(false);
+    }
   };
 
   const handleAssignClient = async (event: FormEvent<HTMLFormElement>) => {
@@ -376,8 +488,140 @@ export default function ProfessionnelDetailPage() {
         {!loading && !error && profile && (
           <div className="space-y-6">
             <section className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-6 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
+              <div>
+                <h2 className="text-lg font-semibold text-[#332820]">
+                  Informations du professionnel
+                </h2>
+                <p className="mt-1 text-sm text-[#7a6859]">
+                  Modifier les informations non sensibles du profil existant.
+                </p>
+              </div>
+
+              <form
+                onSubmit={handleSaveProfessionalProfile}
+                className="mt-5 space-y-4"
+              >
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label className="block text-sm font-medium text-[#5d4a3d]">
+                    Nom complet
+                    <input
+                      type="text"
+                      value={professionalProfileForm.full_name}
+                      onChange={(event) =>
+                        handleProfessionalProfileFormChange(
+                          "full_name",
+                          event.target.value,
+                        )
+                      }
+                      className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                    />
+                  </label>
+
+                  <label className="block text-sm font-medium text-[#5d4a3d]">
+                    Email
+                    <input
+                      type="email"
+                      value={professionalProfileForm.email}
+                      onChange={(event) =>
+                        handleProfessionalProfileFormChange(
+                          "email",
+                          event.target.value,
+                        )
+                      }
+                      className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                    />
+                  </label>
+
+                  <label className="block text-sm font-medium text-[#5d4a3d]">
+                    Clienteles souhaitees
+                    <textarea
+                      value={professionalProfileForm.pref_client_types}
+                      onChange={(event) =>
+                        handleProfessionalProfileFormChange(
+                          "pref_client_types",
+                          event.target.value,
+                        )
+                      }
+                      rows={3}
+                      className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                    />
+                  </label>
+
+                  <label className="block text-sm font-medium text-[#5d4a3d]">
+                    Modalites souhaitees
+                    <textarea
+                      value={professionalProfileForm.pref_modalities}
+                      onChange={(event) =>
+                        handleProfessionalProfileFormChange(
+                          "pref_modalities",
+                          event.target.value,
+                        )
+                      }
+                      rows={3}
+                      className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                    />
+                  </label>
+
+                  <label className="block text-sm font-medium text-[#5d4a3d]">
+                    Types de suivis souhaites
+                    <textarea
+                      value={professionalProfileForm.pref_followup_types}
+                      onChange={(event) =>
+                        handleProfessionalProfileFormChange(
+                          "pref_followup_types",
+                          event.target.value,
+                        )
+                      }
+                      rows={3}
+                      className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                    />
+                  </label>
+
+                  <label className="block text-sm font-medium text-[#5d4a3d]">
+                    Notes / precisions
+                    <textarea
+                      value={professionalProfileForm.pref_notes}
+                      onChange={(event) =>
+                        handleProfessionalProfileFormChange(
+                          "pref_notes",
+                          event.target.value,
+                        )
+                      }
+                      rows={3}
+                      className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                    />
+                  </label>
+                </div>
+
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <button
+                    type="submit"
+                    disabled={savingProfessionalProfile}
+                    className={buttonClass("primary")}
+                  >
+                    {savingProfessionalProfile
+                      ? "Sauvegarde..."
+                      : "Sauvegarder"}
+                  </button>
+
+                  {professionalProfileMessage && (
+                    <p className="text-sm font-medium text-green-700">
+                      {professionalProfileMessage}
+                    </p>
+                  )}
+
+                  {professionalProfileError && (
+                    <p className="text-sm font-medium text-red-700">
+                      {professionalProfileError}
+                    </p>
+                  )}
+                </div>
+              </form>
+            </section>
+
+            <section className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-6 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
               <h2 className="text-lg font-semibold text-[#332820]">
-                Informations du professionnel
+                Apercu du professionnel
               </h2>
               <dl className="mt-4 grid gap-4 sm:grid-cols-2">
                 <div>

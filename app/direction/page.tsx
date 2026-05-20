@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { AppNav } from '@/components/AppNav'
 import {
+  AlertCard,
   Badge,
   EmptyState,
   buttonClass,
@@ -274,6 +275,55 @@ export default function DirectionPage() {
         .slice(0, 8),
     [rows]
   )
+  const directionAlerts = [
+    professionalsWithRemaining.some((row) => row.remainingCount >= 3)
+      ? {
+          title: 'Capacite disponible importante',
+          description: `${
+            professionalsWithRemaining.filter((row) => row.remainingCount >= 3).length
+          } professionnel${
+            professionalsWithRemaining.filter((row) => row.remainingCount >= 3)
+              .length > 1
+              ? 's ont'
+              : ' a'
+          } encore beaucoup de places.`,
+          tone: 'warning' as const,
+        }
+      : null,
+    completedRequests.length > 0
+      ? {
+          title: 'Demandes completees',
+          description: `${completedRequests.length} demande${
+            completedRequests.length > 1 ? 's sont completees' : ' est completee'
+          } et reste${completedRequests.length > 1 ? 'nt' : ''} visible${
+            completedRequests.length > 1 ? 's' : ''
+          }.`,
+          tone: 'success' as const,
+        }
+      : null,
+    rows.some((row) => row.noResponseClients >= 3)
+      ? {
+          title: 'Clients sans reponse a surveiller',
+          description: `${
+            rows.filter((row) => row.noResponseClients >= 3).length
+          } professionnel${
+            rows.filter((row) => row.noResponseClients >= 3).length > 1
+              ? 's ont'
+              : ' a'
+          } plusieurs clients sans reponse.`,
+          tone: 'warning' as const,
+        }
+      : null,
+    dashboardStats.activeRequests === 0
+      ? {
+          title: 'Aucune demande active',
+          description: 'Aucune demande d assignation active actuellement.',
+          tone: 'muted' as const,
+        }
+      : null,
+  ].filter((alert): alert is { title: string; description: string; tone: 'warning' | 'success' | 'muted' } =>
+    Boolean(alert)
+  )
 
   return (
     <>
@@ -310,6 +360,19 @@ export default function DirectionPage() {
 
           {!loading && !error && (
             <div className="space-y-6">
+              {directionAlerts.length > 0 && (
+                <section className="grid gap-3 lg:grid-cols-2">
+                  {directionAlerts.map((alert) => (
+                    <AlertCard
+                      key={alert.title}
+                      title={alert.title}
+                      description={alert.description}
+                      tone={alert.tone}
+                    />
+                  ))}
+                </section>
+              )}
+
               <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
                 <StatCard
                   label="Professionnels"
