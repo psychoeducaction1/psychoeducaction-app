@@ -1,7 +1,8 @@
 "use client";
 
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
+import { AppNav } from "@/components/AppNav";
 import { supabase } from "@/lib/supabaseClient";
 
 type Profile = {
@@ -106,6 +107,7 @@ function getErrorMessage(error: unknown): string {
 }
 
 export default function ProfessionnelDetailPage() {
+  const router = useRouter();
   const params = useParams<{ id: string }>();
   const professionalIdRaw = params?.id;
   const professionalId =
@@ -140,8 +142,33 @@ export default function ProfessionnelDetailPage() {
         setLoading(true);
       }
       setError(null);
+      let isRedirecting = false;
 
       try {
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError || !user) {
+          isRedirecting = true;
+          router.push("/login");
+          return;
+        }
+
+        const { data: currentProfile, error: currentProfileError } =
+          await supabase
+            .from("profiles")
+            .select("role")
+            .eq("id", user.id)
+            .single();
+
+        if (currentProfileError || currentProfile?.role !== "direction") {
+          isRedirecting = true;
+          router.push("/");
+          return;
+        }
+
         const profileResponse = await supabase
           .from("profiles")
           .select(
@@ -181,12 +208,12 @@ export default function ProfessionnelDetailPage() {
       } catch (caughtError: unknown) {
         setError(getErrorMessage(caughtError));
       } finally {
-        if (showLoading) {
+        if (showLoading && !isRedirecting) {
           setLoading(false);
         }
       }
     },
-    [professionalId],
+    [professionalId, router],
   );
 
   useEffect(() => {
@@ -299,14 +326,16 @@ export default function ProfessionnelDetailPage() {
   };
 
   return (
-    <main className="min-h-screen bg-gray-50 px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl">
-        <div>
-          <p className="text-sm font-medium text-gray-500">Profil operationnel</p>
-          <h1 className="mt-1 text-2xl font-semibold text-gray-900">
-            {professionalName}
-          </h1>
-        </div>
+    <>
+      <AppNav />
+      <main className="min-h-screen bg-gray-50 px-4 py-8 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl">
+          <div>
+            <p className="text-sm font-medium text-gray-500">Profil operationnel</p>
+            <h1 className="mt-1 text-2xl font-semibold text-gray-900">
+              {professionalName}
+            </h1>
+          </div>
 
         {loading && (
           <div className="mt-6 rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-600 shadow-sm">
@@ -607,7 +636,8 @@ export default function ProfessionnelDetailPage() {
             </section>
           </div>
         )}
-      </div>
-    </main>
+        </div>
+      </main>
+    </>
   );
 }

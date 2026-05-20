@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { AppNav } from '@/components/AppNav'
 import { supabase } from '@/lib/supabaseClient'
 
 type Profile = {
@@ -59,6 +61,7 @@ function arrayToText(value: string[] | null): string {
 }
 
 export default function DirectionPage() {
+  const router = useRouter()
   const [rows, setRows] = useState<DirectionRow[]>([])
   const [loading, setLoading] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null)
@@ -72,6 +75,27 @@ export default function DirectionPage() {
     const loadData = async () => {
       setLoading(true)
       setError(null)
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser()
+
+      if (userError || !user) {
+        router.push('/login')
+        return
+      }
+
+      const { data: currentProfile, error: currentProfileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+
+      if (currentProfileError || currentProfile?.role !== 'direction') {
+        router.push('/')
+        return
+      }
 
       const { data: profilesData, error: profilesError } = await supabase
         .from('profiles')
@@ -181,7 +205,7 @@ export default function DirectionPage() {
     }
 
     loadData()
-  }, [])
+  }, [router])
 
   const visibleRows = useMemo(() => {
     const normalizedSearch = searchQuery.trim().toLowerCase()
@@ -222,11 +246,13 @@ export default function DirectionPage() {
   }, [activeRequestsOnly, hasRemainingOnly, noRemainingOnly, rows, searchQuery, sortOption])
 
   return (
-    <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <h1 className="text-2xl font-semibold text-slate-900">Dashboard Direction</h1>
-      <p className="mt-1 text-sm text-slate-600">
-        Vue simple des professionnels et de leurs demandes d&apos;assignation.
-      </p>
+    <>
+      <AppNav />
+      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <h1 className="text-2xl font-semibold text-slate-900">Dashboard Direction</h1>
+        <p className="mt-1 text-sm text-slate-600">
+          Vue simple des professionnels et de leurs demandes d&apos;assignation.
+        </p>
 
       {loading && (
         <div className="mt-6 rounded-md border border-slate-200 bg-white p-4 text-sm text-slate-600">
@@ -375,6 +401,7 @@ export default function DirectionPage() {
           </div>
         </>
       )}
-    </main>
+      </main>
+    </>
   )
 }

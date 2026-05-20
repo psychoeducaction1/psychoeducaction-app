@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { AppNav } from '@/components/AppNav'
 import { supabase } from '@/lib/supabaseClient'
 
 type AssignedClient = {
@@ -34,6 +36,7 @@ type ProfessionalPreferences = {
 }
 
 type ProfilePreferencesRow = {
+  role: string | null
   pref_client_types: string[] | null
   pref_modalities: string[] | null
   pref_followup_types: string[] | null
@@ -74,6 +77,7 @@ function textareaValueToArray(value: string): string[] {
 }
 
 export default function ProfessionnelPage() {
+  const router = useRouter()
   const [clients, setClients] = useState<AssignedClient[]>([])
   const [currentUserId, setCurrentUserId] = useState('')
   const [hasExistingRequest, setHasExistingRequest] = useState(false)
@@ -115,14 +119,35 @@ export default function ProfessionnelPage() {
       } = await supabase.auth.getUser()
 
       if (userError || !user) {
-        setError('Utilisateur introuvable.')
-        setLoading(false)
+        router.push('/login')
         return
       }
 
       setCurrentUserId(user.id)
 
-      const [clientsResponse, requestResponse, profileResponse] = await Promise.all([
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('role, pref_client_types, pref_modalities, pref_followup_types, pref_notes')
+        .eq('id', user.id)
+        .single()
+
+      if (profileError) {
+        setError(profileError.message)
+        setLoading(false)
+        return
+      }
+
+      const currentPreferences = profileData as ProfilePreferencesRow
+
+      if (
+        currentPreferences.role !== 'professionnel' &&
+        currentPreferences.role !== 'direction'
+      ) {
+        router.push('/')
+        return
+      }
+
+      const [clientsResponse, requestResponse] = await Promise.all([
         supabase
           .from('assigned_clients')
           .select(`
@@ -147,11 +172,6 @@ export default function ProfessionnelPage() {
           )
           .eq('professional_id', user.id)
           .limit(1),
-        supabase
-          .from('profiles')
-          .select('pref_client_types, pref_modalities, pref_followup_types, pref_notes')
-          .eq('id', user.id)
-          .single(),
       ])
 
       if (clientsResponse.error) {
@@ -166,14 +186,7 @@ export default function ProfessionnelPage() {
         return
       }
 
-      if (profileResponse.error) {
-        setError(profileResponse.error.message)
-        setLoading(false)
-        return
-      }
-
       const currentRequest = (requestResponse.data?.[0] ?? null) as AssignmentRequest | null
-      const currentPreferences = profileResponse.data as ProfilePreferencesRow
 
       setClients(clientsResponse.data || [])
       setHasExistingRequest(Boolean(currentRequest))
@@ -194,7 +207,7 @@ export default function ProfessionnelPage() {
     }
 
     loadData()
-  }, [])
+  }, [router])
 
   const handleSaveRequest = async () => {
     setSavingRequest(true)
@@ -523,9 +536,11 @@ export default function ProfessionnelPage() {
   )
 
   return (
-    <main className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-7xl mx-auto">
-        <h1 className="text-2xl font-semibold mb-6">Mes clients assignés</h1>
+    <>
+      <AppNav />
+      <main className="min-h-screen bg-gray-50 p-6">
+        <div className="max-w-7xl mx-auto">
+          <h1 className="text-2xl font-semibold mb-6">Mes clients assignés</h1>
 
         {loading && <p>Chargement...</p>}
 
@@ -734,7 +749,8 @@ export default function ProfessionnelPage() {
             </section>
           </div>
         )}
-      </div>
-    </main>
+        </div>
+      </main>
+    </>
   )
 }
