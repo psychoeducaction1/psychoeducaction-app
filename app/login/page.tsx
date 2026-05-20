@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { buttonClass } from '@/components/Ui'
 import { supabase } from '@/lib/supabaseClient'
 
 export default function LoginPage() {
@@ -53,7 +54,7 @@ export default function LoginPage() {
 
           <button
             onClick={handleLogin}
-            className="w-full rounded-xl bg-[#8a5633] p-3 text-sm font-medium text-white transition hover:bg-[#6d3f1f]"
+            className={`${buttonClass('primary')} w-full p-3`}
           >
             Se connecter
           </button>

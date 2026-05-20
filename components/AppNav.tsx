@@ -1,28 +1,70 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
+import { buttonClass } from '@/components/Ui'
 import { supabase } from '@/lib/supabaseClient'
+
+type UserRole = 'direction' | 'professionnel' | null
 
 export function AppNav() {
   const pathname = usePathname()
   const router = useRouter()
+  const [role, setRole] = useState<UserRole>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadRole = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+
+      if (!user) return
+
+      const { data } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+
+      if (!cancelled) {
+        setRole(data?.role === 'direction' ? 'direction' : 'professionnel')
+      }
+    }
+
+    loadRole()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
     router.push('/login')
   }
 
-  const navLinks = [
-    { href: '/direction', label: 'Dashboard direction' },
-    { href: '/professionnel', label: 'Espace professionnel' },
-  ]
+  const navLinks =
+    role === 'direction'
+      ? [{ href: '/direction', label: 'Dashboard direction' }]
+      : role === 'professionnel'
+        ? [{ href: '/professionnel', label: 'Espace professionnel' }]
+        : []
+
+  const brandHref = role === 'professionnel' ? '/professionnel' : '/direction'
 
   const renderLinks = () =>
     navLinks.map((link) => {
       const isActive =
         pathname === link.href ||
-        (link.href === '/professionnel' && pathname?.startsWith('/professionnel/'))
+        (role === 'direction' &&
+          link.href === '/direction' &&
+          pathname?.startsWith('/professionnel/')) ||
+        (role === 'professionnel' &&
+          link.href === '/professionnel' &&
+          pathname?.startsWith('/professionnel'))
 
       return (
         <Link
@@ -42,7 +84,7 @@ export function AppNav() {
   return (
     <>
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-72 border-r border-[#eadfd2] bg-[#fbf7f1]/95 px-5 py-6 lg:flex lg:flex-col">
-        <Link href="/direction" className="flex items-center gap-3">
+        <Link href={brandHref} className="flex items-center gap-3">
           <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#8a5633] text-sm font-semibold text-white">
             PA
           </span>
@@ -61,7 +103,7 @@ export function AppNav() {
         <button
           type="button"
           onClick={handleSignOut}
-          className="rounded-xl border border-[#e4d5c6] bg-white px-3 py-2 text-left text-sm font-medium text-[#6c5a4d] transition hover:border-[#c98b52] hover:text-[#6d3f1f]"
+          className={buttonClass('secondary')}
         >
           Deconnexion
         </button>
@@ -70,7 +112,7 @@ export function AppNav() {
       <header className="sticky top-0 z-30 border-b border-[#eadfd2] bg-[#fbf7f1]/95 backdrop-blur lg:hidden">
         <div className="flex flex-col gap-3 px-4 py-4">
           <div className="flex items-center justify-between gap-3">
-            <Link href="/direction" className="flex min-w-0 items-center gap-3">
+            <Link href={brandHref} className="flex min-w-0 items-center gap-3">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-[#8a5633] text-xs font-semibold text-white">
                 PA
               </span>
@@ -81,7 +123,7 @@ export function AppNav() {
             <button
               type="button"
               onClick={handleSignOut}
-              className="shrink-0 rounded-xl border border-[#e4d5c6] bg-white px-3 py-2 text-xs font-medium text-[#6c5a4d]"
+              className={`${buttonClass('secondary')} shrink-0 px-3 py-2 text-xs`}
             >
               Deconnexion
             </button>

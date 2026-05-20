@@ -3,6 +3,18 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AppNav } from "@/components/AppNav";
+import {
+  Badge,
+  EmptyState,
+  buttonClass,
+  getAssignmentRequestStatus,
+  tableBodyClass,
+  tableCellClass,
+  tableClass,
+  tableHeadCellClass,
+  tableHeaderClass,
+  tableRowClass,
+} from "@/components/Ui";
 import { supabase } from "@/lib/supabaseClient";
 
 type Profile = {
@@ -132,6 +144,15 @@ export default function ProfessionnelDetailPage() {
   const professionalName = useMemo(
     () => profile?.full_name?.trim() || "Professionnel",
     [profile],
+  );
+  const assignmentRequestStatus = useMemo(
+    () =>
+      getAssignmentRequestStatus({
+        isActive: assignmentRequest?.is_active,
+        remainingCount: assignmentRequest?.remaining_count,
+        requestedCount: assignmentRequest?.requested_count,
+      }),
+    [assignmentRequest],
   );
 
   const loadProfessionalProfile = useCallback(
@@ -422,9 +443,11 @@ export default function ProfessionnelDetailPage() {
               {assignmentRequest ? (
                 <dl className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                   <div>
-                    <dt className="text-sm font-medium text-[#8a6f5d]">Active</dt>
-                    <dd className="mt-1 text-sm text-[#332820]">
-                      {formatBoolean(assignmentRequest.is_active)}
+                    <dt className="text-sm font-medium text-[#8a6f5d]">Statut</dt>
+                    <dd className="mt-1">
+                      <Badge tone={assignmentRequestStatus.tone}>
+                        {assignmentRequestStatus.label}
+                      </Badge>
                     </dd>
                   </div>
                   <div>
@@ -455,9 +478,9 @@ export default function ProfessionnelDetailPage() {
                   </div>
                 </dl>
               ) : (
-                <p className="mt-4 text-sm text-[#7a6859]">
-                  Aucune demande actuelle pour ce professionnel.
-                </p>
+                <div className="mt-4">
+                  <EmptyState title="Aucune demande actuelle pour ce professionnel." />
+                </div>
               )}
             </section>
 
@@ -553,7 +576,7 @@ export default function ProfessionnelDetailPage() {
                   <button
                     type="submit"
                     disabled={savingClient}
-                    className="rounded-xl bg-[#8a5633] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#6d3f1f] disabled:cursor-not-allowed disabled:bg-[#c8b8a8]"
+                    className={buttonClass("primary")}
                   >
                     {savingClient ? "Assignation..." : "Assigner le client"}
                   </button>
@@ -581,53 +604,59 @@ export default function ProfessionnelDetailPage() {
               </div>
 
               {assignedClients.length === 0 ? (
-                <p className="px-6 py-5 text-sm text-[#7a6859]">
-                  Aucun client assigne pour ce professionnel.
-                </p>
+                <div className="px-6 py-6">
+                  <EmptyState title="Aucun client assigne pour ce professionnel." />
+                </div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-[#eadfd2] text-sm">
-                    <thead className="bg-[#f6eee4]">
+                  <table className={tableClass}>
+                    <thead className={tableHeaderClass}>
                       <tr>
-                        <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">
+                        <th className={tableHeadCellClass}>
                           Client
                         </th>
-                        <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">
+                        <th className={tableHeadCellClass}>
                           Contacte
                         </th>
-                        <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">
+                        <th className={tableHeadCellClass}>
                           Actif
                         </th>
-                        <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">
+                        <th className={tableHeadCellClass}>
                           Rencontres
                         </th>
-                        <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">
+                        <th className={tableHeadCellClass}>
                           Dossier ferme
                         </th>
-                        <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">
+                        <th className={tableHeadCellClass}>
                           Commentaire
                         </th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-[#f0e5d9]">
+                    <tbody className={tableBodyClass}>
                       {assignedClients.map((client) => (
-                        <tr key={client.id} className="hover:bg-[#fbf6ef]">
+                        <tr key={client.id} className={tableRowClass}>
                           <td className="px-4 py-3 text-[#332820]">
                             {getClientName(client)}
                           </td>
-                          <td className="px-4 py-3 text-[#6c5a4d]">
-                            {formatBoolean(client.contacted)}
+                          <td className={tableCellClass}>
+                            <Badge tone={client.contacted ? "success" : "muted"}>
+                              {formatBoolean(client.contacted)}
+                            </Badge>
                           </td>
-                          <td className="px-4 py-3 text-[#6c5a4d]">
-                            {formatBoolean(client.is_active)}
+                          <td className={tableCellClass}>
+                            <Badge tone={client.is_active ? "success" : "warning"}>
+                              {client.is_active ? "Service pris" : "Sans reponse"}
+                            </Badge>
                           </td>
-                          <td className="px-4 py-3 text-[#6c5a4d]">
+                          <td className={tableCellClass}>
                             {client.meeting_count ?? 0}
                           </td>
-                          <td className="px-4 py-3 text-[#6c5a4d]">
-                            {formatBoolean(client.dossier_closed)}
+                          <td className={tableCellClass}>
+                            <Badge tone={client.dossier_closed ? "neutral" : "muted"}>
+                              {formatBoolean(client.dossier_closed)}
+                            </Badge>
                           </td>
-                          <td className="px-4 py-3 text-[#6c5a4d]">
+                          <td className={tableCellClass}>
                             {formatText(client.short_comment)}
                           </td>
                         </tr>

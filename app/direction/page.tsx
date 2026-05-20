@@ -4,6 +4,18 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { AppNav } from '@/components/AppNav'
+import {
+  Badge,
+  EmptyState,
+  getAssignmentRequestStatus,
+  tableBodyClass,
+  tableCellClass,
+  tableClass,
+  tableHeadCellClass,
+  tableHeaderClass,
+  tableRowClass,
+  tableShellClass,
+} from '@/components/Ui'
 import { supabase } from '@/lib/supabaseClient'
 
 type Profile = {
@@ -334,49 +346,52 @@ export default function DirectionPage() {
             </div>
           </section>
 
-          <div className="mt-6 overflow-x-auto rounded-2xl border border-[#eadfd2] bg-[#fffdf9] shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
-            <table className="min-w-full divide-y divide-[#eadfd2] text-sm">
-              <thead className="bg-[#f6eee4]">
+          <div className={`mt-6 ${tableShellClass}`}>
+            <table className={tableClass}>
+              <thead className={tableHeaderClass}>
                 <tr>
-                  <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">Nom</th>
-                  <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">Email</th>
-                  <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">
+                  <th className={tableHeadCellClass}>Nom</th>
+                  <th className={tableHeadCellClass}>Email</th>
+                  <th className={tableHeadCellClass}>
                     Clients assignés total
                   </th>
-                  <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">
+                  <th className={tableHeadCellClass}>
                     Clients actifs
                   </th>
-                  <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">
+                  <th className={tableHeadCellClass}>
                     Sans réponse / service non pris
                   </th>
-                  <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">
-                    Demande active
+                  <th className={tableHeadCellClass}>
+                    Statut demande
                   </th>
-                  <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">
+                  <th className={tableHeadCellClass}>
                     Clients demandés
                   </th>
-                  <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">
+                  <th className={tableHeadCellClass}>
                     Clients assignés via demande
                   </th>
-                  <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">
+                  <th className={tableHeadCellClass}>
                     Clients restants
                   </th>
-                  <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">
+                  <th className={tableHeadCellClass}>
                     Commentaire
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#f0e5d9]">
+              <tbody className={tableBodyClass}>
                 {visibleRows.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="px-4 py-8 text-center text-[#8a6f5d]">
-                      Aucun professionnel trouvé.
+                    <td colSpan={10} className="px-4 py-8">
+                      <EmptyState
+                        title="Aucun professionnel trouve"
+                        description="Ajustez la recherche ou les filtres pour elargir la liste."
+                      />
                     </td>
                   </tr>
                 ) : (
                   visibleRows.map((row) => (
-                    <tr key={row.id} className="hover:bg-[#fbf6ef]">
-                      <td className="px-4 py-3 text-[#332820]">
+                    <tr key={row.id} className={tableRowClass}>
+                      <td className="px-4 py-3 align-top text-[#332820]">
                         <Link
                           href={`/professionnel/${row.id}`}
                           className="font-medium text-[#6d3f1f] underline decoration-[#d9b591] underline-offset-2 hover:decoration-[#9b6a3d]"
@@ -384,21 +399,45 @@ export default function DirectionPage() {
                           {row.fullName}
                         </Link>
                       </td>
-                      <td className="px-4 py-3 text-[#6c5a4d]">{row.email}</td>
-                      <td className="px-4 py-3 text-[#6c5a4d]">
+                      <td className={tableCellClass}>{row.email}</td>
+                      <td className={tableCellClass}>
                         {row.totalAssignedClients}
                       </td>
-                      <td className="px-4 py-3 text-[#6c5a4d]">{row.activeClients}</td>
-                      <td className="px-4 py-3 text-[#6c5a4d]">
-                        {row.noResponseClients}
+                      <td className={tableCellClass}>
+                        <Badge tone="success">{row.activeClients} actifs</Badge>
                       </td>
-                      <td className="px-4 py-3 text-[#6c5a4d]">
-                        {row.requestActive ? 'Oui' : 'Non'}
+                      <td className={tableCellClass}>
+                        <Badge tone={row.noResponseClients > 0 ? 'warning' : 'muted'}>
+                          {row.noResponseClients} sans reponse
+                        </Badge>
                       </td>
-                      <td className="px-4 py-3 text-[#6c5a4d]">{row.requestedCount}</td>
-                      <td className="px-4 py-3 text-[#6c5a4d]">{row.assignedCount}</td>
-                      <td className="px-4 py-3 text-[#6c5a4d]">{row.remainingCount}</td>
-                      <td className="px-4 py-3 text-[#6c5a4d]">{row.requestComment}</td>
+                      <td className={tableCellClass}>
+                        <Badge
+                          tone={
+                            getAssignmentRequestStatus({
+                              isActive: row.requestActive,
+                              remainingCount: row.remainingCount,
+                              requestedCount: row.requestedCount,
+                            }).tone
+                          }
+                        >
+                          {
+                            getAssignmentRequestStatus({
+                              isActive: row.requestActive,
+                              remainingCount: row.remainingCount,
+                              requestedCount: row.requestedCount,
+                            }).label
+                          }
+                        </Badge>
+                      </td>
+                      <td className={tableCellClass}>{row.requestedCount}</td>
+                      <td className={tableCellClass}>{row.assignedCount}</td>
+                      <td className={tableCellClass}>
+                        <Badge tone={row.remainingCount > 0 ? 'warning' : 'success'}>
+                          {row.remainingCount} restants
+                        </Badge>
+                      </td>
+                      <td className={tableCellClass}>{row.requestComment}</td>
                     </tr>
                   ))
                 )}

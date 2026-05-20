@@ -3,6 +3,19 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppNav } from '@/components/AppNav'
+import {
+  Badge,
+  EmptyState,
+  buttonClass,
+  getAssignmentRequestStatus,
+  tableBodyClass,
+  tableCellClass,
+  tableClass,
+  tableHeadCellClass,
+  tableHeaderClass,
+  tableRowClass,
+  tableShellClass,
+} from '@/components/Ui'
 import { supabase } from '@/lib/supabaseClient'
 
 type AssignedClient = {
@@ -394,7 +407,11 @@ export default function ProfessionnelPage() {
     }))
   }
 
-  const requestStatusText = requestActive ? 'demande active' : 'demande inactive'
+  const requestStatus = getAssignmentRequestStatus({
+    isActive: requestActive,
+    remainingCount,
+    requestedCount,
+  })
   const requestProgressText =
     assignedCount > 0 && remainingCount > 0
       ? 'Votre demande est partiellement répondue'
@@ -407,39 +424,39 @@ export default function ProfessionnelPage() {
   const noResponseClients = clients.filter((client) => !client.is_active)
 
   const renderClientsTable = (sectionClients: AssignedClient[], emptyMessage: string) => (
-    <div className="overflow-x-auto rounded-2xl border border-[#eadfd2] bg-[#fffdf9] shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
-      <table className="min-w-full text-sm text-[#332820]">
-        <thead className="bg-[#f6eee4] text-left text-[#5d4a3d]">
+    <div className={tableShellClass}>
+      <table className={tableClass}>
+        <thead className={tableHeaderClass}>
           <tr>
-            <th className="p-3">Prénom</th>
-            <th className="p-3">Nom</th>
-            <th className="p-3">Courriel</th>
-            <th className="p-3">Téléphone</th>
-            <th className="p-3">Requérant</th>
-            <th className="p-3">Date assignation</th>
-            <th className="p-3">Contact effectué (courriel / téléphone / SMS)</th>
-            <th className="p-3">Service pris</th>
-            <th className="p-3">Motif / commentaire</th>
-            <th className="p-3">Action</th>
+            <th className={tableHeadCellClass}>Prénom</th>
+            <th className={tableHeadCellClass}>Nom</th>
+            <th className={tableHeadCellClass}>Courriel</th>
+            <th className={tableHeadCellClass}>Téléphone</th>
+            <th className={tableHeadCellClass}>Requérant</th>
+            <th className={tableHeadCellClass}>Date assignation</th>
+            <th className={tableHeadCellClass}>Contact effectué</th>
+            <th className={tableHeadCellClass}>Service pris</th>
+            <th className={tableHeadCellClass}>Motif / commentaire</th>
+            <th className={tableHeadCellClass}>Action</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-[#f0e5d9] text-[#332820]">
+        <tbody className={tableBodyClass}>
           {sectionClients.length === 0 ? (
             <tr>
-              <td colSpan={10} className="p-6 text-center text-[#8a6f5d]">
-                {emptyMessage}
+              <td colSpan={10} className="p-6">
+                <EmptyState title={emptyMessage} />
               </td>
             </tr>
           ) : (
             sectionClients.map((client) => (
-              <tr key={client.id} className="hover:bg-[#fbf6ef]">
-                <td className="p-3">{client.first_name}</td>
-                <td className="p-3">{client.last_name}</td>
-                <td className="p-3">{client.email || '-'}</td>
-                <td className="p-3">{client.phone || '-'}</td>
-                <td className="p-3">{client.requester_name || '-'}</td>
-                <td className="p-3">{client.assigned_date}</td>
-                <td className="p-3">
+              <tr key={client.id} className={tableRowClass}>
+                <td className="px-4 py-4 align-top font-medium text-[#332820]">{client.first_name}</td>
+                <td className="px-4 py-4 align-top font-medium text-[#332820]">{client.last_name}</td>
+                <td className={tableCellClass}>{client.email || '-'}</td>
+                <td className={tableCellClass}>{client.phone || '-'}</td>
+                <td className={tableCellClass}>{client.requester_name || '-'}</td>
+                <td className={tableCellClass}>{client.assigned_date}</td>
+                <td className={tableCellClass}>
                   <input
                     type="checkbox"
                     checked={client.contacted}
@@ -449,7 +466,7 @@ export default function ProfessionnelPage() {
                     className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
                   />
                 </td>
-                <td className="p-3">
+                <td className={tableCellClass}>
                   <select
                     value={client.is_active ? 'yes' : 'no'}
                     onChange={(event) =>
@@ -465,9 +482,9 @@ export default function ProfessionnelPage() {
                     <option value="no">Non</option>
                   </select>
                 </td>
-                <td className="min-w-72 p-3">
+                <td className="min-w-72 px-4 py-4 align-top">
                   {client.is_active ? (
-                    <span className="text-sm text-[#8a6f5d]">Service pris</span>
+                    <Badge tone="success">Service pris</Badge>
                   ) : (
                     <div className="space-y-2">
                       <label className="block text-xs font-medium text-[#5d4a3d]">
@@ -505,12 +522,12 @@ export default function ProfessionnelPage() {
                     </div>
                   )}
                 </td>
-                <td className="min-w-40 p-3">
+                <td className="min-w-40 px-4 py-4 align-top">
                   <button
                     type="button"
                     onClick={() => handleSaveClient(client)}
                     disabled={savingClientIds[client.id]}
-                    className="rounded-xl bg-[#8a5633] px-3 py-2 text-sm font-medium text-white transition hover:bg-[#6d3f1f] disabled:cursor-not-allowed disabled:bg-[#c8b8a8]"
+                    className={buttonClass('primary')}
                   >
                     {savingClientIds[client.id] ? 'Sauvegarde...' : 'Sauvegarder'}
                   </button>
@@ -571,7 +588,10 @@ export default function ProfessionnelPage() {
                   Demande d&apos;assignation
                 </h2>
                 <p className="mt-1 text-sm text-[#7a6859]">
-                  Statut actuel: {requestStatusText}
+                  Statut actuel:{' '}
+                  <Badge tone={requestStatus.tone}>
+                    {requestStatus.label}
+                  </Badge>
                 </p>
               </div>
 
@@ -607,16 +627,20 @@ export default function ProfessionnelPage() {
               </div>
               <div className="rounded-2xl border border-[#eadfd2] bg-[#fbf6ef] p-4">
                 <p className="text-xs font-medium uppercase text-[#8a6f5d]">Statut</p>
-                <p className="mt-2 text-sm font-semibold text-[#332820]">
-                  {requestStatusText}
-                </p>
+                <div className="mt-2">
+                  <Badge tone={requestStatus.tone}>
+                    {requestStatus.label}
+                  </Badge>
+                </div>
               </div>
             </div>
 
             {requestProgressText && (
-              <p className="mt-3 rounded-2xl border border-[#ead2bd] bg-[#fbf1e7] p-3 text-sm font-medium text-[#6d3f1f]">
-                {requestProgressText}
-              </p>
+              <div className="mt-3">
+                <Badge tone={remainingCount > 0 ? 'warning' : 'success'}>
+                  {requestProgressText}
+                </Badge>
+              </div>
             )}
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
@@ -649,7 +673,7 @@ export default function ProfessionnelPage() {
                 type="button"
                 onClick={handleSaveRequest}
                 disabled={savingRequest}
-                className="rounded-xl bg-[#8a5633] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#6d3f1f] disabled:cursor-not-allowed disabled:bg-[#c8b8a8]"
+                className={buttonClass('primary')}
               >
                 {savingRequest ? 'Sauvegarde...' : 'Sauvegarder la demande'}
               </button>
@@ -726,7 +750,7 @@ export default function ProfessionnelPage() {
                 type="button"
                 onClick={handleSavePreferences}
                 disabled={savingPreferences}
-                className="rounded-xl bg-[#8a5633] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#6d3f1f] disabled:cursor-not-allowed disabled:bg-[#c8b8a8]"
+                className={buttonClass('secondary')}
               >
                 {savingPreferences ? 'Sauvegarde...' : 'Sauvegarder les préférences'}
               </button>
