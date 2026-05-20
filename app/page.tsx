@@ -37,8 +37,10 @@ export default function HomePage() {
   }, [])
 
   return (
-    <main className="min-h-screen flex items-center justify-center">
-      <p>Chargement...</p>
+    <main className="flex min-h-screen items-center justify-center px-4">
+      <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] px-6 py-4 text-sm text-[#7a6859] shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
+        Chargement...
+      </div>
     </main>
   )
 }

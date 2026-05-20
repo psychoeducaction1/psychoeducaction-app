@@ -407,9 +407,9 @@ export default function ProfessionnelPage() {
   const noResponseClients = clients.filter((client) => !client.is_active)
 
   const renderClientsTable = (sectionClients: AssignedClient[], emptyMessage: string) => (
-    <div className="overflow-x-auto bg-white rounded-2xl shadow">
-      <table className="min-w-full text-sm text-gray-900">
-        <thead className="bg-gray-200 text-left text-gray-950">
+    <div className="overflow-x-auto rounded-2xl border border-[#eadfd2] bg-[#fffdf9] shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
+      <table className="min-w-full text-sm text-[#332820]">
+        <thead className="bg-[#f6eee4] text-left text-[#5d4a3d]">
           <tr>
             <th className="p-3">Prénom</th>
             <th className="p-3">Nom</th>
@@ -423,16 +423,16 @@ export default function ProfessionnelPage() {
             <th className="p-3">Action</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-200 text-gray-900">
+        <tbody className="divide-y divide-[#f0e5d9] text-[#332820]">
           {sectionClients.length === 0 ? (
             <tr>
-              <td colSpan={10} className="p-4 text-center text-gray-600">
+              <td colSpan={10} className="p-6 text-center text-[#8a6f5d]">
                 {emptyMessage}
               </td>
             </tr>
           ) : (
             sectionClients.map((client) => (
-              <tr key={client.id} className="hover:bg-gray-50">
+              <tr key={client.id} className="hover:bg-[#fbf6ef]">
                 <td className="p-3">{client.first_name}</td>
                 <td className="p-3">{client.last_name}</td>
                 <td className="p-3">{client.email || '-'}</td>
@@ -446,7 +446,7 @@ export default function ProfessionnelPage() {
                     onChange={(event) =>
                       updateClientField(client.id, 'contacted', event.target.checked)
                     }
-                    className="h-4 w-4 rounded border-gray-400"
+                    className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
                   />
                 </td>
                 <td className="p-3">
@@ -459,7 +459,7 @@ export default function ProfessionnelPage() {
                         event.target.value === 'yes'
                       )
                     }
-                    className="w-24 rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-900"
+                    className="w-24 rounded-xl border border-[#dfd0bf] bg-white px-2 py-1 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                   >
                     <option value="yes">Oui</option>
                     <option value="no">Non</option>
@@ -467,10 +467,10 @@ export default function ProfessionnelPage() {
                 </td>
                 <td className="min-w-72 p-3">
                   {client.is_active ? (
-                    <span className="text-sm text-gray-500">Service pris</span>
+                    <span className="text-sm text-[#8a6f5d]">Service pris</span>
                   ) : (
                     <div className="space-y-2">
-                      <label className="block text-xs font-medium text-gray-700">
+                      <label className="block text-xs font-medium text-[#5d4a3d]">
                         Motif de non-prise de service
                         <select
                           value={client.closure_reason ?? ''}
@@ -481,7 +481,7 @@ export default function ProfessionnelPage() {
                               event.target.value
                             )
                           }
-                          className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-900"
+                          className="mt-1 w-full rounded-xl border border-[#dfd0bf] bg-white px-2 py-1 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                         >
                           {closureReasonOptions.map((option) => (
                             <option key={option || 'empty-reason'} value={option}>
@@ -491,7 +491,7 @@ export default function ProfessionnelPage() {
                         </select>
                       </label>
 
-                      <label className="block text-xs font-medium text-gray-700">
+                      <label className="block text-xs font-medium text-[#5d4a3d]">
                         Commentaire
                         <textarea
                           value={client.short_comment ?? ''}
@@ -499,7 +499,7 @@ export default function ProfessionnelPage() {
                             updateClientField(client.id, 'short_comment', event.target.value)
                           }
                           rows={2}
-                          className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-900"
+                          className="mt-1 w-full rounded-xl border border-[#dfd0bf] bg-white px-2 py-1 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                         />
                       </label>
                     </div>
@@ -510,7 +510,7 @@ export default function ProfessionnelPage() {
                     type="button"
                     onClick={() => handleSaveClient(client)}
                     disabled={savingClientIds[client.id]}
-                    className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+                    className="rounded-xl bg-[#8a5633] px-3 py-2 text-sm font-medium text-white transition hover:bg-[#6d3f1f] disabled:cursor-not-allowed disabled:bg-[#c8b8a8]"
                   >
                     {savingClientIds[client.id] ? 'Sauvegarde...' : 'Sauvegarder'}
                   </button>
@@ -538,94 +538,107 @@ export default function ProfessionnelPage() {
   return (
     <>
       <AppNav />
-      <main className="min-h-screen bg-gray-50 p-6">
-        <div className="max-w-7xl mx-auto">
-          <h1 className="text-2xl font-semibold mb-6">Mes clients assignés</h1>
+      <main className="min-h-screen px-4 py-8 sm:px-6 lg:ml-72 lg:px-10">
+        <div className="mx-auto max-w-7xl">
+          <div className="mb-8">
+            <p className="text-sm font-medium text-[#9b6a3d]">Espace professionnel</p>
+            <h1 className="mt-1 text-3xl font-semibold text-[#332820]">
+              Mes clients assignés
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#7a6859]">
+              Suivi des demandes, preferences d&apos;assignation et accompagnements
+              en cours.
+            </p>
+          </div>
 
-        {loading && <p>Chargement...</p>}
+        {loading && (
+          <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 text-sm text-[#7a6859]">
+            Chargement...
+          </div>
+        )}
 
         {error && (
-          <div className="mb-4 rounded-lg bg-red-100 text-red-700 p-3">
+          <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
             {error}
           </div>
         )}
 
         {!loading && !error && (
-          <section className="mb-6 rounded-lg bg-white p-6 shadow">
+          <section className="mb-6 rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-6 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
               <div>
-                <h2 className="text-lg font-semibold text-gray-900">
+                <h2 className="text-lg font-semibold text-[#332820]">
                   Demande d&apos;assignation
                 </h2>
-                <p className="mt-1 text-sm text-gray-600">
+                <p className="mt-1 text-sm text-[#7a6859]">
                   Statut actuel: {requestStatusText}
                 </p>
               </div>
 
-              <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+              <label className="flex items-center gap-2 text-sm font-medium text-[#5d4a3d]">
                 <input
                   type="checkbox"
                   checked={requestActive}
                   onChange={(event) => setRequestActive(event.target.checked)}
-                  className="h-4 w-4 rounded border-gray-300"
+                  className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
                 />
                 Demande active
               </label>
             </div>
 
             <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-                <p className="text-xs font-medium uppercase text-gray-600">Demandés</p>
-                <p className="mt-1 text-2xl font-semibold text-gray-950">
+              <div className="rounded-2xl border border-[#eadfd2] bg-[#fbf6ef] p-4">
+                <p className="text-xs font-medium uppercase text-[#8a6f5d]">Demandés</p>
+                <p className="mt-1 text-2xl font-semibold text-[#332820]">
                   {requestedCount}
                 </p>
               </div>
-              <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-                <p className="text-xs font-medium uppercase text-gray-600">Assignés</p>
-                <p className="mt-1 text-2xl font-semibold text-gray-950">
+              <div className="rounded-2xl border border-[#eadfd2] bg-[#fbf6ef] p-4">
+                <p className="text-xs font-medium uppercase text-[#8a6f5d]">Assignés</p>
+                <p className="mt-1 text-2xl font-semibold text-[#332820]">
                   {assignedCount}
                 </p>
               </div>
-              <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-                <p className="text-xs font-medium uppercase text-gray-600">Restants</p>
-                <p className="mt-1 text-2xl font-semibold text-gray-950">
+              <div className="rounded-2xl border border-[#eadfd2] bg-[#fbf6ef] p-4">
+                <p className="text-xs font-medium uppercase text-[#8a6f5d]">Restants</p>
+                <p className="mt-1 text-2xl font-semibold text-[#332820]">
                   {remainingCount}
                 </p>
               </div>
-              <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-                <p className="text-xs font-medium uppercase text-gray-600">Statut</p>
-                <p className="mt-2 text-sm font-semibold text-gray-950">
+              <div className="rounded-2xl border border-[#eadfd2] bg-[#fbf6ef] p-4">
+                <p className="text-xs font-medium uppercase text-[#8a6f5d]">Statut</p>
+                <p className="mt-2 text-sm font-semibold text-[#332820]">
                   {requestStatusText}
                 </p>
               </div>
             </div>
 
             {requestProgressText && (
-              <p className="mt-3 rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm font-medium text-blue-900">
+              <p className="mt-3 rounded-2xl border border-[#ead2bd] bg-[#fbf1e7] p-3 text-sm font-medium text-[#6d3f1f]">
                 {requestProgressText}
               </p>
             )}
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <label className="block text-sm font-medium text-gray-700">
+              <label className="block text-sm font-medium text-[#5d4a3d]">
                 Nombre de nouveaux clients souhaités
                 <input
                   type="number"
                   min={0}
                   value={requestedCount}
                   onChange={(event) => setRequestedCount(Number(event.target.value))}
-                  className="mt-1 w-full rounded-lg border border-gray-300 p-3 text-sm"
+                  className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white p-3 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                 />
               </label>
 
-              <label className="block text-sm font-medium text-gray-700">
+              <label className="block text-sm font-medium text-[#5d4a3d]">
                 Commentaire
                 <textarea
                   value={requestComment}
                   onChange={(event) => setRequestComment(event.target.value)}
                   maxLength={300}
                   rows={3}
-                  className="mt-1 w-full rounded-lg border border-gray-300 p-3 text-sm"
+                  className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white p-3 text-sm text-[#332820] outline-none placeholder:text-[#a89686] focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                   placeholder="Court commentaire pour la direction"
                 />
               </label>
@@ -636,7 +649,7 @@ export default function ProfessionnelPage() {
                 type="button"
                 onClick={handleSaveRequest}
                 disabled={savingRequest}
-                className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+                className="rounded-xl bg-[#8a5633] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#6d3f1f] disabled:cursor-not-allowed disabled:bg-[#c8b8a8]"
               >
                 {savingRequest ? 'Sauvegarde...' : 'Sauvegarder la demande'}
               </button>
@@ -653,13 +666,13 @@ export default function ProfessionnelPage() {
         )}
 
         {!loading && !error && (
-          <section className="mb-6 rounded-lg bg-white p-6 shadow">
-            <h2 className="text-lg font-semibold text-gray-900">
+          <section className="mb-6 rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-6 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
+            <h2 className="text-lg font-semibold text-[#332820]">
               Mes préférences d&apos;assignation
             </h2>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <label className="block text-sm font-medium text-gray-700">
+              <label className="block text-sm font-medium text-[#5d4a3d]">
                 Clientèles souhaitées
                 <textarea
                   value={preferences.pref_client_types ?? ''}
@@ -667,11 +680,11 @@ export default function ProfessionnelPage() {
                     updatePreferenceField('pref_client_types', event.target.value)
                   }
                   rows={3}
-                  className="mt-1 w-full rounded-lg border border-gray-300 p-3 text-sm"
+                  className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white p-3 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                 />
               </label>
 
-              <label className="block text-sm font-medium text-gray-700">
+              <label className="block text-sm font-medium text-[#5d4a3d]">
                 Modalités souhaitées
                 <textarea
                   value={preferences.pref_modalities ?? ''}
@@ -679,11 +692,11 @@ export default function ProfessionnelPage() {
                     updatePreferenceField('pref_modalities', event.target.value)
                   }
                   rows={3}
-                  className="mt-1 w-full rounded-lg border border-gray-300 p-3 text-sm"
+                  className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white p-3 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                 />
               </label>
 
-              <label className="block text-sm font-medium text-gray-700">
+              <label className="block text-sm font-medium text-[#5d4a3d]">
                 Types de suivis souhaités
                 <textarea
                   value={preferences.pref_followup_types ?? ''}
@@ -691,11 +704,11 @@ export default function ProfessionnelPage() {
                     updatePreferenceField('pref_followup_types', event.target.value)
                   }
                   rows={3}
-                  className="mt-1 w-full rounded-lg border border-gray-300 p-3 text-sm"
+                  className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white p-3 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                 />
               </label>
 
-              <label className="block text-sm font-medium text-gray-700">
+              <label className="block text-sm font-medium text-[#5d4a3d]">
                 Notes / précisions
                 <textarea
                   value={preferences.pref_notes ?? ''}
@@ -703,7 +716,7 @@ export default function ProfessionnelPage() {
                     updatePreferenceField('pref_notes', event.target.value)
                   }
                   rows={3}
-                  className="mt-1 w-full rounded-lg border border-gray-300 p-3 text-sm"
+                  className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white p-3 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                 />
               </label>
             </div>
@@ -713,7 +726,7 @@ export default function ProfessionnelPage() {
                 type="button"
                 onClick={handleSavePreferences}
                 disabled={savingPreferences}
-                className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+                className="rounded-xl bg-[#8a5633] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#6d3f1f] disabled:cursor-not-allowed disabled:bg-[#c8b8a8]"
               >
                 {savingPreferences ? 'Sauvegarde...' : 'Sauvegarder les préférences'}
               </button>
@@ -734,12 +747,12 @@ export default function ProfessionnelPage() {
         {!loading && !error && (
           <div className="space-y-8">
             <section>
-              <h2 className="mb-3 text-lg font-semibold text-gray-900">Clients actifs</h2>
+              <h2 className="mb-3 text-lg font-semibold text-[#332820]">Clients actifs</h2>
               {renderClientsTable(activeClients, 'Aucun client actif.')}
             </section>
 
             <section>
-              <h2 className="mb-3 text-lg font-semibold text-gray-900">
+              <h2 className="mb-3 text-lg font-semibold text-[#332820]">
                 Clients sans réponse / service non pris
               </h2>
               {renderClientsTable(

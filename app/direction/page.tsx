@@ -248,45 +248,51 @@ export default function DirectionPage() {
   return (
     <>
       <AppNav />
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        <h1 className="text-2xl font-semibold text-slate-900">Dashboard Direction</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          Vue simple des professionnels et de leurs demandes d&apos;assignation.
-        </p>
+      <main className="min-h-screen px-4 py-8 sm:px-6 lg:ml-72 lg:px-10">
+        <div className="mx-auto max-w-7xl">
+        <div className="mb-8">
+          <p className="text-sm font-medium text-[#9b6a3d]">Direction</p>
+          <h1 className="mt-1 text-3xl font-semibold text-[#332820]">
+            Dashboard Direction
+          </h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#7a6859]">
+            Vue claire des professionnels et de leurs demandes d&apos;assignation.
+          </p>
+        </div>
 
       {loading && (
-        <div className="mt-6 rounded-md border border-slate-200 bg-white p-4 text-sm text-slate-600">
+        <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 text-sm text-[#7a6859]">
           Chargement des données...
         </div>
       )}
 
       {!loading && error && (
-        <div className="mt-6 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
           Erreur: {error}
         </div>
       )}
 
       {!loading && !error && (
         <>
-          <section className="mt-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <section className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
             <div className="grid gap-4 lg:grid-cols-3">
-              <label className="block text-sm font-medium text-slate-700 lg:col-span-2">
+              <label className="block text-sm font-medium text-[#5d4a3d] lg:col-span-2">
                 Recherche
                 <input
                   type="search"
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
                   placeholder="Nom, email, clientèles, modalités, notes"
-                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                  className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none transition placeholder:text-[#a89686] focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                 />
               </label>
 
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-[#5d4a3d]">
                 Tri
                 <select
                   value={sortOption}
                   onChange={(event) => setSortOption(event.target.value as SortOption)}
-                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                  className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none transition focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                 >
                   <option value="remaining_desc">Plus de places restantes</option>
                   <option value="active_asc">Moins de clients actifs</option>
@@ -295,13 +301,13 @@ export default function DirectionPage() {
               </label>
             </div>
 
-            <div className="mt-4 flex flex-col gap-3 text-sm text-slate-700 sm:flex-row sm:flex-wrap">
+            <div className="mt-4 flex flex-col gap-3 text-sm text-[#6c5a4d] sm:flex-row sm:flex-wrap">
               <label className="flex items-center gap-2">
                 <input
                   type="checkbox"
                   checked={activeRequestsOnly}
                   onChange={(event) => setActiveRequestsOnly(event.target.checked)}
-                  className="h-4 w-4 rounded border-slate-300"
+                  className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
                 />
                 Demande active uniquement
               </label>
@@ -311,7 +317,7 @@ export default function DirectionPage() {
                   type="checkbox"
                   checked={hasRemainingOnly}
                   onChange={(event) => setHasRemainingOnly(event.target.checked)}
-                  className="h-4 w-4 rounded border-slate-300"
+                  className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
                 />
                 A encore des places
               </label>
@@ -321,78 +327,78 @@ export default function DirectionPage() {
                   type="checkbox"
                   checked={noRemainingOnly}
                   onChange={(event) => setNoRemainingOnly(event.target.checked)}
-                  className="h-4 w-4 rounded border-slate-300"
+                  className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
                 />
                 Aucun restant
               </label>
             </div>
           </section>
 
-          <div className="mt-6 overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
-              <thead className="bg-slate-50">
+          <div className="mt-6 overflow-x-auto rounded-2xl border border-[#eadfd2] bg-[#fffdf9] shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
+            <table className="min-w-full divide-y divide-[#eadfd2] text-sm">
+              <thead className="bg-[#f6eee4]">
                 <tr>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Nom</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Email</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                  <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">Nom</th>
+                  <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">Email</th>
+                  <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">
                     Clients assignés total
                   </th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                  <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">
                     Clients actifs
                   </th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                  <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">
                     Sans réponse / service non pris
                   </th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                  <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">
                     Demande active
                   </th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                  <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">
                     Clients demandés
                   </th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                  <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">
                     Clients assignés via demande
                   </th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                  <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">
                     Clients restants
                   </th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                  <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">
                     Commentaire
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-[#f0e5d9]">
                 {visibleRows.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="px-4 py-6 text-center text-slate-500">
+                    <td colSpan={10} className="px-4 py-8 text-center text-[#8a6f5d]">
                       Aucun professionnel trouvé.
                     </td>
                   </tr>
                 ) : (
                   visibleRows.map((row) => (
-                    <tr key={row.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-3 text-slate-900">
+                    <tr key={row.id} className="hover:bg-[#fbf6ef]">
+                      <td className="px-4 py-3 text-[#332820]">
                         <Link
                           href={`/professionnel/${row.id}`}
-                          className="font-medium text-slate-900 underline decoration-slate-300 underline-offset-2 hover:decoration-slate-500"
+                          className="font-medium text-[#6d3f1f] underline decoration-[#d9b591] underline-offset-2 hover:decoration-[#9b6a3d]"
                         >
                           {row.fullName}
                         </Link>
                       </td>
-                      <td className="px-4 py-3 text-slate-700">{row.email}</td>
-                      <td className="px-4 py-3 text-slate-700">
+                      <td className="px-4 py-3 text-[#6c5a4d]">{row.email}</td>
+                      <td className="px-4 py-3 text-[#6c5a4d]">
                         {row.totalAssignedClients}
                       </td>
-                      <td className="px-4 py-3 text-slate-700">{row.activeClients}</td>
-                      <td className="px-4 py-3 text-slate-700">
+                      <td className="px-4 py-3 text-[#6c5a4d]">{row.activeClients}</td>
+                      <td className="px-4 py-3 text-[#6c5a4d]">
                         {row.noResponseClients}
                       </td>
-                      <td className="px-4 py-3 text-slate-700">
+                      <td className="px-4 py-3 text-[#6c5a4d]">
                         {row.requestActive ? 'Oui' : 'Non'}
                       </td>
-                      <td className="px-4 py-3 text-slate-700">{row.requestedCount}</td>
-                      <td className="px-4 py-3 text-slate-700">{row.assignedCount}</td>
-                      <td className="px-4 py-3 text-slate-700">{row.remainingCount}</td>
-                      <td className="px-4 py-3 text-slate-700">{row.requestComment}</td>
+                      <td className="px-4 py-3 text-[#6c5a4d]">{row.requestedCount}</td>
+                      <td className="px-4 py-3 text-[#6c5a4d]">{row.assignedCount}</td>
+                      <td className="px-4 py-3 text-[#6c5a4d]">{row.remainingCount}</td>
+                      <td className="px-4 py-3 text-[#6c5a4d]">{row.requestComment}</td>
                     </tr>
                   ))
                 )}
@@ -401,6 +407,7 @@ export default function DirectionPage() {
           </div>
         </>
       )}
+        </div>
       </main>
     </>
   )

@@ -328,144 +328,147 @@ export default function ProfessionnelDetailPage() {
   return (
     <>
       <AppNav />
-      <main className="min-h-screen bg-gray-50 px-4 py-8 sm:px-6 lg:px-8">
+      <main className="min-h-screen px-4 py-8 sm:px-6 lg:ml-72 lg:px-10">
         <div className="mx-auto max-w-7xl">
-          <div>
-            <p className="text-sm font-medium text-gray-500">Profil operationnel</p>
-            <h1 className="mt-1 text-2xl font-semibold text-gray-900">
+          <div className="mb-8">
+            <p className="text-sm font-medium text-[#9b6a3d]">Profil operationnel</p>
+            <h1 className="mt-1 text-3xl font-semibold text-[#332820]">
               {professionalName}
             </h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#7a6859]">
+              Vue de consultation et d&apos;assignation pour la direction.
+            </p>
           </div>
 
         {loading && (
-          <div className="mt-6 rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-600 shadow-sm">
+          <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 text-sm text-[#7a6859]">
             Chargement des donnees...
           </div>
         )}
 
         {!loading && error && (
-          <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-6 text-sm text-red-700">
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
             Erreur: {error}
           </div>
         )}
 
         {!loading && !error && profile && (
-          <div className="mt-6 space-y-6">
-            <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-gray-900">
+          <div className="space-y-6">
+            <section className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-6 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
+              <h2 className="text-lg font-semibold text-[#332820]">
                 Informations du professionnel
               </h2>
               <dl className="mt-4 grid gap-4 sm:grid-cols-2">
                 <div>
-                  <dt className="text-sm font-medium text-gray-500">Nom complet</dt>
-                  <dd className="mt-1 text-sm text-gray-900">
+                  <dt className="text-sm font-medium text-[#8a6f5d]">Nom complet</dt>
+                  <dd className="mt-1 text-sm text-[#332820]">
                     {formatText(profile.full_name)}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-sm font-medium text-gray-500">Email</dt>
-                  <dd className="mt-1 text-sm text-gray-900">
+                  <dt className="text-sm font-medium text-[#8a6f5d]">Email</dt>
+                  <dd className="mt-1 text-sm text-[#332820]">
                     {formatText(profile.email)}
                   </dd>
                 </div>
               </dl>
             </section>
 
-            <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-gray-900">
+            <section className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-6 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
+              <h2 className="text-lg font-semibold text-[#332820]">
                 Préférences d&apos;assignation
               </h2>
               <dl className="mt-4 grid gap-4 md:grid-cols-2">
                 <div>
-                  <dt className="text-sm font-medium text-gray-500">
+                  <dt className="text-sm font-medium text-[#8a6f5d]">
                     Clientèles souhaitées
                   </dt>
-                  <dd className="mt-1 whitespace-pre-wrap text-sm text-gray-900">
+                  <dd className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">
                     {formatText(profile.pref_client_types)}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-sm font-medium text-gray-500">
+                  <dt className="text-sm font-medium text-[#8a6f5d]">
                     Modalités souhaitées
                   </dt>
-                  <dd className="mt-1 whitespace-pre-wrap text-sm text-gray-900">
+                  <dd className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">
                     {formatText(profile.pref_modalities)}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-sm font-medium text-gray-500">
+                  <dt className="text-sm font-medium text-[#8a6f5d]">
                     Types de suivis souhaités
                   </dt>
-                  <dd className="mt-1 whitespace-pre-wrap text-sm text-gray-900">
+                  <dd className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">
                     {formatText(profile.pref_followup_types)}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-sm font-medium text-gray-500">
+                  <dt className="text-sm font-medium text-[#8a6f5d]">
                     Notes / précisions
                   </dt>
-                  <dd className="mt-1 whitespace-pre-wrap text-sm text-gray-900">
+                  <dd className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">
                     {formatText(profile.pref_notes)}
                   </dd>
                 </div>
               </dl>
             </section>
 
-            <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-gray-900">
+            <section className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-6 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
+              <h2 className="text-lg font-semibold text-[#332820]">
                 Demande actuelle
               </h2>
 
               {assignmentRequest ? (
                 <dl className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                   <div>
-                    <dt className="text-sm font-medium text-gray-500">Active</dt>
-                    <dd className="mt-1 text-sm text-gray-900">
+                    <dt className="text-sm font-medium text-[#8a6f5d]">Active</dt>
+                    <dd className="mt-1 text-sm text-[#332820]">
                       {formatBoolean(assignmentRequest.is_active)}
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-sm font-medium text-gray-500">Demandes</dt>
-                    <dd className="mt-1 text-sm text-gray-900">
+                    <dt className="text-sm font-medium text-[#8a6f5d]">Demandes</dt>
+                    <dd className="mt-1 text-sm text-[#332820]">
                       {assignmentRequest.requested_count ?? 0}
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-sm font-medium text-gray-500">Assignes</dt>
-                    <dd className="mt-1 text-sm text-gray-900">
+                    <dt className="text-sm font-medium text-[#8a6f5d]">Assignes</dt>
+                    <dd className="mt-1 text-sm text-[#332820]">
                       {assignmentRequest.assigned_count ?? 0}
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-sm font-medium text-gray-500">Restants</dt>
-                    <dd className="mt-1 text-sm text-gray-900">
+                    <dt className="text-sm font-medium text-[#8a6f5d]">Restants</dt>
+                    <dd className="mt-1 text-sm text-[#332820]">
                       {assignmentRequest.remaining_count ?? 0}
                     </dd>
                   </div>
                   <div className="sm:col-span-2 lg:col-span-1">
-                    <dt className="text-sm font-medium text-gray-500">
+                    <dt className="text-sm font-medium text-[#8a6f5d]">
                       Commentaire
                     </dt>
-                    <dd className="mt-1 text-sm text-gray-900">
+                    <dd className="mt-1 text-sm text-[#332820]">
                       {formatText(assignmentRequest.request_comment)}
                     </dd>
                   </div>
                 </dl>
               ) : (
-                <p className="mt-4 text-sm text-gray-600">
+                <p className="mt-4 text-sm text-[#7a6859]">
                   Aucune demande actuelle pour ce professionnel.
                 </p>
               )}
             </section>
 
-            <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-gray-900">
+            <section className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-6 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
+              <h2 className="text-lg font-semibold text-[#332820]">
                 Nouvelle assignation
               </h2>
 
               <form onSubmit={handleAssignClient} className="mt-4 space-y-4">
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label className="block text-sm font-medium text-[#5d4a3d]">
                     Prenom
                     <input
                       type="text"
@@ -473,12 +476,12 @@ export default function ProfessionnelDetailPage() {
                       onChange={(event) =>
                         handleClientFormChange("first_name", event.target.value)
                       }
-                      className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-gray-500 focus:outline-none"
+                      className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                       required
                     />
                   </label>
 
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label className="block text-sm font-medium text-[#5d4a3d]">
                     Nom
                     <input
                       type="text"
@@ -486,12 +489,12 @@ export default function ProfessionnelDetailPage() {
                       onChange={(event) =>
                         handleClientFormChange("last_name", event.target.value)
                       }
-                      className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-gray-500 focus:outline-none"
+                      className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                       required
                     />
                   </label>
 
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label className="block text-sm font-medium text-[#5d4a3d]">
                     Email
                     <input
                       type="email"
@@ -499,11 +502,11 @@ export default function ProfessionnelDetailPage() {
                       onChange={(event) =>
                         handleClientFormChange("email", event.target.value)
                       }
-                      className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-gray-500 focus:outline-none"
+                      className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                     />
                   </label>
 
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label className="block text-sm font-medium text-[#5d4a3d]">
                     Telephone
                     <input
                       type="tel"
@@ -511,11 +514,11 @@ export default function ProfessionnelDetailPage() {
                       onChange={(event) =>
                         handleClientFormChange("phone", event.target.value)
                       }
-                      className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-gray-500 focus:outline-none"
+                      className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                     />
                   </label>
 
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label className="block text-sm font-medium text-[#5d4a3d]">
                     Requerant
                     <input
                       type="text"
@@ -526,11 +529,11 @@ export default function ProfessionnelDetailPage() {
                           event.target.value,
                         )
                       }
-                      className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-gray-500 focus:outline-none"
+                      className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                     />
                   </label>
 
-                  <label className="block text-sm font-medium text-gray-700 sm:col-span-2 lg:col-span-3">
+                  <label className="block text-sm font-medium text-[#5d4a3d] sm:col-span-2 lg:col-span-3">
                     Commentaire court
                     <textarea
                       value={clientForm.short_comment}
@@ -541,7 +544,7 @@ export default function ProfessionnelDetailPage() {
                         )
                       }
                       rows={3}
-                      className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-gray-500 focus:outline-none"
+                      className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                     />
                   </label>
                 </div>
@@ -550,7 +553,7 @@ export default function ProfessionnelDetailPage() {
                   <button
                     type="submit"
                     disabled={savingClient}
-                    className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+                    className="rounded-xl bg-[#8a5633] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#6d3f1f] disabled:cursor-not-allowed disabled:bg-[#c8b8a8]"
                   >
                     {savingClient ? "Assignation..." : "Assigner le client"}
                   </button>
@@ -570,61 +573,61 @@ export default function ProfessionnelDetailPage() {
               </form>
             </section>
 
-            <section className="rounded-lg border border-gray-200 bg-white shadow-sm">
-              <div className="border-b border-gray-200 px-6 py-4">
-                <h2 className="text-lg font-semibold text-gray-900">
+            <section className="overflow-hidden rounded-2xl border border-[#eadfd2] bg-[#fffdf9] shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
+              <div className="border-b border-[#eadfd2] px-6 py-4">
+                <h2 className="text-lg font-semibold text-[#332820]">
                   Clients assignes
                 </h2>
               </div>
 
               {assignedClients.length === 0 ? (
-                <p className="px-6 py-5 text-sm text-gray-600">
+                <p className="px-6 py-5 text-sm text-[#7a6859]">
                   Aucun client assigne pour ce professionnel.
                 </p>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200 text-sm">
-                    <thead className="bg-gray-50">
+                  <table className="min-w-full divide-y divide-[#eadfd2] text-sm">
+                    <thead className="bg-[#f6eee4]">
                       <tr>
-                        <th className="px-4 py-3 text-left font-semibold text-gray-700">
+                        <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">
                           Client
                         </th>
-                        <th className="px-4 py-3 text-left font-semibold text-gray-700">
+                        <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">
                           Contacte
                         </th>
-                        <th className="px-4 py-3 text-left font-semibold text-gray-700">
+                        <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">
                           Actif
                         </th>
-                        <th className="px-4 py-3 text-left font-semibold text-gray-700">
+                        <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">
                           Rencontres
                         </th>
-                        <th className="px-4 py-3 text-left font-semibold text-gray-700">
+                        <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">
                           Dossier ferme
                         </th>
-                        <th className="px-4 py-3 text-left font-semibold text-gray-700">
+                        <th className="px-4 py-3 text-left font-semibold text-[#5d4a3d]">
                           Commentaire
                         </th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100">
+                    <tbody className="divide-y divide-[#f0e5d9]">
                       {assignedClients.map((client) => (
-                        <tr key={client.id} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 text-gray-900">
+                        <tr key={client.id} className="hover:bg-[#fbf6ef]">
+                          <td className="px-4 py-3 text-[#332820]">
                             {getClientName(client)}
                           </td>
-                          <td className="px-4 py-3 text-gray-700">
+                          <td className="px-4 py-3 text-[#6c5a4d]">
                             {formatBoolean(client.contacted)}
                           </td>
-                          <td className="px-4 py-3 text-gray-700">
+                          <td className="px-4 py-3 text-[#6c5a4d]">
                             {formatBoolean(client.is_active)}
                           </td>
-                          <td className="px-4 py-3 text-gray-700">
+                          <td className="px-4 py-3 text-[#6c5a4d]">
                             {client.meeting_count ?? 0}
                           </td>
-                          <td className="px-4 py-3 text-gray-700">
+                          <td className="px-4 py-3 text-[#6c5a4d]">
                             {formatBoolean(client.dossier_closed)}
                           </td>
-                          <td className="px-4 py-3 text-gray-700">
+                          <td className="px-4 py-3 text-[#6c5a4d]">
                             {formatText(client.short_comment)}
                           </td>
                         </tr>

@@ -22,9 +22,17 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow">
-        <h1 className="text-2xl font-semibold mb-6 text-center">Connexion</h1>
+    <main className="flex min-h-screen items-center justify-center px-4 py-10">
+      <div className="w-full max-w-md rounded-3xl border border-[#eadfd2] bg-[#fffdf9] p-8 shadow-[0_12px_40px_rgba(72,49,30,0.08)]">
+        <div className="mb-8 text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#8a5633] text-sm font-semibold text-white">
+            PA
+          </div>
+          <h1 className="text-2xl font-semibold text-[#332820]">Connexion</h1>
+          <p className="mt-2 text-sm text-[#7a6859]">
+            Assignations PsychoEducAction
+          </p>
+        </div>
 
         <div className="space-y-4">
           <input
@@ -32,7 +40,7 @@ export default function LoginPage() {
             placeholder="Courriel"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full border rounded-lg p-3"
+            className="w-full rounded-xl border border-[#dfd0bf] bg-white p-3 text-sm text-[#332820] outline-none transition placeholder:text-[#a89686] focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
           />
 
           <input
@@ -40,12 +48,12 @@ export default function LoginPage() {
             placeholder="Mot de passe"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full border rounded-lg p-3"
+            className="w-full rounded-xl border border-[#dfd0bf] bg-white p-3 text-sm text-[#332820] outline-none transition placeholder:text-[#a89686] focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
           />
 
           <button
             onClick={handleLogin}
-            className="w-full bg-green-600 text-white rounded-lg p-3 hover:bg-green-700"
+            className="w-full rounded-xl bg-[#8a5633] p-3 text-sm font-medium text-white transition hover:bg-[#6d3f1f]"
           >
             Se connecter
           </button>
