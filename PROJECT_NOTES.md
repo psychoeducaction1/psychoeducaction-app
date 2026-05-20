@@ -33,7 +33,7 @@ Plateforme interne de gestion des demandes d'assignation et de suivi des clients
 ## Workflow actuel
 
 1. Le professionnel fait une demande d'assignation.
-2. La direction voit les demandes.
+2. La direction voit les demandes dans un dashboard avec recherche, filtres et tri.
 3. La direction assigne un client.
 4. Le professionnel voit ses clients.
 5. Le professionnel indique :
@@ -41,7 +41,27 @@ Plateforme interne de gestion des demandes d'assignation et de suivi des clients
    - service pris oui/non;
    - motif si non;
    - commentaire.
-6. La direction voit les statistiques.
+6. Le professionnel peut voir et modifier ses preferences d'assignation :
+   - clienteles souhaitees;
+   - modalites souhaitees;
+   - types de suivis souhaites;
+   - notes / precisions.
+7. La direction voit les statistiques et les preferences d'assignation.
+8. Une demande peut avoir les statuts visuels suivants :
+   - demande inactive;
+   - demande en cours;
+   - demande completee.
+9. Une demande completee reste visible et n'est pas supprimee automatiquement.
+
+## Interface actuelle
+
+- Design global clinique moderne, doux et professionnel.
+- Navigation laterale sur desktop et navigation compacte sur mobile.
+- Navigation conditionnelle selon le role connecte :
+  - `direction` voit seulement le dashboard direction;
+  - `professionnel` voit seulement l'espace professionnel.
+- Tableaux modernises avec badges, etats vides, meilleur espacement et scroll horizontal.
+- Couleurs inspirees du branding PsychoEducAction : brun chaud, cuivre, beige pale et gris chauds.
 
 ## Securite actuelle
 

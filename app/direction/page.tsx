@@ -7,14 +7,8 @@ import { AppNav } from '@/components/AppNav'
 import {
   Badge,
   EmptyState,
+  buttonClass,
   getAssignmentRequestStatus,
-  tableBodyClass,
-  tableCellClass,
-  tableClass,
-  tableHeadCellClass,
-  tableHeaderClass,
-  tableRowClass,
-  tableShellClass,
 } from '@/components/Ui'
 import { supabase } from '@/lib/supabaseClient'
 
@@ -22,10 +16,6 @@ type Profile = {
   id: string
   full_name: string | null
   email: string | null
-  pref_client_types: string[] | null
-  pref_modalities: string[] | null
-  pref_followup_types: string[] | null
-  pref_notes: string | null
 }
 
 type AssignedClient = {
@@ -52,10 +42,6 @@ type DirectionRow = {
   id: string
   fullName: string
   email: string
-  clientTypes: string
-  modalities: string
-  followupTypes: string
-  notes: string
   totalAssignedClients: number
   activeClients: number
   noResponseClients: number
@@ -66,10 +52,45 @@ type DirectionRow = {
   requestComment: string
 }
 
-type SortOption = 'remaining_desc' | 'active_asc' | 'name_asc'
+function StatCard({
+  label,
+  value,
+  tone = 'neutral',
+}: {
+  label: string
+  value: number
+  tone?: 'neutral' | 'warm' | 'success'
+}) {
+  const toneClass =
+    tone === 'success'
+      ? 'bg-[#f1ead9] text-[#5f5932]'
+      : tone === 'warm'
+        ? 'bg-[#fbf1e7] text-[#8a5633]'
+        : 'bg-[#fbf6ef] text-[#332820]'
 
-function arrayToText(value: string[] | null): string {
-  return value?.join(', ') ?? ''
+  return (
+    <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
+      <p className="text-sm font-medium text-[#8a6f5d]">{label}</p>
+      <p className={`mt-4 inline-flex rounded-2xl px-3 py-2 text-3xl font-semibold ${toneClass}`}>
+        {value}
+      </p>
+    </div>
+  )
+}
+
+function SectionCard({
+  title,
+  children,
+}: {
+  title: string
+  children: React.ReactNode
+}) {
+  return (
+    <section className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
+      <h2 className="text-lg font-semibold text-[#332820]">{title}</h2>
+      <div className="mt-4">{children}</div>
+    </section>
+  )
 }
 
 export default function DirectionPage() {
@@ -77,11 +98,6 @@ export default function DirectionPage() {
   const [rows, setRows] = useState<DirectionRow[]>([])
   const [loading, setLoading] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [activeRequestsOnly, setActiveRequestsOnly] = useState(false)
-  const [hasRemainingOnly, setHasRemainingOnly] = useState(false)
-  const [noRemainingOnly, setNoRemainingOnly] = useState(false)
-  const [sortOption, setSortOption] = useState<SortOption>('name_asc')
 
   useEffect(() => {
     const loadData = async () => {
@@ -111,9 +127,7 @@ export default function DirectionPage() {
 
       const { data: profilesData, error: profilesError } = await supabase
         .from('profiles')
-        .select(
-          'id, full_name, email, pref_client_types, pref_modalities, pref_followup_types, pref_notes'
-        )
+        .select('id, full_name, email')
         .eq('role', 'professionnel')
         .order('full_name', { ascending: true })
 
@@ -183,13 +197,14 @@ export default function DirectionPage() {
       })
 
       const requestByProfessionalId = new Map<string, AssignmentRequest>()
+
       assignmentRequests.forEach((request) => {
         if (!requestByProfessionalId.has(request.professional_id)) {
           requestByProfessionalId.set(request.professional_id, request)
         }
       })
 
-      const nextRows: DirectionRow[] = professionals.map((profile) => {
+      const nextRows = professionals.map((profile) => {
         const request = requestByProfessionalId.get(profile.id)
         const clientStats = clientStatsByProfessionalId.get(profile.id)
 
@@ -197,10 +212,6 @@ export default function DirectionPage() {
           id: profile.id,
           fullName: profile.full_name ?? '-',
           email: profile.email ?? '-',
-          clientTypes: arrayToText(profile.pref_client_types),
-          modalities: arrayToText(profile.pref_modalities),
-          followupTypes: arrayToText(profile.pref_followup_types),
-          notes: profile.pref_notes?.trim() ?? '',
           totalAssignedClients: clientStats?.total ?? 0,
           activeClients: clientStats?.active ?? 0,
           noResponseClients: clientStats?.noResponse ?? 0,
@@ -219,233 +230,213 @@ export default function DirectionPage() {
     loadData()
   }, [router])
 
-  const visibleRows = useMemo(() => {
-    const normalizedSearch = searchQuery.trim().toLowerCase()
+  const dashboardStats = useMemo(
+    () => ({
+      totalProfessionals: rows.length,
+      activeRequests: rows.filter((row) => row.requestActive).length,
+      activeClients: rows.reduce((total, row) => total + row.activeClients, 0),
+      noResponseClients: rows.reduce((total, row) => total + row.noResponseClients, 0),
+      remainingPlaces: rows.reduce((total, row) => total + row.remainingCount, 0),
+    }),
+    [rows]
+  )
 
-    return rows
-      .filter((row) => {
-        const matchesSearch =
-          normalizedSearch.length === 0 ||
-          [
-            row.fullName,
-            row.email,
-            row.clientTypes,
-            row.modalities,
-            row.notes,
-          ]
-            .join(' ')
-            .toLowerCase()
-            .includes(normalizedSearch)
+  const professionalsWithRemaining = useMemo(
+    () =>
+      rows
+        .filter((row) => row.requestActive && row.remainingCount > 0)
+        .sort((a, b) => b.remainingCount - a.remainingCount)
+        .slice(0, 8),
+    [rows]
+  )
 
-        if (!matchesSearch) return false
-        if (activeRequestsOnly && !row.requestActive) return false
-        if (hasRemainingOnly && row.remainingCount <= 0) return false
-        if (noRemainingOnly && row.remainingCount !== 0) return false
+  const completedRequests = useMemo(
+    () =>
+      rows
+        .filter(
+          (row) =>
+            row.requestActive && row.remainingCount === 0 && row.requestedCount > 0
+        )
+        .sort((a, b) => a.fullName.localeCompare(b.fullName, 'fr'))
+        .slice(0, 8),
+    [rows]
+  )
 
-        return true
-      })
-      .sort((a, b) => {
-        if (sortOption === 'remaining_desc') {
-          return b.remainingCount - a.remainingCount
-        }
-
-        if (sortOption === 'active_asc') {
-          return a.activeClients - b.activeClients
-        }
-
-        return a.fullName.localeCompare(b.fullName, 'fr')
-      })
-  }, [activeRequestsOnly, hasRemainingOnly, noRemainingOnly, rows, searchQuery, sortOption])
+  const attentionRows = useMemo(
+    () =>
+      rows
+        .filter(
+          (row) =>
+            row.noResponseClients >= 3 ||
+            (row.requestActive && row.remainingCount === 0 && row.requestedCount > 0)
+        )
+        .sort((a, b) => b.noResponseClients - a.noResponseClients)
+        .slice(0, 8),
+    [rows]
+  )
 
   return (
     <>
       <AppNav />
       <main className="min-h-screen px-4 py-8 sm:px-6 lg:ml-72 lg:px-10">
         <div className="mx-auto max-w-7xl">
-        <div className="mb-8">
-          <p className="text-sm font-medium text-[#9b6a3d]">Direction</p>
-          <h1 className="mt-1 text-3xl font-semibold text-[#332820]">
-            Dashboard Direction
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#7a6859]">
-            Vue claire des professionnels et de leurs demandes d&apos;assignation.
-          </p>
-        </div>
-
-      {loading && (
-        <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 text-sm text-[#7a6859]">
-          Chargement des données...
-        </div>
-      )}
-
-      {!loading && error && (
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
-          Erreur: {error}
-        </div>
-      )}
-
-      {!loading && !error && (
-        <>
-          <section className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
-            <div className="grid gap-4 lg:grid-cols-3">
-              <label className="block text-sm font-medium text-[#5d4a3d] lg:col-span-2">
-                Recherche
-                <input
-                  type="search"
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="Nom, email, clientèles, modalités, notes"
-                  className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none transition placeholder:text-[#a89686] focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
-                />
-              </label>
-
-              <label className="block text-sm font-medium text-[#5d4a3d]">
-                Tri
-                <select
-                  value={sortOption}
-                  onChange={(event) => setSortOption(event.target.value as SortOption)}
-                  className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none transition focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
-                >
-                  <option value="remaining_desc">Plus de places restantes</option>
-                  <option value="active_asc">Moins de clients actifs</option>
-                  <option value="name_asc">Nom alphabétique</option>
-                </select>
-              </label>
+          <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="text-sm font-medium text-[#9b6a3d]">Direction</p>
+              <h1 className="mt-1 text-3xl font-semibold text-[#332820]">
+                Tableau de bord
+              </h1>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-[#7a6859]">
+                Vue rapide des capacites, demandes et situations a surveiller.
+              </p>
             </div>
 
-            <div className="mt-4 flex flex-col gap-3 text-sm text-[#6c5a4d] sm:flex-row sm:flex-wrap">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={activeRequestsOnly}
-                  onChange={(event) => setActiveRequestsOnly(event.target.checked)}
-                  className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
-                />
-                Demande active uniquement
-              </label>
-
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={hasRemainingOnly}
-                  onChange={(event) => setHasRemainingOnly(event.target.checked)}
-                  className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
-                />
-                A encore des places
-              </label>
-
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={noRemainingOnly}
-                  onChange={(event) => setNoRemainingOnly(event.target.checked)}
-                  className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
-                />
-                Aucun restant
-              </label>
-            </div>
-          </section>
-
-          <div className={`mt-6 ${tableShellClass}`}>
-            <table className={tableClass}>
-              <thead className={tableHeaderClass}>
-                <tr>
-                  <th className={tableHeadCellClass}>Nom</th>
-                  <th className={tableHeadCellClass}>Email</th>
-                  <th className={tableHeadCellClass}>
-                    Clients assignés total
-                  </th>
-                  <th className={tableHeadCellClass}>
-                    Clients actifs
-                  </th>
-                  <th className={tableHeadCellClass}>
-                    Sans réponse / service non pris
-                  </th>
-                  <th className={tableHeadCellClass}>
-                    Statut demande
-                  </th>
-                  <th className={tableHeadCellClass}>
-                    Clients demandés
-                  </th>
-                  <th className={tableHeadCellClass}>
-                    Clients assignés via demande
-                  </th>
-                  <th className={tableHeadCellClass}>
-                    Clients restants
-                  </th>
-                  <th className={tableHeadCellClass}>
-                    Commentaire
-                  </th>
-                </tr>
-              </thead>
-              <tbody className={tableBodyClass}>
-                {visibleRows.length === 0 ? (
-                  <tr>
-                    <td colSpan={10} className="px-4 py-8">
-                      <EmptyState
-                        title="Aucun professionnel trouve"
-                        description="Ajustez la recherche ou les filtres pour elargir la liste."
-                      />
-                    </td>
-                  </tr>
-                ) : (
-                  visibleRows.map((row) => (
-                    <tr key={row.id} className={tableRowClass}>
-                      <td className="px-4 py-3 align-top text-[#332820]">
-                        <Link
-                          href={`/professionnel/${row.id}`}
-                          className="font-medium text-[#6d3f1f] underline decoration-[#d9b591] underline-offset-2 hover:decoration-[#9b6a3d]"
-                        >
-                          {row.fullName}
-                        </Link>
-                      </td>
-                      <td className={tableCellClass}>{row.email}</td>
-                      <td className={tableCellClass}>
-                        {row.totalAssignedClients}
-                      </td>
-                      <td className={tableCellClass}>
-                        <Badge tone="success">{row.activeClients} actifs</Badge>
-                      </td>
-                      <td className={tableCellClass}>
-                        <Badge tone={row.noResponseClients > 0 ? 'warning' : 'muted'}>
-                          {row.noResponseClients} sans reponse
-                        </Badge>
-                      </td>
-                      <td className={tableCellClass}>
-                        <Badge
-                          tone={
-                            getAssignmentRequestStatus({
-                              isActive: row.requestActive,
-                              remainingCount: row.remainingCount,
-                              requestedCount: row.requestedCount,
-                            }).tone
-                          }
-                        >
-                          {
-                            getAssignmentRequestStatus({
-                              isActive: row.requestActive,
-                              remainingCount: row.remainingCount,
-                              requestedCount: row.requestedCount,
-                            }).label
-                          }
-                        </Badge>
-                      </td>
-                      <td className={tableCellClass}>{row.requestedCount}</td>
-                      <td className={tableCellClass}>{row.assignedCount}</td>
-                      <td className={tableCellClass}>
-                        <Badge tone={row.remainingCount > 0 ? 'warning' : 'success'}>
-                          {row.remainingCount} restants
-                        </Badge>
-                      </td>
-                      <td className={tableCellClass}>{row.requestComment}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+            <Link href="/direction/professionnels" className={buttonClass('primary')}>
+              Voir les professionnels
+            </Link>
           </div>
-        </>
-      )}
+
+          {loading && (
+            <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 text-sm text-[#7a6859]">
+              Chargement des donnees...
+            </div>
+          )}
+
+          {!loading && error && (
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
+              Erreur: {error}
+            </div>
+          )}
+
+          {!loading && !error && (
+            <div className="space-y-6">
+              <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                <StatCard
+                  label="Professionnels"
+                  value={dashboardStats.totalProfessionals}
+                />
+                <StatCard
+                  label="Demandes actives"
+                  value={dashboardStats.activeRequests}
+                  tone="warm"
+                />
+                <StatCard
+                  label="Clients actifs"
+                  value={dashboardStats.activeClients}
+                  tone="success"
+                />
+                <StatCard
+                  label="Sans reponse / service non pris"
+                  value={dashboardStats.noResponseClients}
+                  tone="warm"
+                />
+                <StatCard
+                  label="Places restantes"
+                  value={dashboardStats.remainingPlaces}
+                />
+              </section>
+
+              <div className="grid gap-6 xl:grid-cols-3">
+                <SectionCard title="Professionnels ayant encore des places">
+                  {professionalsWithRemaining.length === 0 ? (
+                    <EmptyState title="Aucune place restante actuellement." />
+                  ) : (
+                    <div className="space-y-3">
+                      {professionalsWithRemaining.map((row) => (
+                        <div
+                          key={row.id}
+                          className="flex flex-col gap-3 rounded-2xl border border-[#eadfd2] bg-[#fbf6ef] p-4 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                          <Link
+                            href={`/professionnel/${row.id}`}
+                            className="font-medium text-[#6d3f1f] underline decoration-[#d9b591] underline-offset-2 hover:decoration-[#9b6a3d]"
+                          >
+                            {row.fullName}
+                          </Link>
+                          <Badge tone="warning">{row.remainingCount} places</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </SectionCard>
+
+                <SectionCard title="Demandes completees recemment">
+                  {completedRequests.length === 0 ? (
+                    <EmptyState title="Aucune demande completee a afficher." />
+                  ) : (
+                    <div className="space-y-3">
+                      {completedRequests.map((row) => {
+                        const status = getAssignmentRequestStatus({
+                          isActive: row.requestActive,
+                          remainingCount: row.remainingCount,
+                          requestedCount: row.requestedCount,
+                        })
+
+                        return (
+                          <div
+                            key={row.id}
+                            className="rounded-2xl border border-[#eadfd2] bg-[#fbf6ef] p-4"
+                          >
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                              <Link
+                                href={`/professionnel/${row.id}`}
+                                className="font-medium text-[#6d3f1f] underline decoration-[#d9b591] underline-offset-2 hover:decoration-[#9b6a3d]"
+                              >
+                                {row.fullName}
+                              </Link>
+                              <Badge tone={status.tone}>{status.label}</Badge>
+                            </div>
+                            <p className="mt-2 text-sm text-[#7a6859]">
+                              {row.assignedCount} assignes sur {row.requestedCount}
+                            </p>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </SectionCard>
+
+                <SectionCard title="Demandes necessitant attention">
+                  {attentionRows.length === 0 ? (
+                    <EmptyState title="Aucune situation prioritaire detectee." />
+                  ) : (
+                    <div className="space-y-3">
+                      {attentionRows.map((row) => (
+                        <div
+                          key={row.id}
+                          className="rounded-2xl border border-[#eadfd2] bg-[#fbf6ef] p-4"
+                        >
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <Link
+                              href={`/professionnel/${row.id}`}
+                              className="font-medium text-[#6d3f1f] underline decoration-[#d9b591] underline-offset-2 hover:decoration-[#9b6a3d]"
+                            >
+                              {row.fullName}
+                            </Link>
+                            <div className="flex flex-wrap gap-2">
+                              {row.noResponseClients >= 3 && (
+                                <Badge tone="warning">
+                                  {row.noResponseClients} sans reponse
+                                </Badge>
+                              )}
+                              {row.requestActive &&
+                                row.remainingCount === 0 &&
+                                row.requestedCount > 0 && (
+                                  <Badge tone="success">aucune place restante</Badge>
+                                )}
+                            </div>
+                          </div>
+                          <p className="mt-2 text-sm text-[#7a6859]">
+                            {row.requestComment}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </SectionCard>
+              </div>
+            </div>
+          )}
         </div>
       </main>
     </>

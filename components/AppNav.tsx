@@ -48,7 +48,11 @@ export function AppNav() {
 
   const navLinks =
     role === 'direction'
-      ? [{ href: '/direction', label: 'Dashboard direction' }]
+      ? [
+          { href: '/direction', label: 'Dashboard direction' },
+          { href: '/direction/assignations', label: 'Assignations' },
+          { href: '/direction/professionnels', label: 'Professionnels' },
+        ]
       : role === 'professionnel'
         ? [{ href: '/professionnel', label: 'Espace professionnel' }]
         : []
@@ -58,13 +62,15 @@ export function AppNav() {
   const renderLinks = () =>
     navLinks.map((link) => {
       const isActive =
-        pathname === link.href ||
-        (role === 'direction' &&
-          link.href === '/direction' &&
-          pathname?.startsWith('/professionnel/')) ||
-        (role === 'professionnel' &&
-          link.href === '/professionnel' &&
-          pathname?.startsWith('/professionnel'))
+        role === 'direction'
+          ? link.href === '/direction'
+            ? pathname === '/direction'
+            : link.href === '/direction/assignations'
+              ? pathname?.startsWith('/direction/assignations')
+              : pathname?.startsWith('/direction/professionnels') ||
+                pathname?.startsWith('/professionnel/')
+          : link.href === '/professionnel' &&
+            pathname?.startsWith('/professionnel')
 
       return (
         <Link
