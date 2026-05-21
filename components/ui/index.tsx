@@ -1,6 +1,20 @@
 import type { ReactNode } from 'react'
 import { Badge, type BadgeTone } from '@/components/Ui'
 
+export {
+  Badge,
+  buttonClass,
+  getAssignmentRequestStatus,
+  tableBodyClass,
+  tableCellClass,
+  tableClass,
+  tableHeadCellClass,
+  tableHeaderClass,
+  tableRowClass,
+  tableShellClass,
+} from '@/components/Ui'
+export type { BadgeTone } from '@/components/Ui'
+
 type StatTone = 'neutral' | 'warm' | 'success'
 
 const statToneClass: Record<StatTone, string> = {
