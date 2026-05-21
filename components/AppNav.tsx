@@ -85,7 +85,7 @@ export function AppNav() {
         <Link
           key={link.href}
           href={link.href}
-          className={`rounded-xl px-3 py-2 text-sm font-medium transition ${
+          className={`shrink-0 whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium transition ${
             isActive
               ? 'bg-[#efe1d2] text-[#6d3f1f]'
               : 'text-[#6c5a4d] hover:bg-[#f5ebe0] hover:text-[#3b2d24]'
@@ -125,7 +125,7 @@ export function AppNav() {
       </aside>
 
       <header className="sticky top-0 z-30 border-b border-[#eadfd2] bg-[#fbf7f1]/95 backdrop-blur lg:hidden">
-        <div className="flex flex-col gap-3 px-4 py-4">
+        <div className="flex flex-col gap-3 px-3 py-3 sm:px-4 sm:py-4">
           <div className="flex items-center justify-between gap-3">
             <Link href={brandHref} className="flex min-w-0 items-center gap-3">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-[#8a5633] text-xs font-semibold text-white">
@@ -138,13 +138,15 @@ export function AppNav() {
             <button
               type="button"
               onClick={handleSignOut}
-              className={`${buttonClass('secondary')} shrink-0 px-3 py-2 text-xs`}
+              className={`${buttonClass('secondary')} w-auto shrink-0 px-3 py-2 text-xs`}
             >
               Deconnexion
             </button>
           </div>
 
-          <nav className="flex gap-2 overflow-x-auto pb-1">{renderLinks()}</nav>
+          <nav className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-1 sm:-mx-4 sm:px-4">
+            {renderLinks()}
+          </nav>
         </div>
       </header>
     </>

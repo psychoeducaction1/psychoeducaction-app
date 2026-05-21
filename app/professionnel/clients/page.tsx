@@ -14,7 +14,7 @@ import {
   tableHeaderClass,
   tableRowClass,
   tableShellClass,
-} from '@/components/Ui'
+} from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
 import {
   closureReasonOptions,

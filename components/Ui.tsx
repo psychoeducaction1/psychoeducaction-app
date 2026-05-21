@@ -30,7 +30,7 @@ export function Badge({
 }) {
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${badgeTones[tone]}`}
+      className={`inline-flex max-w-full items-center rounded-full border px-2.5 py-1 text-xs font-medium leading-5 ${badgeTones[tone]}`}
     >
       {children}
     </span>
@@ -88,7 +88,7 @@ export function AlertCard({
 }
 
 export function buttonClass(tone: ButtonTone = 'primary'): string {
-  return `inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-[#ead2bd] disabled:cursor-not-allowed ${buttonTones[tone]}`
+  return `inline-flex min-h-10 w-full items-center justify-center rounded-xl px-4 py-2 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-[#ead2bd] disabled:cursor-not-allowed sm:w-auto ${buttonTones[tone]}`
 }
 
 export function getAssignmentRequestStatus({
@@ -112,9 +112,9 @@ export function getAssignmentRequestStatus({
 }
 
 export const tableShellClass =
-  'overflow-x-auto rounded-2xl border border-[#eadfd2] bg-[#fffdf9] shadow-[0_1px_2px_rgba(72,49,30,0.06)]'
+  'w-full overflow-x-auto rounded-2xl border border-[#eadfd2] bg-[#fffdf9] shadow-[0_1px_2px_rgba(72,49,30,0.06)]'
 
-export const tableClass = 'min-w-full divide-y divide-[#eadfd2] text-sm'
+export const tableClass = 'min-w-[900px] divide-y divide-[#eadfd2] text-sm'
 
 export const tableHeaderClass = 'sticky top-0 z-10 bg-[#f6eee4] text-left'
 

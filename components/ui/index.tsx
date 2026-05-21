@@ -35,10 +35,10 @@ export function StatCard({
   tone?: StatTone
 }) {
   return (
-    <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
+    <div className="min-w-0 rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-4 shadow-[0_1px_2px_rgba(72,49,30,0.06)] sm:p-5">
       <p className="text-sm font-medium text-[#7a6859]">{label}</p>
       <div
-        className={`mt-3 inline-flex rounded-2xl px-3 py-2 text-3xl font-semibold ${statToneClass[tone]}`}
+        className={`mt-3 inline-flex max-w-full rounded-2xl px-3 py-2 text-2xl font-semibold sm:text-3xl ${statToneClass[tone]}`}
       >
         {value}
       </div>
@@ -70,7 +70,7 @@ export function SectionCard({
 }) {
   return (
     <section
-      className={`rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-6 shadow-[0_1px_2px_rgba(72,49,30,0.06)] ${className}`}
+      className={`min-w-0 rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-4 shadow-[0_1px_2px_rgba(72,49,30,0.06)] sm:p-6 ${className}`}
     >
       <div className="mb-5">
         <h2 className="text-lg font-semibold text-[#332820]">{title}</h2>
@@ -91,7 +91,7 @@ export function EmptyState({
   description?: string
 }) {
   return (
-    <div className="mx-auto max-w-md rounded-2xl border border-dashed border-[#dfd0bf] bg-[#fbf6ef] px-6 py-8 text-center">
+    <div className="mx-auto max-w-md rounded-2xl border border-dashed border-[#dfd0bf] bg-[#fbf6ef] px-4 py-6 text-center sm:px-6 sm:py-8">
       <p className="text-sm font-semibold text-[#5d4a3d]">{title}</p>
       {description && (
         <p className="mt-2 text-sm leading-6 text-[#8a6f5d]">{description}</p>
@@ -112,19 +112,23 @@ export function PageHeader({
   actions?: ReactNode
 }) {
   return (
-    <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-      <div>
+    <div className="mb-6 flex min-w-0 flex-col gap-4 sm:mb-8 lg:flex-row lg:items-end lg:justify-between">
+      <div className="min-w-0">
         {eyebrow && (
           <p className="text-sm font-medium text-[#9b6a3d]">{eyebrow}</p>
         )}
-        <h1 className="mt-1 text-3xl font-semibold text-[#332820]">{title}</h1>
+        <h1 className="mt-1 text-2xl font-semibold text-[#332820] sm:text-3xl">
+          {title}
+        </h1>
         {description && (
           <p className="mt-2 max-w-2xl text-sm leading-6 text-[#7a6859]">
             {description}
           </p>
         )}
       </div>
-      {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+      {actions && (
+        <div className="flex w-full flex-wrap gap-2 sm:w-auto">{actions}</div>
+      )}
     </div>
   )
 }
@@ -148,13 +152,13 @@ export function AlertBanner({
           : 'bg-[#fbf1e7] text-[#8a5633]'
 
   return (
-    <div className="flex gap-3 rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-4 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
+    <div className="flex min-w-0 gap-3 rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-3 shadow-[0_1px_2px_rgba(72,49,30,0.06)] sm:p-4">
       <span
         className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${markerClass}`}
       >
         !
       </span>
-      <div>
+      <div className="min-w-0">
         <p className="text-sm font-semibold text-[#332820]">{title}</p>
         <p className="mt-1 text-sm leading-6 text-[#7a6859]">{description}</p>
       </div>

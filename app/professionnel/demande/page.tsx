@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppNav } from '@/components/AppNav'
-import { Badge, buttonClass, getAssignmentRequestStatus } from '@/components/Ui'
+import { Badge, buttonClass, getAssignmentRequestStatus } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
 import type { AssignmentRequest } from '../shared'
 

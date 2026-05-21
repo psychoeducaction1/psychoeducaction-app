@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppNav } from '@/components/AppNav'
-import { buttonClass } from '@/components/Ui'
+import { buttonClass } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
 import {
   arrayToTextareaValue,

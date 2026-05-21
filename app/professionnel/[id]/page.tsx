@@ -10,10 +10,14 @@ import {
 import { useParams, useRouter } from "next/navigation";
 import { AppNav } from "@/components/AppNav";
 import {
+  AlertBanner,
   Badge,
   type BadgeTone,
   buttonClass,
+  EmptyState,
   getAssignmentRequestStatus,
+  SectionCard,
+  StatCard,
   tableBodyClass,
   tableCellClass,
   tableClass,
@@ -21,12 +25,6 @@ import {
   tableHeaderClass,
   tableRowClass,
   tableShellClass,
-} from "@/components/Ui";
-import {
-  AlertBanner,
-  EmptyState,
-  SectionCard,
-  StatCard,
 } from "@/components/ui/index";
 import { supabase } from "@/lib/supabaseClient";
 

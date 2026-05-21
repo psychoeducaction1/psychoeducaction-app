@@ -5,13 +5,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppNav } from '@/components/AppNav'
 import {
+  AlertBanner,
   Badge,
   buttonClass,
-  getAssignmentRequestStatus,
-} from '@/components/Ui'
-import {
-  AlertBanner,
   EmptyState,
+  getAssignmentRequestStatus,
   PageHeader,
   StatCard,
   StatusBadge,
@@ -37,7 +35,7 @@ function RequestStatCard({
   return (
     <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
       <p className="text-sm font-medium text-[#7a6859]">Demande</p>
-      <div className="mt-3 grid grid-cols-3 gap-2">
+      <div className="mt-3 grid grid-cols-1 gap-2 min-[420px]:grid-cols-3">
         <div>
           <p className="text-xs font-medium uppercase text-[#8a6f5d]">Demandés</p>
           <p className="mt-1 text-2xl font-semibold text-[#332820]">
