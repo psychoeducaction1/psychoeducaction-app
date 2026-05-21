@@ -51,10 +51,12 @@ type AssignedClient = {
   id: string;
   first_name: string | null;
   last_name: string | null;
+  assigned_date: string | null;
   contacted: boolean | null;
   is_active: boolean | null;
   meeting_count: number | null;
   dossier_closed: boolean | null;
+  closure_reason: string | null;
   short_comment: string | null;
 };
 
@@ -143,6 +145,22 @@ function getTodayDate(): string {
   const day = String(today.getDate()).padStart(2, "0");
 
   return `${year}-${month}-${day}`;
+}
+
+function formatDate(value: string | null): string {
+  if (!value) return "-";
+
+  const date = new Date(`${value}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("fr-CA", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  }).format(date);
 }
 
 function getErrorMessage(error: unknown): string {
@@ -260,10 +278,10 @@ export default function ProfessionnelDetailPage() {
           supabase
             .from("assigned_clients")
             .select(
-              "id, first_name, last_name, contacted, is_active, meeting_count, dossier_closed, short_comment",
+              "id, first_name, last_name, assigned_date, contacted, is_active, meeting_count, dossier_closed, closure_reason, short_comment",
             )
             .eq("professional_id", professionalId)
-            .order("last_name", { ascending: true }),
+            .order("assigned_date", { ascending: false }),
         ]);
 
         if (requestResponse.error) throw requestResponse.error;
@@ -800,6 +818,76 @@ export default function ProfessionnelDetailPage() {
                     </div>
                   </form>
                 </div>
+              </SectionCard>
+
+              <SectionCard
+                title="Historique client"
+                description="Timeline recente generee a partir des donnees actuelles des clients assignes."
+              >
+                {assignedClients.length === 0 ? (
+                  <EmptyState title="Aucun historique client a afficher." />
+                ) : (
+                  <div className="space-y-4">
+                    {assignedClients.map((client) => (
+                      <article
+                        key={client.id}
+                        className="relative rounded-2xl border border-[#eadfd2] bg-[#fbf6ef] p-4 pl-11"
+                      >
+                        <span className="absolute left-4 top-5 h-3 w-3 rounded-full border-2 border-[#fffdf9] bg-[#8a5633] shadow-[0_0_0_3px_#eadfd2]" />
+
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0">
+                            <h3 className="font-medium text-[#332820]">
+                              {getClientName(client)}
+                            </h3>
+                            <p className="mt-1 text-sm text-[#7a6859]">
+                              Assigne le {formatDate(client.assigned_date)}
+                            </p>
+                          </div>
+
+                          <div className="flex flex-wrap gap-2">
+                            <Badge tone={client.contacted ? "success" : "muted"}>
+                              {client.contacted
+                                ? "Contact effectue"
+                                : "Contact non effectue"}
+                            </Badge>
+                            <Badge tone={client.is_active ? "success" : "warning"}>
+                              {client.is_active
+                                ? "Service pris"
+                                : "Service non pris"}
+                            </Badge>
+                          </div>
+                        </div>
+
+                        {(client.closure_reason || client.short_comment) && (
+                          <div className="mt-4 grid gap-3 md:grid-cols-2">
+                            {client.closure_reason && (
+                              <div className="rounded-xl border border-[#eadfd2] bg-[#fffdf9] p-3">
+                                <p className="text-xs font-medium uppercase text-[#8a6f5d]">
+                                  Motif de non-prise
+                                </p>
+                                <p className="mt-1 text-sm text-[#332820]">
+                                  {formatText(client.closure_reason)}
+                                </p>
+                              </div>
+                            )}
+
+                            {client.short_comment && (
+                              <div className="rounded-xl border border-[#eadfd2] bg-[#fffdf9] p-3">
+                                <p className="text-xs font-medium uppercase text-[#8a6f5d]">
+                                  Commentaire
+                                </p>
+                                <p className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">
+                                  {formatText(client.short_comment)}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </article>
+                    ))}
+                  </div>
+                )}
               </SectionCard>
 
               <SectionCard

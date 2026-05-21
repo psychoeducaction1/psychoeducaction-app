@@ -62,6 +62,10 @@ Plateforme interne de gestion des demandes d'assignation et de suivi des clients
 ## Interface actuelle
 
 - Design global clinique moderne, doux et professionnel.
+- Design system centralise dans `components/ui/index.tsx`.
+- `components/Ui.tsx` existe encore pour compatibilite; la migration progressive vers `components/ui/index.tsx` est en cours.
+- Responsive mobile/tablette ameliore : navigation mobile, tableaux scrollables, boutons, cartes et espacements.
+- `AppNav` gere la navigation conditionnelle selon le role connecte.
 - Navigation laterale sur desktop et navigation compacte sur mobile.
 - Navigation conditionnelle selon le role connecte.
 - Navigation cote direction :
