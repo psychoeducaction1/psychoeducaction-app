@@ -55,7 +55,12 @@ export function AppNav() {
           { href: '/direction/parametres', label: 'Parametres' },
         ]
       : role === 'professionnel'
-        ? [{ href: '/professionnel', label: 'Espace professionnel' }]
+        ? [
+            { href: '/professionnel', label: 'Tableau de bord' },
+            { href: '/professionnel/clients', label: 'Mes clients' },
+            { href: '/professionnel/demande', label: 'Ma demande' },
+            { href: '/professionnel/preferences', label: 'Mes préférences' },
+          ]
         : []
 
   const brandHref = role === 'professionnel' ? '/professionnel' : '/direction'
@@ -72,8 +77,9 @@ export function AppNav() {
                 ? pathname?.startsWith('/direction/professionnels') ||
                   pathname?.startsWith('/professionnel/')
                 : pathname?.startsWith('/direction/parametres')
-          : link.href === '/professionnel' &&
-            pathname?.startsWith('/professionnel')
+          : link.href === '/professionnel'
+            ? pathname === '/professionnel'
+            : pathname?.startsWith(link.href)
 
       return (
         <Link
