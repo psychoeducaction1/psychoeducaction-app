@@ -5,12 +5,17 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppNav } from '@/components/AppNav'
 import {
-  AlertCard,
   Badge,
-  EmptyState,
   buttonClass,
   getAssignmentRequestStatus,
 } from '@/components/Ui'
+import {
+  AlertBanner,
+  EmptyState,
+  PageHeader,
+  StatCard,
+  StatusBadge,
+} from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
 import { isRecentDate, type AssignedClient, type AssignmentRequest } from './shared'
 
@@ -20,12 +25,58 @@ type DashboardStat = {
   helper: string
 }
 
-function StatCard({ label, value, helper }: DashboardStat) {
+function RequestStatCard({
+  requestedCount,
+  assignedCount,
+  remainingCount,
+}: {
+  requestedCount: number
+  assignedCount: number
+  remainingCount: number
+}) {
   return (
     <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
-      <p className="text-sm font-medium text-[#7a6859]">{label}</p>
-      <p className="mt-2 text-3xl font-semibold text-[#332820]">{value}</p>
-      <p className="mt-1 text-xs text-[#8a6f5d]">{helper}</p>
+      <p className="text-sm font-medium text-[#7a6859]">Demande</p>
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        <div>
+          <p className="text-xs font-medium uppercase text-[#8a6f5d]">Demandés</p>
+          <p className="mt-1 text-2xl font-semibold text-[#332820]">
+            {requestedCount}
+          </p>
+        </div>
+        <div>
+          <p className="text-xs font-medium uppercase text-[#8a6f5d]">Assignés</p>
+          <p className="mt-1 text-2xl font-semibold text-[#332820]">
+            {assignedCount}
+          </p>
+        </div>
+        <div>
+          <p className="text-xs font-medium uppercase text-[#8a6f5d]">Restants</p>
+          <p className="mt-1 text-2xl font-semibold text-[#332820]">
+            {remainingCount}
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function RequestStatusCard({
+  label,
+  tone,
+}: {
+  label: string
+  tone: 'neutral' | 'success' | 'warning' | 'muted'
+}) {
+  return (
+    <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
+      <p className="text-sm font-medium text-[#7a6859]">Statut de la demande</p>
+      <div className="mt-3">
+        <StatusBadge tone={tone}>{label}</StatusBadge>
+      </div>
+      <p className="mt-3 text-xs text-[#8a6f5d]">
+        Inactive, en cours ou complétée selon les places restantes.
+      </p>
     </div>
   )
 }
@@ -177,6 +228,14 @@ export default function ProfessionnelPage() {
               tone: 'success' as const,
             }
           : null,
+        requestStatus.label === 'demande inactive'
+          ? {
+              title: 'Demande inactive',
+              description:
+                'Aucune demande active actuellement. Vous pouvez la réactiver depuis Ma demande.',
+              tone: 'muted' as const,
+            }
+          : null,
         activeClients.length === 0
           ? {
               title: 'Aucun client ayant pris le service',
@@ -207,16 +266,6 @@ export default function ProfessionnelPage() {
       value: noResponseClients.length,
       helper: 'Service pris = non',
     },
-    {
-      label: 'Clients à contacter',
-      value: notContactedClients.length,
-      helper: 'Contact effectué = non',
-    },
-    {
-      label: 'Places restantes',
-      value: remainingCount,
-      helper: 'Selon votre demande active',
-    },
   ]
 
   return (
@@ -224,24 +273,16 @@ export default function ProfessionnelPage() {
       <AppNav />
       <main className="min-h-screen px-4 py-8 sm:px-6 lg:ml-72 lg:px-10">
         <div className="mx-auto max-w-7xl">
-          <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p className="text-sm font-medium text-[#9b6a3d]">
-                Espace professionnel
-              </p>
-              <h1 className="mt-1 text-3xl font-semibold text-[#332820]">
-                Tableau de bord
-              </h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-[#7a6859]">
-                Vue rapide de vos assignations, de votre demande et des suivis à
-                prioriser.
-              </p>
-            </div>
-
-            <Link href="/professionnel/clients" className={buttonClass('primary')}>
-              Voir mes clients
-            </Link>
-          </div>
+          <PageHeader
+            eyebrow="Espace professionnel"
+            title="Tableau de bord"
+            description="Vue rapide de vos assignations, de votre demande et des suivis a prioriser."
+            actions={
+              <Link href="/professionnel/clients" className={buttonClass('primary')}>
+                Voir mes clients
+              </Link>
+            }
+          />
 
           {loading && (
             <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 text-sm text-[#7a6859]">
@@ -260,7 +301,7 @@ export default function ProfessionnelPage() {
               {alerts.length > 0 ? (
                 <section className="grid gap-3 lg:grid-cols-2">
                   {alerts.map((alert) => (
-                    <AlertCard
+                    <AlertBanner
                       key={alert.title}
                       title={alert.title}
                       description={alert.description}
@@ -276,6 +317,15 @@ export default function ProfessionnelPage() {
                 {stats.map((stat) => (
                   <StatCard key={stat.label} {...stat} />
                 ))}
+                <RequestStatCard
+                  requestedCount={requestedCount}
+                  assignedCount={assignedCount}
+                  remainingCount={remainingCount}
+                />
+                <RequestStatusCard
+                  label={requestStatus.label}
+                  tone={requestStatus.tone}
+                />
               </section>
 
               <section className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
@@ -331,12 +381,17 @@ export default function ProfessionnelPage() {
                 <div className="grid gap-4">
                   <QuickLink
                     href="/professionnel/clients"
-                    title="Mes clients"
+                    title="Voir mes clients"
                     description="Mettre à jour le contact effectué, le service pris et les commentaires."
                   />
                   <QuickLink
+                    href="/professionnel/demande"
+                    title="Modifier ma demande"
+                    description="Mettre à jour le nombre de clients souhaités ou désactiver la demande actuelle."
+                  />
+                  <QuickLink
                     href="/professionnel/preferences"
-                    title="Mes préférences"
+                    title="Modifier mes préférences"
                     description="Ajuster les clientèles, modalités et types de suivis souhaités."
                   />
                 </div>

@@ -24,7 +24,10 @@ Plateforme interne de gestion des demandes d'assignation et de suivi des clients
 - `/direction/professionnels` : gestion detaillee des professionnels
 - `/direction/assignations` : suivi des demandes d'assignation
 - `/direction/parametres` : parametres et informations administratives
-- `/professionnel`
+- `/professionnel` : tableau de bord resume du professionnel
+- `/professionnel/clients` : clients ayant pris le service et clients sans reponse / service non pris
+- `/professionnel/demande` : demande d'assignation
+- `/professionnel/preferences` : preferences d'assignation
 - `/professionnel/[id]`
 
 ## Tables Supabase
@@ -68,7 +71,10 @@ Plateforme interne de gestion des demandes d'assignation et de suivi des clients
   - Parametres : `/direction/parametres`;
   - Deconnexion.
 - Navigation cote professionnel :
-  - Espace professionnel : `/professionnel`;
+  - Tableau de bord : `/professionnel`;
+  - Mes clients : `/professionnel/clients`;
+  - Ma demande : `/professionnel/demande`;
+  - Mes preferences : `/professionnel/preferences`;
   - Deconnexion.
 - Tableaux modernises avec badges, etats vides, meilleur espacement et scroll horizontal.
 - Couleurs inspirees du branding PsychoEducAction : brun chaud, cuivre, beige pale et gris chauds.

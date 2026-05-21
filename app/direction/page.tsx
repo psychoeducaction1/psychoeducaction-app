@@ -5,12 +5,17 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { AppNav } from '@/components/AppNav'
 import {
-  AlertCard,
   Badge,
-  EmptyState,
   buttonClass,
   getAssignmentRequestStatus,
 } from '@/components/Ui'
+import {
+  AlertBanner,
+  EmptyState,
+  PageHeader,
+  SectionCard,
+  StatCard,
+} from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
 
 type Profile = {
@@ -51,47 +56,6 @@ type DirectionRow = {
   assignedCount: number
   remainingCount: number
   requestComment: string
-}
-
-function StatCard({
-  label,
-  value,
-  tone = 'neutral',
-}: {
-  label: string
-  value: number
-  tone?: 'neutral' | 'warm' | 'success'
-}) {
-  const toneClass =
-    tone === 'success'
-      ? 'bg-[#f1ead9] text-[#5f5932]'
-      : tone === 'warm'
-        ? 'bg-[#fbf1e7] text-[#8a5633]'
-        : 'bg-[#fbf6ef] text-[#332820]'
-
-  return (
-    <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
-      <p className="text-sm font-medium text-[#8a6f5d]">{label}</p>
-      <p className={`mt-4 inline-flex rounded-2xl px-3 py-2 text-3xl font-semibold ${toneClass}`}>
-        {value}
-      </p>
-    </div>
-  )
-}
-
-function SectionCard({
-  title,
-  children,
-}: {
-  title: string
-  children: React.ReactNode
-}) {
-  return (
-    <section className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
-      <h2 className="text-lg font-semibold text-[#332820]">{title}</h2>
-      <div className="mt-4">{children}</div>
-    </section>
-  )
 }
 
 export default function DirectionPage() {
@@ -330,21 +294,19 @@ export default function DirectionPage() {
       <AppNav />
       <main className="min-h-screen px-4 py-8 sm:px-6 lg:ml-72 lg:px-10">
         <div className="mx-auto max-w-7xl">
-          <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p className="text-sm font-medium text-[#9b6a3d]">Direction</p>
-              <h1 className="mt-1 text-3xl font-semibold text-[#332820]">
-                Tableau de bord
-              </h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-[#7a6859]">
-                Vue rapide des capacites, demandes et situations a surveiller.
-              </p>
-            </div>
-
-            <Link href="/direction/professionnels" className={buttonClass('primary')}>
-              Voir les professionnels
-            </Link>
-          </div>
+          <PageHeader
+            eyebrow="Direction"
+            title="Tableau de bord"
+            description="Vue rapide des capacites, demandes et situations a surveiller."
+            actions={
+              <Link
+                href="/direction/professionnels"
+                className={buttonClass('primary')}
+              >
+                Voir les professionnels
+              </Link>
+            }
+          />
 
           {loading && (
             <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 text-sm text-[#7a6859]">
@@ -363,7 +325,7 @@ export default function DirectionPage() {
               {directionAlerts.length > 0 && (
                 <section className="grid gap-3 lg:grid-cols-2">
                   {directionAlerts.map((alert) => (
-                    <AlertCard
+                    <AlertBanner
                       key={alert.title}
                       title={alert.title}
                       description={alert.description}
@@ -374,10 +336,7 @@ export default function DirectionPage() {
               )}
 
               <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-                <StatCard
-                  label="Professionnels"
-                  value={dashboardStats.totalProfessionals}
-                />
+                <StatCard label="Professionnels" value={dashboardStats.totalProfessionals} />
                 <StatCard
                   label="Demandes actives"
                   value={dashboardStats.activeRequests}

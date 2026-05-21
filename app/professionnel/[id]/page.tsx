@@ -1,11 +1,17 @@
 "use client";
 
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AppNav } from "@/components/AppNav";
 import {
   Badge,
-  EmptyState,
+  type BadgeTone,
   buttonClass,
   getAssignmentRequestStatus,
   tableBodyClass,
@@ -14,7 +20,14 @@ import {
   tableHeadCellClass,
   tableHeaderClass,
   tableRowClass,
+  tableShellClass,
 } from "@/components/Ui";
+import {
+  AlertBanner,
+  EmptyState,
+  SectionCard,
+  StatCard,
+} from "@/components/ui/index";
 import { supabase } from "@/lib/supabaseClient";
 
 type Profile = {
@@ -458,460 +471,560 @@ export default function ProfessionnelDetailPage() {
     }
   };
 
+  const clientsWithService = assignedClients.filter((client) => client.is_active);
+  const clientsWithoutService = assignedClients.filter(
+    (client) => !client.is_active,
+  );
+  const notContactedClients = assignedClients.filter(
+    (client) => !client.contacted,
+  );
+  const requestedCount = assignmentRequest?.requested_count ?? 0;
+  const assignedCount = assignmentRequest?.assigned_count ?? 0;
+  const remainingCount = assignmentRequest?.remaining_count ?? 0;
+  const operationalAlerts = [
+    notContactedClients.length > 0
+      ? {
+          title: "Clients non contactes",
+          description: `${notContactedClients.length} client${
+            notContactedClients.length > 1 ? "s n'ont" : " n'a"
+          } pas encore ete contacte${
+            notContactedClients.length > 1 ? "s" : ""
+          }.`,
+          tone: "warning" as BadgeTone,
+        }
+      : null,
+    assignmentRequestStatus.label === "demande complétée"
+      ? {
+          title: "Demande completee",
+          description:
+            "La demande actuelle est entierement repondue et reste visible.",
+          tone: "success" as BadgeTone,
+        }
+      : null,
+    assignmentRequestStatus.label === "demande inactive"
+      ? {
+          title: "Demande inactive",
+          description: "Ce professionnel n'a pas de demande active actuellement.",
+          tone: "muted" as BadgeTone,
+        }
+      : null,
+    clientsWithService.length === 0
+      ? {
+          title: "Aucun client ayant pris le service",
+          description: "Aucun client actif n'est associe au professionnel.",
+          tone: "muted" as BadgeTone,
+        }
+      : null,
+  ].filter(
+    (
+      alert,
+    ): alert is { title: string; description: string; tone: BadgeTone } =>
+      Boolean(alert),
+  );
+
   return (
     <>
       <AppNav />
       <main className="min-h-screen px-4 py-8 sm:px-6 lg:ml-72 lg:px-10">
         <div className="mx-auto max-w-7xl">
-          <div className="mb-8">
-            <p className="text-sm font-medium text-[#9b6a3d]">Profil operationnel</p>
-            <h1 className="mt-1 text-3xl font-semibold text-[#332820]">
-              {professionalName}
-            </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#7a6859]">
-              Vue de consultation et d&apos;assignation pour la direction.
-            </p>
-          </div>
+          {loading && (
+            <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 text-sm text-[#7a6859]">
+              Chargement des donnees...
+            </div>
+          )}
 
-        {loading && (
-          <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 text-sm text-[#7a6859]">
-            Chargement des donnees...
-          </div>
-        )}
+          {!loading && error && (
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
+              Erreur: {error}
+            </div>
+          )}
 
-        {!loading && error && (
-          <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
-            Erreur: {error}
-          </div>
-        )}
-
-        {!loading && !error && profile && (
-          <div className="space-y-6">
-            <section className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-6 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
-              <div>
-                <h2 className="text-lg font-semibold text-[#332820]">
-                  Informations du professionnel
-                </h2>
-                <p className="mt-1 text-sm text-[#7a6859]">
-                  Modifier les informations non sensibles du profil existant.
-                </p>
-              </div>
-
-              <form
-                onSubmit={handleSaveProfessionalProfile}
-                className="mt-5 space-y-4"
-              >
-                <div className="grid gap-4 md:grid-cols-2">
-                  <label className="block text-sm font-medium text-[#5d4a3d]">
-                    Nom complet
-                    <input
-                      type="text"
-                      value={professionalProfileForm.full_name}
-                      onChange={(event) =>
-                        handleProfessionalProfileFormChange(
-                          "full_name",
-                          event.target.value,
-                        )
-                      }
-                      className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
-                    />
-                  </label>
-
-                  <label className="block text-sm font-medium text-[#5d4a3d]">
-                    Email
-                    <input
-                      type="email"
-                      value={professionalProfileForm.email}
-                      onChange={(event) =>
-                        handleProfessionalProfileFormChange(
-                          "email",
-                          event.target.value,
-                        )
-                      }
-                      className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
-                    />
-                  </label>
-
-                  <label className="block text-sm font-medium text-[#5d4a3d]">
-                    Clienteles souhaitees
-                    <textarea
-                      value={professionalProfileForm.pref_client_types}
-                      onChange={(event) =>
-                        handleProfessionalProfileFormChange(
-                          "pref_client_types",
-                          event.target.value,
-                        )
-                      }
-                      rows={3}
-                      className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
-                    />
-                  </label>
-
-                  <label className="block text-sm font-medium text-[#5d4a3d]">
-                    Modalites souhaitees
-                    <textarea
-                      value={professionalProfileForm.pref_modalities}
-                      onChange={(event) =>
-                        handleProfessionalProfileFormChange(
-                          "pref_modalities",
-                          event.target.value,
-                        )
-                      }
-                      rows={3}
-                      className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
-                    />
-                  </label>
-
-                  <label className="block text-sm font-medium text-[#5d4a3d]">
-                    Types de suivis souhaites
-                    <textarea
-                      value={professionalProfileForm.pref_followup_types}
-                      onChange={(event) =>
-                        handleProfessionalProfileFormChange(
-                          "pref_followup_types",
-                          event.target.value,
-                        )
-                      }
-                      rows={3}
-                      className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
-                    />
-                  </label>
-
-                  <label className="block text-sm font-medium text-[#5d4a3d]">
-                    Notes / precisions
-                    <textarea
-                      value={professionalProfileForm.pref_notes}
-                      onChange={(event) =>
-                        handleProfessionalProfileFormChange(
-                          "pref_notes",
-                          event.target.value,
-                        )
-                      }
-                      rows={3}
-                      className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
-                    />
-                  </label>
-                </div>
-
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <button
-                    type="submit"
-                    disabled={savingProfessionalProfile}
-                    className={buttonClass("primary")}
-                  >
-                    {savingProfessionalProfile
-                      ? "Sauvegarde..."
-                      : "Sauvegarder"}
-                  </button>
-
-                  {professionalProfileMessage && (
-                    <p className="text-sm font-medium text-green-700">
-                      {professionalProfileMessage}
-                    </p>
-                  )}
-
-                  {professionalProfileError && (
-                    <p className="text-sm font-medium text-red-700">
-                      {professionalProfileError}
-                    </p>
-                  )}
-                </div>
-              </form>
-            </section>
-
-            <section className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-6 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
-              <h2 className="text-lg font-semibold text-[#332820]">
-                Apercu du professionnel
-              </h2>
-              <dl className="mt-4 grid gap-4 sm:grid-cols-2">
-                <div>
-                  <dt className="text-sm font-medium text-[#8a6f5d]">Nom complet</dt>
-                  <dd className="mt-1 text-sm text-[#332820]">
-                    {formatText(profile.full_name)}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-sm font-medium text-[#8a6f5d]">Email</dt>
-                  <dd className="mt-1 text-sm text-[#332820]">
-                    {formatText(profile.email)}
-                  </dd>
-                </div>
-              </dl>
-            </section>
-
-            <section className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-6 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
-              <h2 className="text-lg font-semibold text-[#332820]">
-                Préférences d&apos;assignation
-              </h2>
-              <dl className="mt-4 grid gap-4 md:grid-cols-2">
-                <div>
-                  <dt className="text-sm font-medium text-[#8a6f5d]">
-                    Clientèles souhaitées
-                  </dt>
-                  <dd className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">
-                    {formatText(profile.pref_client_types)}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-sm font-medium text-[#8a6f5d]">
-                    Modalités souhaitées
-                  </dt>
-                  <dd className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">
-                    {formatText(profile.pref_modalities)}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-sm font-medium text-[#8a6f5d]">
-                    Types de suivis souhaités
-                  </dt>
-                  <dd className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">
-                    {formatText(profile.pref_followup_types)}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-sm font-medium text-[#8a6f5d]">
-                    Notes / précisions
-                  </dt>
-                  <dd className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">
-                    {formatText(profile.pref_notes)}
-                  </dd>
-                </div>
-              </dl>
-            </section>
-
-            <section className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-6 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
-              <h2 className="text-lg font-semibold text-[#332820]">
-                Demande actuelle
-              </h2>
-
-              {assignmentRequest ? (
-                <dl className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          {!loading && !error && profile && (
+            <div className="space-y-8">
+              <section className="rounded-3xl border border-[#eadfd2] bg-[#fffdf9] p-6 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
+                <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
                   <div>
-                    <dt className="text-sm font-medium text-[#8a6f5d]">Statut</dt>
-                    <dd className="mt-1">
+                    <p className="text-sm font-medium text-[#9b6a3d]">
+                      Fiche operationnelle
+                    </p>
+                    <h1 className="mt-2 text-3xl font-semibold text-[#332820]">
+                      {professionalName}
+                    </h1>
+                    <p className="mt-2 text-sm text-[#7a6859]">
+                      {formatText(profile.email)}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 lg:justify-end">
+                    <Badge tone={assignmentRequestStatus.tone}>
+                      {assignmentRequestStatus.label}
+                    </Badge>
+                    <Badge tone={remainingCount > 0 ? "warning" : "muted"}>
+                      {remainingCount} place{remainingCount > 1 ? "s" : ""} restante
+                      {remainingCount > 1 ? "s" : ""}
+                    </Badge>
+                    <Badge tone="success">
+                      {clientsWithService.length} service
+                      {clientsWithService.length > 1 ? "s" : ""} pris
+                    </Badge>
+                    <Badge tone="warning">
+                      {clientsWithoutService.length} sans reponse / service non pris
+                    </Badge>
+                  </div>
+                </div>
+              </section>
+
+              <SectionCard
+                title="Resume"
+                description="Vue rapide des volumes, de la demande et des points a surveiller."
+              >
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                  <StatCard
+                    label="Clients ayant pris le service"
+                    value={clientsWithService.length}
+                    helper="Service pris = oui"
+                  />
+                  <StatCard
+                    label="Sans reponse / service non pris"
+                    value={clientsWithoutService.length}
+                    helper="Service pris = non"
+                  />
+                  <StatCard
+                    label="Demandes / assignes / restants"
+                    value={requestedCount}
+                    helper={`${assignedCount} assignes, ${remainingCount} restants`}
+                  />
+                  <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
+                    <p className="text-sm font-medium text-[#7a6859]">
+                      Statut de la demande
+                    </p>
+                    <div className="mt-3">
                       <Badge tone={assignmentRequestStatus.tone}>
                         {assignmentRequestStatus.label}
                       </Badge>
-                    </dd>
+                    </div>
+                    <p className="mt-3 text-xs text-[#8a6f5d]">
+                      {remainingCount} place{remainingCount > 1 ? "s" : ""} restante
+                      {remainingCount > 1 ? "s" : ""}
+                    </p>
                   </div>
+                </div>
+
+                <div className="mt-5 grid gap-3 lg:grid-cols-2">
+                  {operationalAlerts.length === 0 ? (
+                    <EmptyState title="Aucune alerte operationnelle." />
+                  ) : (
+                    operationalAlerts.map((alert) => (
+                      <AlertBanner
+                        key={alert.title}
+                        title={alert.title}
+                        description={alert.description}
+                        tone={alert.tone}
+                      />
+                    ))
+                  )}
+                </div>
+              </SectionCard>
+
+              <SectionCard
+                title="Clients"
+                description="Liste des clients assignes et ajout rapide d'une nouvelle assignation."
+              >
+                {assignedClients.length === 0 ? (
+                  <EmptyState title="Aucun client assigne pour ce professionnel." />
+                ) : (
+                  <div className={tableShellClass}>
+                    <table className={tableClass}>
+                      <thead className={tableHeaderClass}>
+                        <tr>
+                          <th className={tableHeadCellClass}>Client</th>
+                          <th className={tableHeadCellClass}>Contact effectue</th>
+                          <th className={tableHeadCellClass}>Service pris</th>
+                          <th className={tableHeadCellClass}>Rencontres</th>
+                          <th className={tableHeadCellClass}>Dossier ferme</th>
+                          <th className={tableHeadCellClass}>Commentaire</th>
+                        </tr>
+                      </thead>
+                      <tbody className={tableBodyClass}>
+                        {assignedClients.map((client) => (
+                          <tr key={client.id} className={tableRowClass}>
+                            <td className="px-4 py-3 font-medium text-[#332820]">
+                              {getClientName(client)}
+                            </td>
+                            <td className={tableCellClass}>
+                              <Badge tone={client.contacted ? "success" : "muted"}>
+                                {formatBoolean(client.contacted)}
+                              </Badge>
+                            </td>
+                            <td className={tableCellClass}>
+                              <Badge
+                                tone={client.is_active ? "success" : "warning"}
+                              >
+                                {client.is_active
+                                  ? "Service pris"
+                                  : "Sans reponse"}
+                              </Badge>
+                            </td>
+                            <td className={tableCellClass}>
+                              {client.meeting_count ?? 0}
+                            </td>
+                            <td className={tableCellClass}>
+                              <Badge
+                                tone={client.dossier_closed ? "neutral" : "muted"}
+                              >
+                                {formatBoolean(client.dossier_closed)}
+                              </Badge>
+                            </td>
+                            <td className={tableCellClass}>
+                              {formatText(client.short_comment)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                <div className="mt-6 rounded-2xl border border-[#eadfd2] bg-[#fbf6ef] p-5">
+                  <h3 className="text-base font-semibold text-[#332820]">
+                    Nouvelle assignation
+                  </h3>
+
+                  <form onSubmit={handleAssignClient} className="mt-4 space-y-4">
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      <label className="block text-sm font-medium text-[#5d4a3d]">
+                        Prenom
+                        <input
+                          type="text"
+                          value={clientForm.first_name}
+                          onChange={(event) =>
+                            handleClientFormChange(
+                              "first_name",
+                              event.target.value,
+                            )
+                          }
+                          className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                          required
+                        />
+                      </label>
+
+                      <label className="block text-sm font-medium text-[#5d4a3d]">
+                        Nom
+                        <input
+                          type="text"
+                          value={clientForm.last_name}
+                          onChange={(event) =>
+                            handleClientFormChange(
+                              "last_name",
+                              event.target.value,
+                            )
+                          }
+                          className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                          required
+                        />
+                      </label>
+
+                      <label className="block text-sm font-medium text-[#5d4a3d]">
+                        Email
+                        <input
+                          type="email"
+                          value={clientForm.email}
+                          onChange={(event) =>
+                            handleClientFormChange("email", event.target.value)
+                          }
+                          className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                        />
+                      </label>
+
+                      <label className="block text-sm font-medium text-[#5d4a3d]">
+                        Telephone
+                        <input
+                          type="tel"
+                          value={clientForm.phone}
+                          onChange={(event) =>
+                            handleClientFormChange("phone", event.target.value)
+                          }
+                          className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                        />
+                      </label>
+
+                      <label className="block text-sm font-medium text-[#5d4a3d]">
+                        Requerant
+                        <input
+                          type="text"
+                          value={clientForm.requester_name}
+                          onChange={(event) =>
+                            handleClientFormChange(
+                              "requester_name",
+                              event.target.value,
+                            )
+                          }
+                          className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                        />
+                      </label>
+
+                      <label className="block text-sm font-medium text-[#5d4a3d] sm:col-span-2 lg:col-span-3">
+                        Commentaire court
+                        <textarea
+                          value={clientForm.short_comment}
+                          onChange={(event) =>
+                            handleClientFormChange(
+                              "short_comment",
+                              event.target.value,
+                            )
+                          }
+                          rows={3}
+                          className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                      <button
+                        type="submit"
+                        disabled={savingClient}
+                        className={buttonClass("primary")}
+                      >
+                        {savingClient ? "Assignation..." : "Assigner le client"}
+                      </button>
+
+                      {clientMessage && (
+                        <p className="text-sm font-medium text-green-700">
+                          {clientMessage}
+                        </p>
+                      )}
+
+                      {clientError && (
+                        <p className="text-sm font-medium text-red-700">
+                          {clientError}
+                        </p>
+                      )}
+                    </div>
+                  </form>
+                </div>
+              </SectionCard>
+
+              <SectionCard
+                title="Demande"
+                description="Demande actuelle transmise par le professionnel."
+              >
+                {assignmentRequest ? (
+                  <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                    <div>
+                      <dt className="text-sm font-medium text-[#8a6f5d]">
+                        Statut
+                      </dt>
+                      <dd className="mt-1">
+                        <Badge tone={assignmentRequestStatus.tone}>
+                          {assignmentRequestStatus.label}
+                        </Badge>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-sm font-medium text-[#8a6f5d]">
+                        Demandes
+                      </dt>
+                      <dd className="mt-1 text-sm text-[#332820]">
+                        {requestedCount}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-sm font-medium text-[#8a6f5d]">
+                        Assignes
+                      </dt>
+                      <dd className="mt-1 text-sm text-[#332820]">
+                        {assignedCount}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-sm font-medium text-[#8a6f5d]">
+                        Restants
+                      </dt>
+                      <dd className="mt-1 text-sm text-[#332820]">
+                        {remainingCount}
+                      </dd>
+                    </div>
+                    <div className="sm:col-span-2 lg:col-span-1">
+                      <dt className="text-sm font-medium text-[#8a6f5d]">
+                        Commentaire
+                      </dt>
+                      <dd className="mt-1 text-sm text-[#332820]">
+                        {formatText(assignmentRequest.request_comment)}
+                      </dd>
+                    </div>
+                  </dl>
+                ) : (
+                  <EmptyState title="Aucune demande actuelle pour ce professionnel." />
+                )}
+              </SectionCard>
+
+              <SectionCard
+                title="Preferences"
+                description="Informations de preference utiles au choix des assignations."
+              >
+                <dl className="grid gap-4 md:grid-cols-2">
                   <div>
-                    <dt className="text-sm font-medium text-[#8a6f5d]">Demandes</dt>
-                    <dd className="mt-1 text-sm text-[#332820]">
-                      {assignmentRequest.requested_count ?? 0}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-sm font-medium text-[#8a6f5d]">Assignes</dt>
-                    <dd className="mt-1 text-sm text-[#332820]">
-                      {assignmentRequest.assigned_count ?? 0}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-sm font-medium text-[#8a6f5d]">Restants</dt>
-                    <dd className="mt-1 text-sm text-[#332820]">
-                      {assignmentRequest.remaining_count ?? 0}
-                    </dd>
-                  </div>
-                  <div className="sm:col-span-2 lg:col-span-1">
                     <dt className="text-sm font-medium text-[#8a6f5d]">
-                      Commentaire
+                      Clienteles souhaitees
                     </dt>
-                    <dd className="mt-1 text-sm text-[#332820]">
-                      {formatText(assignmentRequest.request_comment)}
+                    <dd className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">
+                      {formatText(profile.pref_client_types)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-[#8a6f5d]">
+                      Modalites souhaitees
+                    </dt>
+                    <dd className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">
+                      {formatText(profile.pref_modalities)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-[#8a6f5d]">
+                      Types de suivis souhaites
+                    </dt>
+                    <dd className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">
+                      {formatText(profile.pref_followup_types)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-[#8a6f5d]">
+                      Notes / precisions
+                    </dt>
+                    <dd className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">
+                      {formatText(profile.pref_notes)}
                     </dd>
                   </div>
                 </dl>
-              ) : (
-                <div className="mt-4">
-                  <EmptyState title="Aucune demande actuelle pour ce professionnel." />
-                </div>
-              )}
-            </section>
+              </SectionCard>
 
-            <section className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-6 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
-              <h2 className="text-lg font-semibold text-[#332820]">
-                Nouvelle assignation
-              </h2>
+              <SectionCard
+                title="Gestion"
+                description="Modifier les informations non sensibles du profil professionnel existant."
+              >
+                <form
+                  onSubmit={handleSaveProfessionalProfile}
+                  className="space-y-4"
+                >
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <label className="block text-sm font-medium text-[#5d4a3d]">
+                      Nom complet
+                      <input
+                        type="text"
+                        value={professionalProfileForm.full_name}
+                        onChange={(event) =>
+                          handleProfessionalProfileFormChange(
+                            "full_name",
+                            event.target.value,
+                          )
+                        }
+                        className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                      />
+                    </label>
 
-              <form onSubmit={handleAssignClient} className="mt-4 space-y-4">
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  <label className="block text-sm font-medium text-[#5d4a3d]">
-                    Prenom
-                    <input
-                      type="text"
-                      value={clientForm.first_name}
-                      onChange={(event) =>
-                        handleClientFormChange("first_name", event.target.value)
-                      }
-                      className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
-                      required
-                    />
-                  </label>
+                    <label className="block text-sm font-medium text-[#5d4a3d]">
+                      Email
+                      <input
+                        type="email"
+                        value={professionalProfileForm.email}
+                        onChange={(event) =>
+                          handleProfessionalProfileFormChange(
+                            "email",
+                            event.target.value,
+                          )
+                        }
+                        className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                      />
+                    </label>
 
-                  <label className="block text-sm font-medium text-[#5d4a3d]">
-                    Nom
-                    <input
-                      type="text"
-                      value={clientForm.last_name}
-                      onChange={(event) =>
-                        handleClientFormChange("last_name", event.target.value)
-                      }
-                      className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
-                      required
-                    />
-                  </label>
+                    <label className="block text-sm font-medium text-[#5d4a3d]">
+                      Clienteles souhaitees
+                      <textarea
+                        value={professionalProfileForm.pref_client_types}
+                        onChange={(event) =>
+                          handleProfessionalProfileFormChange(
+                            "pref_client_types",
+                            event.target.value,
+                          )
+                        }
+                        rows={3}
+                        className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                      />
+                    </label>
 
-                  <label className="block text-sm font-medium text-[#5d4a3d]">
-                    Email
-                    <input
-                      type="email"
-                      value={clientForm.email}
-                      onChange={(event) =>
-                        handleClientFormChange("email", event.target.value)
-                      }
-                      className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
-                    />
-                  </label>
+                    <label className="block text-sm font-medium text-[#5d4a3d]">
+                      Modalites souhaitees
+                      <textarea
+                        value={professionalProfileForm.pref_modalities}
+                        onChange={(event) =>
+                          handleProfessionalProfileFormChange(
+                            "pref_modalities",
+                            event.target.value,
+                          )
+                        }
+                        rows={3}
+                        className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                      />
+                    </label>
 
-                  <label className="block text-sm font-medium text-[#5d4a3d]">
-                    Telephone
-                    <input
-                      type="tel"
-                      value={clientForm.phone}
-                      onChange={(event) =>
-                        handleClientFormChange("phone", event.target.value)
-                      }
-                      className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
-                    />
-                  </label>
+                    <label className="block text-sm font-medium text-[#5d4a3d]">
+                      Types de suivis souhaites
+                      <textarea
+                        value={professionalProfileForm.pref_followup_types}
+                        onChange={(event) =>
+                          handleProfessionalProfileFormChange(
+                            "pref_followup_types",
+                            event.target.value,
+                          )
+                        }
+                        rows={3}
+                        className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                      />
+                    </label>
 
-                  <label className="block text-sm font-medium text-[#5d4a3d]">
-                    Requerant
-                    <input
-                      type="text"
-                      value={clientForm.requester_name}
-                      onChange={(event) =>
-                        handleClientFormChange(
-                          "requester_name",
-                          event.target.value,
-                        )
-                      }
-                      className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
-                    />
-                  </label>
+                    <label className="block text-sm font-medium text-[#5d4a3d]">
+                      Notes / precisions
+                      <textarea
+                        value={professionalProfileForm.pref_notes}
+                        onChange={(event) =>
+                          handleProfessionalProfileFormChange(
+                            "pref_notes",
+                            event.target.value,
+                          )
+                        }
+                        rows={3}
+                        className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                      />
+                    </label>
+                  </div>
 
-                  <label className="block text-sm font-medium text-[#5d4a3d] sm:col-span-2 lg:col-span-3">
-                    Commentaire court
-                    <textarea
-                      value={clientForm.short_comment}
-                      onChange={(event) =>
-                        handleClientFormChange(
-                          "short_comment",
-                          event.target.value,
-                        )
-                      }
-                      rows={3}
-                      className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
-                    />
-                  </label>
-                </div>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <button
+                      type="submit"
+                      disabled={savingProfessionalProfile}
+                      className={buttonClass("primary")}
+                    >
+                      {savingProfessionalProfile
+                        ? "Sauvegarde..."
+                        : "Sauvegarder"}
+                    </button>
 
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <button
-                    type="submit"
-                    disabled={savingClient}
-                    className={buttonClass("primary")}
-                  >
-                    {savingClient ? "Assignation..." : "Assigner le client"}
-                  </button>
+                    {professionalProfileMessage && (
+                      <p className="text-sm font-medium text-green-700">
+                        {professionalProfileMessage}
+                      </p>
+                    )}
 
-                  {clientMessage && (
-                    <p className="text-sm font-medium text-green-700">
-                      {clientMessage}
-                    </p>
-                  )}
-
-                  {clientError && (
-                    <p className="text-sm font-medium text-red-700">
-                      {clientError}
-                    </p>
-                  )}
-                </div>
-              </form>
-            </section>
-
-            <section className="overflow-hidden rounded-2xl border border-[#eadfd2] bg-[#fffdf9] shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
-              <div className="border-b border-[#eadfd2] px-6 py-4">
-                <h2 className="text-lg font-semibold text-[#332820]">
-                  Clients assignes
-                </h2>
-              </div>
-
-              {assignedClients.length === 0 ? (
-                <div className="px-6 py-6">
-                  <EmptyState title="Aucun client assigne pour ce professionnel." />
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className={tableClass}>
-                    <thead className={tableHeaderClass}>
-                      <tr>
-                        <th className={tableHeadCellClass}>
-                          Client
-                        </th>
-                        <th className={tableHeadCellClass}>
-                          Contacte
-                        </th>
-                        <th className={tableHeadCellClass}>
-                          Actif
-                        </th>
-                        <th className={tableHeadCellClass}>
-                          Rencontres
-                        </th>
-                        <th className={tableHeadCellClass}>
-                          Dossier ferme
-                        </th>
-                        <th className={tableHeadCellClass}>
-                          Commentaire
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className={tableBodyClass}>
-                      {assignedClients.map((client) => (
-                        <tr key={client.id} className={tableRowClass}>
-                          <td className="px-4 py-3 text-[#332820]">
-                            {getClientName(client)}
-                          </td>
-                          <td className={tableCellClass}>
-                            <Badge tone={client.contacted ? "success" : "muted"}>
-                              {formatBoolean(client.contacted)}
-                            </Badge>
-                          </td>
-                          <td className={tableCellClass}>
-                            <Badge tone={client.is_active ? "success" : "warning"}>
-                              {client.is_active ? "Service pris" : "Sans reponse"}
-                            </Badge>
-                          </td>
-                          <td className={tableCellClass}>
-                            {client.meeting_count ?? 0}
-                          </td>
-                          <td className={tableCellClass}>
-                            <Badge tone={client.dossier_closed ? "neutral" : "muted"}>
-                              {formatBoolean(client.dossier_closed)}
-                            </Badge>
-                          </td>
-                          <td className={tableCellClass}>
-                            {formatText(client.short_comment)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </section>
-          </div>
-        )}
+                    {professionalProfileError && (
+                      <p className="text-sm font-medium text-red-700">
+                        {professionalProfileError}
+                      </p>
+                    )}
+                  </div>
+                </form>
+              </SectionCard>
+            </div>
+          )}
         </div>
       </main>
     </>
