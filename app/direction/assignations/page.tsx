@@ -15,7 +15,7 @@ import {
   tableHeaderClass,
   tableRowClass,
   tableShellClass,
-} from '@/components/Ui'
+} from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
 
 type FilterOption = 'all' | 'active' | 'in_progress' | 'completed' | 'inactive'

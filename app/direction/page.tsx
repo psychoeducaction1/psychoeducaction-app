@@ -5,13 +5,11 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { AppNav } from '@/components/AppNav'
 import {
+  AlertBanner,
   Badge,
   buttonClass,
-  getAssignmentRequestStatus,
-} from '@/components/Ui'
-import {
-  AlertBanner,
   EmptyState,
+  getAssignmentRequestStatus,
   PageHeader,
   SectionCard,
   StatCard,
