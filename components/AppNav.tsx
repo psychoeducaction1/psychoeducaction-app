@@ -58,7 +58,7 @@ export function AppNav() {
       : role === 'professionnel'
         ? [
             { href: '/professionnel', label: 'Tableau de bord' },
-            { href: '/professionnel/clients', label: 'Mes clients' },
+            { href: '/professionnel/clients', label: 'Mes assignations' },
             { href: '/professionnel/demande', label: 'Ma demande' },
             { href: '/professionnel/preferences', label: 'Mes préférences' },
           ]

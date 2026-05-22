@@ -278,7 +278,7 @@ export default function ProfessionnelPage() {
             description="Vue rapide de vos assignations, de votre demande et des suivis a prioriser."
             actions={
               <Link href="/professionnel/clients" className={buttonClass('primary')}>
-                Voir mes clients
+                Voir mes assignations
               </Link>
             }
           />
@@ -380,7 +380,7 @@ export default function ProfessionnelPage() {
                 <div className="grid gap-4">
                   <QuickLink
                     href="/professionnel/clients"
-                    title="Voir mes clients"
+                    title="Voir mes assignations"
                     description="Mettre à jour le contact effectué, le service pris et les commentaires."
                   />
                   <QuickLink

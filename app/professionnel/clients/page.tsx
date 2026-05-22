@@ -317,10 +317,10 @@ export default function ProfessionnelClientsPage() {
           <div className="mb-8">
             <p className="text-sm font-medium text-[#9b6a3d]">Espace professionnel</p>
             <h1 className="mt-1 text-3xl font-semibold text-[#332820]">
-              Mes clients
+              Mes assignations
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#7a6859]">
-              Suivez les contacts et la prise de service de vos clients assignés.
+              Suivez les contacts et la prise de service de vos assignations.
             </p>
           </div>
 
