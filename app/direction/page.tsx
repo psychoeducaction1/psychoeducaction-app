@@ -436,7 +436,7 @@ export default function DirectionPage() {
                             </Link>
                             <div className="flex flex-wrap gap-2">
                               {row.noResponseClients >= 3 && (
-                                <Badge tone="warning">
+                                <Badge tone="danger">
                                   {row.noResponseClients} sans reponse
                                 </Badge>
                               )}

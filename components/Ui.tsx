@@ -1,12 +1,13 @@
 import type { ReactNode } from 'react'
 
-export type BadgeTone = 'neutral' | 'success' | 'warning' | 'muted'
+export type BadgeTone = 'neutral' | 'success' | 'warning' | 'danger' | 'muted'
 type ButtonTone = 'primary' | 'secondary' | 'danger' | 'ghost'
 
 const badgeTones: Record<BadgeTone, string> = {
   neutral: 'border-[#dfd0bf] bg-[#fbf6ef] text-[#6c5a4d]',
   success: 'border-[#d6c7aa] bg-[#f1ead9] text-[#5f5932]',
   warning: 'border-[#ead2bd] bg-[#fbf1e7] text-[#8a5633]',
+  danger: 'border-[#e8c9bd] bg-[#fff3ee] text-[#8a3f2b]',
   muted: 'border-[#eadfd2] bg-[#fffdf9] text-[#8a6f5d]',
 }
 
@@ -66,6 +67,8 @@ export function AlertCard({
   const markerClass =
     tone === 'success'
       ? 'bg-[#f1ead9] text-[#5f5932]'
+      : tone === 'danger'
+        ? 'bg-[#fff3ee] text-[#8a3f2b]'
       : tone === 'muted'
         ? 'bg-[#fffdf9] text-[#8a6f5d]'
         : tone === 'neutral'

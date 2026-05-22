@@ -316,7 +316,7 @@ export default function DirectionProfessionnelsPage() {
                             </td>
                             <td className={tableCellClass}>
                               <Badge
-                                tone={row.noResponseClients > 0 ? 'warning' : 'muted'}
+                                tone={row.noResponseClients > 0 ? 'danger' : 'muted'}
                               >
                                 {row.noResponseClients} sans reponse
                               </Badge>

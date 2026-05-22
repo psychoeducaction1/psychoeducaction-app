@@ -122,6 +122,30 @@ function getClientName(client: AssignedClient): string {
   return fullName || "-";
 }
 
+function getContactStatus(client: AssignedClient): {
+  label: string;
+  tone: BadgeTone;
+} {
+  return client.contacted
+    ? { label: "Contact effectue", tone: "neutral" }
+    : { label: "Contact non effectue", tone: "muted" };
+}
+
+function getServiceStatus(client: AssignedClient): {
+  label: string;
+  tone: BadgeTone;
+} {
+  if (client.is_active === true) {
+    return { label: "Service pris", tone: "success" };
+  }
+
+  if (client.is_active === false) {
+    return { label: "Service non pris", tone: "danger" };
+  }
+
+  return { label: "En attente", tone: "warning" };
+}
+
 function nullableText(value: string): string | null {
   const trimmedValue = value.trim();
   return trimmedValue.length > 0 ? trimmedValue : null;
@@ -496,9 +520,14 @@ export default function ProfessionnelDetailPage() {
     }
   };
 
-  const clientsWithService = assignedClients.filter((client) => client.is_active);
+  const clientsWithService = assignedClients.filter(
+    (client) => client.is_active === true,
+  );
   const clientsWithoutService = assignedClients.filter(
-    (client) => !client.is_active,
+    (client) => client.is_active === false,
+  );
+  const clientsPendingService = assignedClients.filter(
+    (client) => client.is_active === null,
   );
   const notContactedClients = assignedClients.filter(
     (client) => !client.contacted,
@@ -592,8 +621,11 @@ export default function ProfessionnelDetailPage() {
                       {clientsWithService.length} service
                       {clientsWithService.length > 1 ? "s" : ""} pris
                     </Badge>
-                    <Badge tone="warning">
+                    <Badge tone="danger">
                       {clientsWithoutService.length} sans reponse / service non pris
+                    </Badge>
+                    <Badge tone="warning">
+                      {clientsPendingService.length} en attente
                     </Badge>
                   </div>
                 </div>
@@ -677,17 +709,13 @@ export default function ProfessionnelDetailPage() {
                               {getClientName(client)}
                             </td>
                             <td className={tableCellClass}>
-                              <Badge tone={client.contacted ? "success" : "muted"}>
-                                {formatBoolean(client.contacted)}
+                              <Badge tone={getContactStatus(client).tone}>
+                                {getContactStatus(client).label}
                               </Badge>
                             </td>
                             <td className={tableCellClass}>
-                              <Badge
-                                tone={client.is_active ? "success" : "warning"}
-                              >
-                                {client.is_active
-                                  ? "Service pris"
-                                  : "Sans reponse"}
+                              <Badge tone={getServiceStatus(client).tone}>
+                                {getServiceStatus(client).label}
                               </Badge>
                             </td>
                             <td className={tableCellClass}>
@@ -855,15 +883,11 @@ export default function ProfessionnelDetailPage() {
                           </div>
 
                           <div className="flex flex-wrap gap-2">
-                            <Badge tone={client.contacted ? "success" : "muted"}>
-                              {client.contacted
-                                ? "Contact effectue"
-                                : "Contact non effectue"}
+                            <Badge tone={getContactStatus(client).tone}>
+                              {getContactStatus(client).label}
                             </Badge>
-                            <Badge tone={client.is_active ? "success" : "warning"}>
-                              {client.is_active
-                                ? "Service pris"
-                                : "Service non pris"}
+                            <Badge tone={getServiceStatus(client).tone}>
+                              {getServiceStatus(client).label}
                             </Badge>
                           </div>
                         </div>

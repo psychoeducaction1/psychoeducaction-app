@@ -220,9 +220,11 @@ export default function ProfessionnelClientsPage() {
     client.is_active === true ? (
       <Badge tone="success">Service pris</Badge>
     ) : client.is_active === null ? (
-      <Badge tone="muted">En attente</Badge>
+      <Badge tone="warning">En attente</Badge>
     ) : (
       <div className="space-y-2">
+        <Badge tone="danger">Service non pris</Badge>
+
         <label className="block text-xs font-medium text-[#5d4a3d]">
           Motif de non-prise de service
           <select
