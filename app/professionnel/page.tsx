@@ -15,7 +15,7 @@ import {
   StatusBadge,
 } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
-import { isRecentDate, type AssignedClient, type AssignmentRequest } from './shared'
+import { type AssignedClient, type AssignmentRequest } from './shared'
 
 type DashboardStat = {
   label: string
@@ -189,7 +189,6 @@ export default function ProfessionnelPage() {
   const activeClients = clients.filter((client) => client.is_active)
   const noResponseClients = clients.filter((client) => !client.is_active)
   const notContactedClients = clients.filter((client) => !client.contacted)
-  const recentAssignments = clients.filter((client) => isRecentDate(client.assigned_date))
   const requestedCount = request?.requested_count ?? 0
   const assignedCount = request?.assigned_count ?? 0
   const remainingCount = request?.remaining_count ?? 0
@@ -202,44 +201,21 @@ export default function ProfessionnelPage() {
   const alerts = useMemo(
     () =>
       [
-        recentAssignments.length > 0
-          ? {
-              title: 'Nouvelle assignation récente',
-              description: `${recentAssignments.length} client${
-                recentAssignments.length > 1 ? 's ont' : ' a'
-              } été assigné${recentAssignments.length > 1 ? 's' : ''} dans les 7 derniers jours.`,
-              tone: 'warning' as const,
-            }
-          : null,
         notContactedClients.length > 0
           ? {
-              title: 'Clients à contacter',
-              description: `${notContactedClients.length} client${
+              title: 'Assignations à traiter',
+              description: `${notContactedClients.length} assignation${
                 notContactedClients.length > 1 ? 's ne sont' : " n'est"
-              } pas encore contacté${notContactedClients.length > 1 ? 's' : ''}.`,
+              } pas encore contacté${notContactedClients.length > 1 ? 'es' : 'e'}.`,
               tone: 'warning' as const,
             }
           : null,
-        requestStatus.label === 'demande complétée'
+        requestStatus.label === 'demande en cours'
           ? {
-              title: 'Demande complétée',
-              description: 'Votre demande actuelle est entièrement répondue.',
-              tone: 'success' as const,
-            }
-          : null,
-        requestStatus.label === 'demande inactive'
-          ? {
-              title: 'Demande inactive',
+              title: 'Demande incomplète',
               description:
-                'Aucune demande active actuellement. Vous pouvez la réactiver depuis Ma demande.',
-              tone: 'muted' as const,
-            }
-          : null,
-        activeClients.length === 0
-          ? {
-              title: 'Aucun client ayant pris le service',
-              description: 'Aucun client avec service pris actuellement.',
-              tone: 'muted' as const,
+                'Votre demande est encore active avec des places restantes à assigner.',
+              tone: 'warning' as const,
             }
           : null,
       ].filter(
@@ -248,10 +224,10 @@ export default function ProfessionnelPage() {
         ): alert is {
           title: string
           description: string
-          tone: 'warning' | 'success' | 'muted'
+          tone: 'warning'
         } => Boolean(alert)
       ),
-    [activeClients.length, notContactedClients.length, recentAssignments.length, requestStatus.label]
+    [notContactedClients.length, requestStatus.label]
   )
 
   const stats: DashboardStat[] = [

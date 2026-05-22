@@ -172,9 +172,135 @@ export default function ProfessionnelClientsPage() {
   const activeClients = clients.filter((client) => client.is_active)
   const noResponseClients = clients.filter((client) => !client.is_active)
 
+  const renderSaveButton = (client: AssignedClient) => (
+    <div>
+      <button
+        type="button"
+        onClick={() => handleSaveClient(client)}
+        disabled={savingClientIds[client.id]}
+        className={`${buttonClass('primary')} w-full sm:w-auto`}
+      >
+        {savingClientIds[client.id] ? 'Sauvegarde...' : 'Sauvegarder'}
+      </button>
+
+      {clientMessages[client.id] && (
+        <p className="mt-2 text-xs font-medium text-green-700">
+          {clientMessages[client.id]}
+        </p>
+      )}
+
+      {clientErrors[client.id] && (
+        <p className="mt-2 text-xs font-medium text-red-700">
+          {clientErrors[client.id]}
+        </p>
+      )}
+    </div>
+  )
+
+  const renderFollowUpFields = (client: AssignedClient) =>
+    client.is_active ? (
+      <Badge tone="success">Service pris</Badge>
+    ) : (
+      <div className="space-y-2">
+        <label className="block text-xs font-medium text-[#5d4a3d]">
+          Motif de non-prise de service
+          <select
+            value={client.closure_reason ?? ''}
+            onChange={(event) =>
+              updateClientField(client.id, 'closure_reason', event.target.value)
+            }
+            className="mt-1 w-full rounded-xl border border-[#dfd0bf] bg-white px-2 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+          >
+            {closureReasonOptions.map((option) => (
+              <option key={option || 'empty-reason'} value={option}>
+                {option || 'Aucun motif sélectionné'}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="block text-xs font-medium text-[#5d4a3d]">
+          Commentaire
+          <textarea
+            value={client.short_comment ?? ''}
+            onChange={(event) =>
+              updateClientField(client.id, 'short_comment', event.target.value)
+            }
+            rows={2}
+            className="mt-1 w-full rounded-xl border border-[#dfd0bf] bg-white px-2 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+          />
+        </label>
+      </div>
+    )
+
   const renderClientsTable = (sectionClients: AssignedClient[], emptyMessage: string) => (
-    <div className={tableShellClass}>
-      <table className={tableClass}>
+    <>
+      <div className="space-y-4 xl:hidden">
+        {sectionClients.length === 0 ? (
+          <EmptyState title={emptyMessage} />
+        ) : (
+          sectionClients.map((client) => (
+            <article
+              key={client.id}
+              className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-4 shadow-[0_1px_2px_rgba(72,49,30,0.06)]"
+            >
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <h3 className="break-words text-base font-semibold text-[#332820]">
+                    {client.first_name} {client.last_name}
+                  </h3>
+                  <div className="mt-2 grid gap-1 text-sm text-[#7a6859] sm:grid-cols-2">
+                    <p className="break-words">Courriel: {client.email || '-'}</p>
+                    <p>Téléphone: {client.phone || '-'}</p>
+                    <p className="break-words">
+                      Requérant: {client.requester_name || '-'}
+                    </p>
+                    <p>Date: {client.assigned_date}</p>
+                  </div>
+                </div>
+                <div className="shrink-0">{renderSaveButton(client)}</div>
+              </div>
+
+              <div className="mt-4 grid gap-4 md:grid-cols-[0.8fr_0.9fr_1.4fr]">
+                <label className="flex items-center gap-2 text-sm font-medium text-[#5d4a3d]">
+                  <input
+                    type="checkbox"
+                    checked={client.contacted}
+                    onChange={(event) =>
+                      updateClientField(client.id, 'contacted', event.target.checked)
+                    }
+                    className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
+                  />
+                  Contact effectué
+                </label>
+
+                <label className="block text-xs font-medium text-[#5d4a3d]">
+                  Service pris
+                  <select
+                    value={client.is_active ? 'yes' : 'no'}
+                    onChange={(event) =>
+                      updateClientField(
+                        client.id,
+                        'is_active',
+                        event.target.value === 'yes'
+                      )
+                    }
+                    className="mt-1 w-full rounded-xl border border-[#dfd0bf] bg-white px-2 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                  >
+                    <option value="yes">Oui</option>
+                    <option value="no">Non</option>
+                  </select>
+                </label>
+
+                <div>{renderFollowUpFields(client)}</div>
+              </div>
+            </article>
+          ))
+        )}
+      </div>
+
+      <div className={`${tableShellClass} hidden xl:block`}>
+        <table className={tableClass}>
         <thead className={tableHeaderClass}>
           <tr>
             <th className={tableHeadCellClass}>Prénom</th>
@@ -186,7 +312,9 @@ export default function ProfessionnelClientsPage() {
             <th className={tableHeadCellClass}>Contact effectué</th>
             <th className={tableHeadCellClass}>Service pris</th>
             <th className={tableHeadCellClass}>Motif / commentaire</th>
-            <th className={tableHeadCellClass}>Action</th>
+            <th className={`${tableHeadCellClass} sticky right-0 z-10 bg-[#f8f1e8]`}>
+              Action
+            </th>
           </tr>
         </thead>
         <tbody className={tableBodyClass}>
@@ -236,77 +364,18 @@ export default function ProfessionnelClientsPage() {
                   </select>
                 </td>
                 <td className="min-w-72 px-4 py-4 align-top">
-                  {client.is_active ? (
-                    <Badge tone="success">Service pris</Badge>
-                  ) : (
-                    <div className="space-y-2">
-                      <label className="block text-xs font-medium text-[#5d4a3d]">
-                        Motif de non-prise de service
-                        <select
-                          value={client.closure_reason ?? ''}
-                          onChange={(event) =>
-                            updateClientField(
-                              client.id,
-                              'closure_reason',
-                              event.target.value
-                            )
-                          }
-                          className="mt-1 w-full rounded-xl border border-[#dfd0bf] bg-white px-2 py-1 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
-                        >
-                          {closureReasonOptions.map((option) => (
-                            <option key={option || 'empty-reason'} value={option}>
-                              {option || 'Aucun motif sélectionné'}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-
-                      <label className="block text-xs font-medium text-[#5d4a3d]">
-                        Commentaire
-                        <textarea
-                          value={client.short_comment ?? ''}
-                          onChange={(event) =>
-                            updateClientField(
-                              client.id,
-                              'short_comment',
-                              event.target.value
-                            )
-                          }
-                          rows={2}
-                          className="mt-1 w-full rounded-xl border border-[#dfd0bf] bg-white px-2 py-1 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
-                        />
-                      </label>
-                    </div>
-                  )}
+                  {renderFollowUpFields(client)}
                 </td>
-                <td className="min-w-40 px-4 py-4 align-top">
-                  <button
-                    type="button"
-                    onClick={() => handleSaveClient(client)}
-                    disabled={savingClientIds[client.id]}
-                    className={buttonClass('primary')}
-                  >
-                    {savingClientIds[client.id] ? 'Sauvegarde...' : 'Sauvegarder'}
-                  </button>
-
-                  {clientMessages[client.id] && (
-                    <p className="mt-2 text-xs font-medium text-green-700">
-                      {clientMessages[client.id]}
-                    </p>
-                  )}
-
-                  {clientErrors[client.id] && (
-                    <p className="mt-2 text-xs font-medium text-red-700">
-                      {clientErrors[client.id]}
-                    </p>
-                  )}
+                <td className="sticky right-0 min-w-40 bg-[#fffdf9] px-4 py-4 align-top shadow-[-8px_0_16px_rgba(72,49,30,0.04)]">
+                  {renderSaveButton(client)}
                 </td>
               </tr>
             ))
           )}
         </tbody>
-      </table>
-    </div>
+        </table>
+      </div>
+    </>
   )
 
   return (
