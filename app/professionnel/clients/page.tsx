@@ -23,6 +23,18 @@ import {
   type EditableClientField,
 } from '../shared'
 
+type ServiceStatus = 'pending' | 'yes' | 'no'
+
+function getServiceStatus(isActive: boolean | null): ServiceStatus {
+  if (isActive === null) return 'pending'
+  return isActive ? 'yes' : 'no'
+}
+
+function serviceStatusToIsActive(status: ServiceStatus): boolean | null {
+  if (status === 'pending') return null
+  return status === 'yes'
+}
+
 export default function ProfessionnelClientsPage() {
   const router = useRouter()
   const [clients, setClients] = useState<AssignedClient[]>([])
@@ -169,8 +181,15 @@ export default function ProfessionnelClientsPage() {
     }))
   }
 
-  const activeClients = clients.filter((client) => client.is_active)
-  const noResponseClients = clients.filter((client) => !client.is_active)
+  const clientsToProcess = clients.filter(
+    (client) => client.is_active === null || !client.contacted
+  )
+  const activeClients = clients.filter(
+    (client) => client.is_active === true && client.contacted
+  )
+  const noResponseClients = clients.filter(
+    (client) => client.is_active === false && client.contacted
+  )
 
   const renderSaveButton = (client: AssignedClient) => (
     <div>
@@ -198,8 +217,10 @@ export default function ProfessionnelClientsPage() {
   )
 
   const renderFollowUpFields = (client: AssignedClient) =>
-    client.is_active ? (
+    client.is_active === true ? (
       <Badge tone="success">Service pris</Badge>
+    ) : client.is_active === null ? (
+      <Badge tone="muted">En attente</Badge>
     ) : (
       <div className="space-y-2">
         <label className="block text-xs font-medium text-[#5d4a3d]">
@@ -277,16 +298,17 @@ export default function ProfessionnelClientsPage() {
                 <label className="block text-xs font-medium text-[#5d4a3d]">
                   Service pris
                   <select
-                    value={client.is_active ? 'yes' : 'no'}
+                    value={getServiceStatus(client.is_active)}
                     onChange={(event) =>
                       updateClientField(
                         client.id,
                         'is_active',
-                        event.target.value === 'yes'
+                        serviceStatusToIsActive(event.target.value as ServiceStatus)
                       )
                     }
                     className="mt-1 w-full rounded-xl border border-[#dfd0bf] bg-white px-2 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                   >
+                    <option value="pending">En attente</option>
                     <option value="yes">Oui</option>
                     <option value="no">Non</option>
                   </select>
@@ -349,16 +371,17 @@ export default function ProfessionnelClientsPage() {
                 </td>
                 <td className={tableCellClass}>
                   <select
-                    value={client.is_active ? 'yes' : 'no'}
+                    value={getServiceStatus(client.is_active)}
                     onChange={(event) =>
                       updateClientField(
                         client.id,
                         'is_active',
-                        event.target.value === 'yes'
+                        serviceStatusToIsActive(event.target.value as ServiceStatus)
                       )
                     }
-                    className="w-24 rounded-xl border border-[#dfd0bf] bg-white px-2 py-1 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                    className="w-32 rounded-xl border border-[#dfd0bf] bg-white px-2 py-1 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                   >
+                    <option value="pending">En attente</option>
                     <option value="yes">Oui</option>
                     <option value="no">Non</option>
                   </select>
@@ -409,6 +432,16 @@ export default function ProfessionnelClientsPage() {
             <div className="space-y-8">
               <section>
                 <h2 className="mb-3 text-lg font-semibold text-[#332820]">
+                  Assignations à traiter
+                </h2>
+                {renderClientsTable(
+                  clientsToProcess,
+                  'Aucune assignation à traiter.'
+                )}
+              </section>
+
+              <section>
+                <h2 className="mb-3 text-lg font-semibold text-[#332820]">
                   Clients ayant pris le service
                 </h2>
                 {renderClientsTable(
@@ -419,11 +452,11 @@ export default function ProfessionnelClientsPage() {
 
               <section>
                 <h2 className="mb-3 text-lg font-semibold text-[#332820]">
-                  Clients sans réponse / service non pris
+                  Clients n&apos;ayant pas pris le service
                 </h2>
                 {renderClientsTable(
                   noResponseClients,
-                  'Aucun client sans réponse ou service non pris.'
+                  "Aucun client n'ayant pas pris le service."
                 )}
               </section>
             </div>

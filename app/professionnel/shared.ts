@@ -7,7 +7,7 @@ export type AssignedClient = {
   requester_name: string | null
   assigned_date: string
   contacted: boolean
-  is_active: boolean
+  is_active: boolean | null
   short_comment: string | null
   closure_reason: string | null
 }
