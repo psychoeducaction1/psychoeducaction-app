@@ -27,7 +27,8 @@ export function AppNav() {
         .from('profiles')
         .select('role')
         .eq('id', user.id)
-        .single()
+        .limit(1)
+        .maybeSingle()
 
       if (!cancelled) {
         setRole(data?.role === 'direction' ? 'direction' : 'professionnel')

@@ -248,7 +248,8 @@ export default function ProfessionnelDetailPage() {
             .from("profiles")
             .select("role")
             .eq("id", user.id)
-            .single();
+            .limit(1)
+            .maybeSingle();
 
         if (currentProfileError || currentProfile?.role !== "direction") {
           isRedirecting = true;
@@ -262,9 +263,13 @@ export default function ProfessionnelDetailPage() {
             "id, full_name, email, pref_client_types, pref_modalities, pref_followup_types, pref_notes",
           )
           .eq("id", professionalId)
-          .single();
+          .limit(1)
+          .maybeSingle();
 
         if (profileResponse.error) throw profileResponse.error;
+        if (!profileResponse.data) {
+          throw new Error("Profil professionnel introuvable.");
+        }
 
         const [requestResponse, clientsResponse] = await Promise.all([
           supabase
@@ -388,9 +393,13 @@ export default function ProfessionnelDetailPage() {
         .select(
           "id, full_name, email, pref_client_types, pref_modalities, pref_followup_types, pref_notes",
         )
-        .single();
+        .limit(1)
+        .maybeSingle();
 
       if (updateError) throw updateError;
+      if (!updatedProfile) {
+        throw new Error("Profil professionnel introuvable.");
+      }
 
       const nextProfile = updatedProfile as Profile;
       setProfile(nextProfile);

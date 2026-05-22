@@ -81,7 +81,8 @@ export default function DirectionPage() {
         .from('profiles')
         .select('role')
         .eq('id', user.id)
-        .single()
+        .limit(1)
+        .maybeSingle()
 
       if (currentProfileError || currentProfile?.role !== 'direction') {
         router.push('/')

@@ -49,7 +49,8 @@ export default function ProfessionnelPreferencesPage() {
         .from('profiles')
         .select('role, pref_client_types, pref_modalities, pref_followup_types, pref_notes')
         .eq('id', user.id)
-        .single()
+        .limit(1)
+        .maybeSingle()
 
       if (profileError) {
         setError(profileError.message)

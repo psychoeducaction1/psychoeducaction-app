@@ -54,7 +54,8 @@ export default function ProfessionnelClientsPage() {
         .from('profiles')
         .select('role')
         .eq('id', user.id)
-        .single()
+        .limit(1)
+        .maybeSingle()
 
       if (profileError) {
         setError(profileError.message)
