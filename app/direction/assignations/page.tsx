@@ -17,6 +17,10 @@ import {
   tableShellClass,
 } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
+import {
+  getRemainingAssignmentCount,
+  getUsedAssignmentCount,
+} from '@/app/professionnel/shared'
 
 type FilterOption = 'all' | 'active' | 'in_progress' | 'completed' | 'inactive'
 
@@ -33,6 +37,11 @@ type AssignmentRequest = {
   assigned_count: number | null
   remaining_count: number | null
   request_comment: string | null
+}
+
+type AssignedClient = {
+  professional_id: string | null
+  is_active: boolean | null
 }
 
 type AssignmentRow = {
@@ -123,23 +132,37 @@ export default function DirectionAssignationsPage() {
         return
       }
 
-      const { data: assignmentRequestsData, error: assignmentRequestsError } =
-        await supabase
-          .from('assignment_requests')
-          .select(
-            'professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment'
-          )
-          .in('professional_id', professionalIds)
+      const [assignmentRequestsResponse, assignedClientsResponse] =
+        await Promise.all([
+          supabase
+            .from('assignment_requests')
+            .select(
+              'professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment'
+            )
+            .in('professional_id', professionalIds),
+          supabase
+            .from('assigned_clients')
+            .select('professional_id, is_active')
+            .in('professional_id', professionalIds),
+        ])
 
-      if (assignmentRequestsError) {
-        setError(assignmentRequestsError.message)
+      if (assignmentRequestsResponse.error) {
+        setError(assignmentRequestsResponse.error.message)
+        setLoading(false)
+        return
+      }
+
+      if (assignedClientsResponse.error) {
+        setError(assignedClientsResponse.error.message)
         setLoading(false)
         return
       }
 
       const assignmentRequests =
-        (assignmentRequestsData ?? []) as AssignmentRequest[]
+        (assignmentRequestsResponse.data ?? []) as AssignmentRequest[]
+      const assignedClients = (assignedClientsResponse.data ?? []) as AssignedClient[]
       const requestByProfessionalId = new Map<string, AssignmentRequest>()
+      const clientsByProfessionalId = new Map<string, AssignedClient[]>()
 
       assignmentRequests.forEach((request) => {
         if (!requestByProfessionalId.has(request.professional_id)) {
@@ -147,17 +170,33 @@ export default function DirectionAssignationsPage() {
         }
       })
 
+      assignedClients.forEach((client) => {
+        if (!client.professional_id) return
+
+        const currentClients = clientsByProfessionalId.get(client.professional_id) ?? []
+        currentClients.push(client)
+        clientsByProfessionalId.set(client.professional_id, currentClients)
+      })
+
       const nextRows = professionals.map((profile) => {
         const request = requestByProfessionalId.get(profile.id)
+        const requestedCount = request?.requested_count ?? 0
+        const assignedCount = getUsedAssignmentCount(
+          clientsByProfessionalId.get(profile.id) ?? []
+        )
+        const remainingCount = getRemainingAssignmentCount(
+          requestedCount,
+          assignedCount
+        )
 
         return {
           id: profile.id,
           fullName: profile.full_name ?? '-',
           email: profile.email ?? '-',
           requestActive: request?.is_active ?? false,
-          requestedCount: request?.requested_count ?? 0,
-          assignedCount: request?.assigned_count ?? 0,
-          remainingCount: request?.remaining_count ?? 0,
+          requestedCount,
+          assignedCount,
+          remainingCount,
           requestComment: request?.request_comment?.trim() || '-',
         }
       })

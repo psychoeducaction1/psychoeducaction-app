@@ -58,6 +58,19 @@ export function nullableText(value: string | null): string | null {
   return trimmedValue.length > 0 ? trimmedValue : null
 }
 
+export function getUsedAssignmentCount(
+  clients: Array<{ is_active: boolean | null }>
+): number {
+  return clients.filter((client) => client.is_active !== false).length
+}
+
+export function getRemainingAssignmentCount(
+  requestedCount: number,
+  assignedCount: number
+): number {
+  return Math.max(requestedCount - assignedCount, 0)
+}
+
 export function arrayToTextareaValue(value: string[] | null): string {
   return value?.join(', ') ?? ''
 }

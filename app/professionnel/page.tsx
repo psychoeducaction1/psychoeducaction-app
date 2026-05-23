@@ -16,48 +16,17 @@ import {
   StatusBadge,
 } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
-import { type AssignedClient, type AssignmentRequest } from './shared'
+import {
+  getRemainingAssignmentCount,
+  getUsedAssignmentCount,
+  type AssignedClient,
+  type AssignmentRequest,
+} from './shared'
 
 type DashboardStat = {
   label: string
   value: number
   helper: string
-}
-
-function RequestStatCard({
-  requestedCount,
-  assignedCount,
-  remainingCount,
-}: {
-  requestedCount: number
-  assignedCount: number
-  remainingCount: number
-}) {
-  return (
-    <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
-      <p className="text-sm font-medium text-[#7a6859]">Demande</p>
-      <div className="mt-3 grid grid-cols-1 gap-2 min-[420px]:grid-cols-3">
-        <div>
-          <p className="text-xs font-medium uppercase text-[#8a6f5d]">Demandés</p>
-          <p className="mt-1 text-2xl font-semibold text-[#332820]">
-            {requestedCount}
-          </p>
-        </div>
-        <div>
-          <p className="text-xs font-medium uppercase text-[#8a6f5d]">Assignés</p>
-          <p className="mt-1 text-2xl font-semibold text-[#332820]">
-            {assignedCount}
-          </p>
-        </div>
-        <div>
-          <p className="text-xs font-medium uppercase text-[#8a6f5d]">Restants</p>
-          <p className="mt-1 text-2xl font-semibold text-[#332820]">
-            {remainingCount}
-          </p>
-        </div>
-      </div>
-    </div>
-  )
 }
 
 function RequestStatusCard({
@@ -187,12 +156,12 @@ export default function ProfessionnelPage() {
     loadDashboard()
   }, [router])
 
-  const activeClients = clients.filter((client) => client.is_active)
-  const noResponseClients = clients.filter((client) => !client.is_active)
-  const notContactedClients = clients.filter((client) => !client.contacted)
+  const clientsToProcess = clients.filter((client) => client.is_active === null)
+  const activeClients = clients.filter((client) => client.is_active === true)
+  const noResponseClients = clients.filter((client) => client.is_active === false)
   const requestedCount = request?.requested_count ?? 0
-  const assignedCount = request?.assigned_count ?? 0
-  const remainingCount = request?.remaining_count ?? 0
+  const assignedCount = getUsedAssignmentCount(clients)
+  const remainingCount = getRemainingAssignmentCount(requestedCount, assignedCount)
   const requestStatus = getAssignmentRequestStatus({
     isActive: request?.is_active ?? false,
     remainingCount,
@@ -202,12 +171,12 @@ export default function ProfessionnelPage() {
   const alerts = useMemo(
     () =>
       [
-        notContactedClients.length > 0
+        clientsToProcess.length > 0
           ? {
               title: 'Assignations à traiter',
-              description: `${notContactedClients.length} assignation${
-                notContactedClients.length > 1 ? 's ne sont' : " n'est"
-              } pas encore contacté${notContactedClients.length > 1 ? 'es' : 'e'}.`,
+              description: `${clientsToProcess.length} assignation${
+                clientsToProcess.length > 1 ? 's sont' : ' est'
+              } encore en attente de statut.`,
               tone: 'warning' as const,
             }
           : null,
@@ -228,19 +197,24 @@ export default function ProfessionnelPage() {
           tone: 'warning'
         } => Boolean(alert)
       ),
-    [notContactedClients.length, requestStatus.label]
+    [clientsToProcess.length, requestStatus.label]
   )
 
   const stats: DashboardStat[] = [
+    {
+      label: 'Assignations à traiter',
+      value: clientsToProcess.length,
+      helper: 'Service = en attente',
+    },
     {
       label: 'Clients ayant pris le service',
       value: activeClients.length,
       helper: 'Service pris = oui',
     },
     {
-      label: 'Sans réponse / service non pris',
+      label: "Clients n'ayant pas pris le service",
       value: noResponseClients.length,
-      helper: 'Service pris = non',
+      helper: 'Service = non, avec motif',
     },
   ]
 
@@ -293,11 +267,6 @@ export default function ProfessionnelPage() {
                 {stats.map((stat) => (
                   <StatCard key={stat.label} {...stat} />
                 ))}
-                <RequestStatCard
-                  requestedCount={requestedCount}
-                  assignedCount={assignedCount}
-                  remainingCount={remainingCount}
-                />
                 <RequestStatusCard
                   label={requestStatus.label}
                   tone={requestStatus.tone}
@@ -358,7 +327,7 @@ export default function ProfessionnelPage() {
                   <QuickLink
                     href="/professionnel/clients"
                     title="Voir mes assignations"
-                    description="Mettre à jour le contact effectué, le service pris et les commentaires."
+                    description="Mettre à jour le statut de service, le motif et les commentaires."
                   />
                   <QuickLink
                     href="/professionnel/demande"

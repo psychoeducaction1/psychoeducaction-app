@@ -27,6 +27,10 @@ import {
   tableShellClass,
 } from "@/components/ui/index";
 import { supabase } from "@/lib/supabaseClient";
+import {
+  getRemainingAssignmentCount,
+  getUsedAssignmentCount,
+} from "../shared";
 
 type Profile = {
   id: string;
@@ -235,16 +239,6 @@ export default function ProfessionnelDetailPage() {
     () => profile?.full_name?.trim() || "Professionnel",
     [profile],
   );
-  const assignmentRequestStatus = useMemo(
-    () =>
-      getAssignmentRequestStatus({
-        isActive: assignmentRequest?.is_active,
-        remainingCount: assignmentRequest?.remaining_count,
-        requestedCount: assignmentRequest?.requested_count,
-      }),
-    [assignmentRequest],
-  );
-
   const loadProfessionalProfile = useCallback(
     async (options?: { showLoading?: boolean }) => {
       const showLoading = options?.showLoading ?? true;
@@ -471,7 +465,7 @@ export default function ProfessionnelDetailPage() {
         short_comment: nullableText(clientForm.short_comment),
         assigned_date: getTodayDate(),
         contacted: false,
-        is_active: false,
+        is_active: null,
         dossier_closed: false,
         closure_reason: null,
         meeting_count: 0,
@@ -481,10 +475,13 @@ export default function ProfessionnelDetailPage() {
 
       if (assignmentRequest) {
         const requestedCount = assignmentRequest.requested_count ?? 0;
-        const nextAssignedCount = (assignmentRequest.assigned_count ?? 0) + 1;
-        const nextRemainingCount = Math.max(
-          requestedCount - nextAssignedCount,
-          0,
+        const nextAssignedCount = getUsedAssignmentCount([
+          ...assignedClients,
+          { is_active: null },
+        ]);
+        const nextRemainingCount = getRemainingAssignmentCount(
+          requestedCount,
+          nextAssignedCount,
         );
 
         const { data: updatedRequest, error: updateError } = await supabase
@@ -533,8 +530,16 @@ export default function ProfessionnelDetailPage() {
     (client) => !client.contacted,
   );
   const requestedCount = assignmentRequest?.requested_count ?? 0;
-  const assignedCount = assignmentRequest?.assigned_count ?? 0;
-  const remainingCount = assignmentRequest?.remaining_count ?? 0;
+  const assignedCount = getUsedAssignmentCount(assignedClients);
+  const remainingCount = getRemainingAssignmentCount(
+    requestedCount,
+    assignedCount,
+  );
+  const assignmentRequestStatus = getAssignmentRequestStatus({
+    isActive: assignmentRequest?.is_active,
+    remainingCount,
+    requestedCount,
+  });
   const operationalAlerts = [
     notContactedClients.length > 0
       ? {

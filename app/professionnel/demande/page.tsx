@@ -5,7 +5,11 @@ import { useRouter } from 'next/navigation'
 import { AppNav } from '@/components/AppNav'
 import { Badge, buttonClass, getAssignmentRequestStatus } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
-import type { AssignmentRequest } from '../shared'
+import {
+  getRemainingAssignmentCount,
+  getUsedAssignmentCount,
+  type AssignmentRequest,
+} from '../shared'
 
 export default function ProfessionnelDemandePage() {
   const router = useRouter()
@@ -55,26 +59,46 @@ export default function ProfessionnelDemandePage() {
         return
       }
 
-      const { data, error: requestLoadError } = await supabase
-        .from('assignment_requests')
-        .select(
-          'professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment'
-        )
-        .eq('professional_id', user.id)
-        .limit(1)
+      const [requestResponse, clientsResponse] = await Promise.all([
+        supabase
+          .from('assignment_requests')
+          .select(
+            'professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment'
+          )
+          .eq('professional_id', user.id)
+          .limit(1),
+        supabase
+          .from('assigned_clients')
+          .select('is_active')
+          .eq('professional_id', user.id),
+      ])
 
-      if (requestLoadError) {
-        setError(requestLoadError.message)
+      if (requestResponse.error) {
+        setError(requestResponse.error.message)
         setLoading(false)
         return
       }
 
-      const currentRequest = (data?.[0] ?? null) as AssignmentRequest | null
+      if (clientsResponse.error) {
+        setError(clientsResponse.error.message)
+        setLoading(false)
+        return
+      }
+
+      const currentRequest = (requestResponse.data?.[0] ?? null) as AssignmentRequest | null
+      const currentAssignedCount = getUsedAssignmentCount(
+        (clientsResponse.data ?? []) as Array<{ is_active: boolean | null }>
+      )
+      const currentRemainingCount = getRemainingAssignmentCount(
+        currentRequest?.requested_count ?? 0,
+        currentAssignedCount
+      )
+
       setHasExistingRequest(Boolean(currentRequest))
       setRequestActive(currentRequest?.is_active ?? false)
       setRequestedCount(currentRequest?.requested_count ?? 0)
-      setAssignedCount(currentRequest?.assigned_count ?? 0)
-      setRemainingCount(currentRequest?.remaining_count ?? 0)
+      setAssignedCount(currentAssignedCount)
+      setRemainingCount(currentRemainingCount)
       setRequestComment(currentRequest?.request_comment ?? '')
       setLoading(false)
     }
@@ -88,12 +112,6 @@ export default function ProfessionnelDemandePage() {
     setRequestError('')
 
     const normalizedRequestedCount = Math.max(0, Math.trunc(requestedCount || 0))
-    const normalizedAssignedCount = Math.max(0, Math.trunc(assignedCount || 0))
-    const nextRemainingCount = Math.max(
-      normalizedRequestedCount - normalizedAssignedCount,
-      0
-    )
-
     const {
       data: { user },
       error: userError,
@@ -104,6 +122,25 @@ export default function ProfessionnelDemandePage() {
       setSavingRequest(false)
       return
     }
+
+    const { data: clientsData, error: clientsError } = await supabase
+      .from('assigned_clients')
+      .select('is_active')
+      .eq('professional_id', user.id)
+
+    if (clientsError) {
+      setRequestError(clientsError.message)
+      setSavingRequest(false)
+      return
+    }
+
+    const normalizedAssignedCount = getUsedAssignmentCount(
+      (clientsData ?? []) as Array<{ is_active: boolean | null }>
+    )
+    const nextRemainingCount = getRemainingAssignmentCount(
+      normalizedRequestedCount,
+      normalizedAssignedCount
+    )
 
     const requestPayload = {
       professional_id: user.id,

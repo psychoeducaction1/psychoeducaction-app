@@ -1,16 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppNav } from '@/components/AppNav'
 import {
   Badge,
   EmptyState,
-  buttonClass,
   tableBodyClass,
-  tableCellClass,
-  tableClass,
-  tableHeadCellClass,
   tableHeaderClass,
   tableRowClass,
   tableShellClass,
@@ -18,12 +14,16 @@ import {
 import { supabase } from '@/lib/supabaseClient'
 import {
   closureReasonOptions,
+  getRemainingAssignmentCount,
+  getUsedAssignmentCount,
   nullableText,
   type AssignedClient,
   type EditableClientField,
 } from '../shared'
 
 type ServiceStatus = 'pending' | 'yes' | 'no'
+
+const AUTO_SAVE_DEBOUNCE_MS = 700
 
 function getServiceStatus(isActive: boolean | null): ServiceStatus {
   if (isActive === null) return 'pending'
@@ -44,6 +44,8 @@ export default function ProfessionnelClientsPage() {
   const [savingClientIds, setSavingClientIds] = useState<Record<string, boolean>>({})
   const [clientMessages, setClientMessages] = useState<Record<string, string>>({})
   const [clientErrors, setClientErrors] = useState<Record<string, string>>({})
+  const autoSaveTimersRef = useRef<Record<string, number>>({})
+  const latestClientsRef = useRef<AssignedClient[]>([])
 
   useEffect(() => {
     const loadClients = async () => {
@@ -111,17 +113,21 @@ export default function ProfessionnelClientsPage() {
     loadClients()
   }, [router])
 
-  const updateClientField = <Field extends EditableClientField>(
-    clientId: string,
-    field: Field,
-    value: AssignedClient[Field]
-  ) => {
-    setClients((currentClients) =>
-      currentClients.map((client) =>
-        client.id === clientId ? { ...client, [field]: value } : client
-      )
-    )
-  }
+  useEffect(
+    () => () => {
+      Object.values(autoSaveTimersRef.current).forEach((timerId) => {
+        window.clearTimeout(timerId)
+      })
+    },
+    []
+  )
+
+  useEffect(() => {
+    latestClientsRef.current = clients
+  }, [clients])
+
+  const hasNonServiceReason = (client: AssignedClient) =>
+    Boolean(client.closure_reason?.trim())
 
   const handleSaveClient = async (client: AssignedClient) => {
     setClientMessages((currentMessages) => ({ ...currentMessages, [client.id]: '' }))
@@ -135,6 +141,15 @@ export default function ProfessionnelClientsPage() {
       return
     }
 
+    if (client.is_active === false && !hasNonServiceReason(client)) {
+      setClientErrors((currentErrors) => ({
+        ...currentErrors,
+        [client.id]:
+          'Veuillez indiquer le motif avant de classer ce client comme service non pris.',
+      }))
+      return
+    }
+
     setSavingClientIds((currentSavingIds) => ({
       ...currentSavingIds,
       [client.id]: true,
@@ -143,7 +158,6 @@ export default function ProfessionnelClientsPage() {
     const { error: updateError } = await supabase
       .from('assigned_clients')
       .update({
-        contacted: client.contacted,
         is_active: client.is_active,
         short_comment: nullableText(client.short_comment),
         closure_reason: nullableText(client.closure_reason),
@@ -164,52 +178,112 @@ export default function ProfessionnelClientsPage() {
       return
     }
 
-    setClients((currentClients) =>
-      currentClients.map((currentClient) =>
-        currentClient.id === client.id
-          ? {
-              ...currentClient,
-              short_comment: nullableText(client.short_comment),
-              closure_reason: nullableText(client.closure_reason),
-            }
-          : currentClient
-      )
+    const updatedClients = latestClientsRef.current.map((currentClient) =>
+      currentClient.id === client.id
+        ? {
+            ...currentClient,
+            is_active: client.is_active,
+            short_comment: nullableText(client.short_comment),
+            closure_reason: nullableText(client.closure_reason),
+          }
+        : currentClient
     )
+
+    const { data: request, error: requestLoadError } = await supabase
+      .from('assignment_requests')
+      .select('requested_count')
+      .eq('professional_id', currentUserId)
+      .limit(1)
+      .maybeSingle()
+
+    if (requestLoadError) {
+      setClientErrors((currentErrors) => ({
+        ...currentErrors,
+        [client.id]: requestLoadError.message,
+      }))
+      return
+    }
+
+    if (request) {
+      const nextAssignedCount = getUsedAssignmentCount(updatedClients)
+      const nextRemainingCount = getRemainingAssignmentCount(
+        request.requested_count ?? 0,
+        nextAssignedCount
+      )
+      const { error: requestUpdateError } = await supabase
+        .from('assignment_requests')
+        .update({
+          assigned_count: nextAssignedCount,
+          remaining_count: nextRemainingCount,
+        })
+        .eq('professional_id', currentUserId)
+
+      if (requestUpdateError) {
+        setClientErrors((currentErrors) => ({
+          ...currentErrors,
+          [client.id]: requestUpdateError.message,
+        }))
+        return
+      }
+    }
+
+    setClients(updatedClients)
     setClientMessages((currentMessages) => ({
       ...currentMessages,
-      [client.id]: 'Client sauvegardé.',
+      [client.id]: 'Sauvegardé',
     }))
   }
 
+  const scheduleAutoSave = (client: AssignedClient) => {
+    const currentTimer = autoSaveTimersRef.current[client.id]
+
+    if (currentTimer) {
+      window.clearTimeout(currentTimer)
+    }
+
+    autoSaveTimersRef.current[client.id] = window.setTimeout(() => {
+      delete autoSaveTimersRef.current[client.id]
+      void handleSaveClient(client)
+    }, AUTO_SAVE_DEBOUNCE_MS)
+  }
+
+  const updateClientField = <Field extends EditableClientField>(
+    clientId: string,
+    field: Field,
+    value: AssignedClient[Field]
+  ) => {
+    const currentClient = latestClientsRef.current.find((client) => client.id === clientId)
+
+    if (!currentClient) return
+
+    const nextClient = { ...currentClient, [field]: value } as AssignedClient
+
+    setClients((currentClients) =>
+      currentClients.map((client) => (client.id === clientId ? nextClient : client))
+    )
+    scheduleAutoSave(nextClient)
+  }
+
   const clientsToProcess = clients.filter(
-    (client) => client.is_active === null || !client.contacted
+    (client) => client.is_active === null || (client.is_active === false && !hasNonServiceReason(client))
   )
-  const activeClients = clients.filter(
-    (client) => client.is_active === true && client.contacted
-  )
+  const activeClients = clients.filter((client) => client.is_active === true)
   const noResponseClients = clients.filter(
-    (client) => client.is_active === false && client.contacted
+    (client) => client.is_active === false && hasNonServiceReason(client)
   )
 
-  const renderSaveButton = (client: AssignedClient) => (
-    <div>
-      <button
-        type="button"
-        onClick={() => handleSaveClient(client)}
-        disabled={savingClientIds[client.id]}
-        className={`${buttonClass('primary')} w-full sm:w-auto`}
-      >
-        {savingClientIds[client.id] ? 'Sauvegarde...' : 'Sauvegarder'}
-      </button>
-
+  const renderSaveStatus = (client: AssignedClient) => (
+    <div className="text-sm">
+      {savingClientIds[client.id] && (
+        <p className="text-xs font-medium text-[#8a5633]">Sauvegarde...</p>
+      )}
       {clientMessages[client.id] && (
-        <p className="mt-2 text-xs font-medium text-green-700">
+        <p className="text-xs font-medium text-green-700">
           {clientMessages[client.id]}
         </p>
       )}
-
       {clientErrors[client.id] && (
-        <p className="mt-2 text-xs font-medium text-red-700">
+        <p className="text-xs font-medium text-red-700">
           {clientErrors[client.id]}
         </p>
       )}
@@ -223,7 +297,9 @@ export default function ProfessionnelClientsPage() {
       <Badge tone="warning">En attente</Badge>
     ) : (
       <div className="space-y-2">
-        <Badge tone="danger">Service non pris</Badge>
+        <span className="inline-flex rounded-full border border-[#e8c9bd] bg-[#fff3ee] px-2 py-0.5 text-[11px] font-medium leading-4 text-[#8a3f2b]">
+          Service non pris
+        </span>
 
         <label className="block text-xs font-medium text-[#5d4a3d]">
           Motif de non-prise de service
@@ -281,22 +357,9 @@ export default function ProfessionnelClientsPage() {
                     <p>Date: {client.assigned_date}</p>
                   </div>
                 </div>
-                <div className="shrink-0">{renderSaveButton(client)}</div>
               </div>
 
-              <div className="mt-4 grid gap-4 md:grid-cols-[0.8fr_0.9fr_1.4fr]">
-                <label className="flex items-center gap-2 text-sm font-medium text-[#5d4a3d]">
-                  <input
-                    type="checkbox"
-                    checked={client.contacted}
-                    onChange={(event) =>
-                      updateClientField(client.id, 'contacted', event.target.checked)
-                    }
-                    className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
-                  />
-                  Contact effectué
-                </label>
-
+              <div className="mt-4 grid gap-4 md:grid-cols-[8.5rem_minmax(0,1fr)]">
                 <label className="block text-xs font-medium text-[#5d4a3d]">
                   Service pris
                   <select
@@ -308,7 +371,7 @@ export default function ProfessionnelClientsPage() {
                         serviceStatusToIsActive(event.target.value as ServiceStatus)
                       )
                     }
-                    className="mt-1 w-full rounded-xl border border-[#dfd0bf] bg-white px-2 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                    className="mt-1 w-28 rounded-xl border border-[#dfd0bf] bg-white px-2 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                   >
                     <option value="pending">En attente</option>
                     <option value="yes">Oui</option>
@@ -318,60 +381,61 @@ export default function ProfessionnelClientsPage() {
 
                 <div>{renderFollowUpFields(client)}</div>
               </div>
+              {(savingClientIds[client.id] ||
+                clientMessages[client.id] ||
+                clientErrors[client.id]) && (
+                <div className="mt-3">{renderSaveStatus(client)}</div>
+              )}
             </article>
           ))
         )}
       </div>
 
       <div className={`${tableShellClass} hidden xl:block`}>
-        <table className={tableClass}>
+        <table className="w-full min-w-[760px] table-fixed divide-y divide-[#eadfd2] text-sm">
+        <colgroup>
+          <col className="w-[9%]" />
+          <col className="w-[9%]" />
+          <col className="w-[17%]" />
+          <col className="w-[12%]" />
+          <col className="w-[13%]" />
+          <col className="w-[10%]" />
+          <col className="w-[9rem]" />
+          <col />
+        </colgroup>
         <thead className={tableHeaderClass}>
           <tr>
-            <th className={tableHeadCellClass}>Prénom</th>
-            <th className={tableHeadCellClass}>Nom</th>
-            <th className={tableHeadCellClass}>Courriel</th>
-            <th className={tableHeadCellClass}>Téléphone</th>
-            <th className={tableHeadCellClass}>Requérant</th>
-            <th className={tableHeadCellClass}>Date assignation</th>
-            <th className={tableHeadCellClass}>Contact effectué</th>
-            <th className={tableHeadCellClass}>Service pris</th>
-            <th className={tableHeadCellClass}>Motif / commentaire</th>
-            <th className={`${tableHeadCellClass} sticky right-0 z-10 bg-[#f8f1e8]`}>
-              Action
-            </th>
+            <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#5d4a3d]">Prénom</th>
+            <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#5d4a3d]">Nom</th>
+            <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#5d4a3d]">Courriel</th>
+            <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#5d4a3d]">Téléphone</th>
+            <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#5d4a3d]">Requérant</th>
+            <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#5d4a3d]">Date</th>
+            <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#5d4a3d]">Service</th>
+            <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#5d4a3d]">Motif / commentaire</th>
           </tr>
         </thead>
         <tbody className={tableBodyClass}>
           {sectionClients.length === 0 ? (
             <tr>
-              <td colSpan={10} className="p-6">
+              <td colSpan={8} className="p-6">
                 <EmptyState title={emptyMessage} />
               </td>
             </tr>
           ) : (
             sectionClients.map((client) => (
               <tr key={client.id} className={tableRowClass}>
-                <td className="px-4 py-4 align-top font-medium text-[#332820]">
+                <td className="break-words px-3 py-3 align-top font-medium text-[#332820]">
                   {client.first_name}
                 </td>
-                <td className="px-4 py-4 align-top font-medium text-[#332820]">
+                <td className="break-words px-3 py-3 align-top font-medium text-[#332820]">
                   {client.last_name}
                 </td>
-                <td className={tableCellClass}>{client.email || '-'}</td>
-                <td className={tableCellClass}>{client.phone || '-'}</td>
-                <td className={tableCellClass}>{client.requester_name || '-'}</td>
-                <td className={tableCellClass}>{client.assigned_date}</td>
-                <td className={tableCellClass}>
-                  <input
-                    type="checkbox"
-                    checked={client.contacted}
-                    onChange={(event) =>
-                      updateClientField(client.id, 'contacted', event.target.checked)
-                    }
-                    className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
-                  />
-                </td>
-                <td className={tableCellClass}>
+                <td className="break-words px-3 py-3 align-top text-[#6c5a4d]">{client.email || '-'}</td>
+                <td className="break-words px-3 py-3 align-top text-[#6c5a4d]">{client.phone || '-'}</td>
+                <td className="break-words px-3 py-3 align-top text-[#6c5a4d]">{client.requester_name || '-'}</td>
+                <td className="break-words px-3 py-3 align-top text-[#6c5a4d]">{client.assigned_date}</td>
+                <td className="px-3 py-3 align-top text-[#6c5a4d]">
                   <select
                     value={getServiceStatus(client.is_active)}
                     onChange={(event) =>
@@ -381,18 +445,20 @@ export default function ProfessionnelClientsPage() {
                         serviceStatusToIsActive(event.target.value as ServiceStatus)
                       )
                     }
-                    className="w-32 rounded-xl border border-[#dfd0bf] bg-white px-2 py-1 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                    className="w-28 rounded-xl border border-[#dfd0bf] bg-white px-2 py-1 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                   >
                     <option value="pending">En attente</option>
                     <option value="yes">Oui</option>
                     <option value="no">Non</option>
                   </select>
                 </td>
-                <td className="min-w-72 px-4 py-4 align-top">
+                <td className="px-3 py-3 align-top">
                   {renderFollowUpFields(client)}
-                </td>
-                <td className="sticky right-0 min-w-40 bg-[#fffdf9] px-4 py-4 align-top shadow-[-8px_0_16px_rgba(72,49,30,0.04)]">
-                  {renderSaveButton(client)}
+                  {(savingClientIds[client.id] ||
+                    clientMessages[client.id] ||
+                    clientErrors[client.id]) && (
+                    <div className="mt-2">{renderSaveStatus(client)}</div>
+                  )}
                 </td>
               </tr>
             ))
@@ -432,7 +498,7 @@ export default function ProfessionnelClientsPage() {
 
           {!loading && !error && (
             <div className="space-y-8">
-              <section>
+              <section className="rounded-3xl border border-[#eadfd2] bg-[#fffdf9] p-4 shadow-[0_1px_2px_rgba(72,49,30,0.04)] sm:p-5">
                 <h2 className="mb-3 text-lg font-semibold text-[#332820]">
                   Assignations à traiter
                 </h2>
@@ -442,8 +508,8 @@ export default function ProfessionnelClientsPage() {
                 )}
               </section>
 
-              <section>
-                <h2 className="mb-3 text-lg font-semibold text-[#332820]">
+              <section className="rounded-3xl border border-[#d8e2c7] bg-[#f6faef] p-4 shadow-[0_1px_2px_rgba(72,49,30,0.04)] sm:p-5">
+                <h2 className="mb-3 text-lg font-semibold text-[#3f4f2d]">
                   Clients ayant pris le service
                 </h2>
                 {renderClientsTable(
@@ -452,8 +518,8 @@ export default function ProfessionnelClientsPage() {
                 )}
               </section>
 
-              <section>
-                <h2 className="mb-3 text-lg font-semibold text-[#332820]">
+              <section className="rounded-3xl border border-[#e9cfc5] bg-[#fff6f2] p-4 shadow-[0_1px_2px_rgba(72,49,30,0.04)] sm:p-5">
+                <h2 className="mb-3 text-lg font-semibold text-[#6f3f32]">
                   Clients n&apos;ayant pas pris le service
                 </h2>
                 {renderClientsTable(

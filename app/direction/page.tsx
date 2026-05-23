@@ -15,6 +15,9 @@ import {
   StatCard,
 } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
+import {
+  getRemainingAssignmentCount,
+} from '@/app/professionnel/shared'
 
 type Profile = {
   id: string
@@ -40,6 +43,7 @@ type ClientStats = {
   total: number
   active: number
   noResponse: number
+  usedAssignments: number
 }
 
 type DirectionRow = {
@@ -147,13 +151,18 @@ export default function DirectionPage() {
           total: 0,
           active: 0,
           noResponse: 0,
+          usedAssignments: 0,
         }
 
         currentStats.total += 1
 
-        if (client.is_active) {
+        if (client.is_active !== false) {
+          currentStats.usedAssignments += 1
+        }
+
+        if (client.is_active === true) {
           currentStats.active += 1
-        } else {
+        } else if (client.is_active === false) {
           currentStats.noResponse += 1
         }
 
@@ -172,6 +181,13 @@ export default function DirectionPage() {
         const request = requestByProfessionalId.get(profile.id)
         const clientStats = clientStatsByProfessionalId.get(profile.id)
 
+        const requestedCount = request?.requested_count ?? 0
+        const assignedCount = clientStats?.usedAssignments ?? 0
+        const remainingCount = getRemainingAssignmentCount(
+          requestedCount,
+          assignedCount
+        )
+
         return {
           id: profile.id,
           fullName: profile.full_name ?? '-',
@@ -180,9 +196,9 @@ export default function DirectionPage() {
           activeClients: clientStats?.active ?? 0,
           noResponseClients: clientStats?.noResponse ?? 0,
           requestActive: request?.is_active ?? false,
-          requestedCount: request?.requested_count ?? 0,
-          assignedCount: request?.assigned_count ?? 0,
-          remainingCount: request?.remaining_count ?? 0,
+          requestedCount,
+          assignedCount,
+          remainingCount,
           requestComment: request?.request_comment?.trim() || '-',
         }
       })
