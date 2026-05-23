@@ -627,7 +627,7 @@ export default function ProfessionnelDetailPage() {
                       {clientsWithService.length > 1 ? "s" : ""} pris
                     </Badge>
                     <Badge tone="danger">
-                      {clientsWithoutService.length} sans reponse / service non pris
+                      {clientsWithoutService.length} service non pris
                     </Badge>
                     <Badge tone="warning">
                       {clientsPendingService.length} en attente
@@ -647,14 +647,14 @@ export default function ProfessionnelDetailPage() {
                     helper="Service pris = oui"
                   />
                   <StatCard
-                    label="Sans reponse / service non pris"
+                    label="Services non pris"
                     value={clientsWithoutService.length}
                     helper="Service pris = non"
                   />
                   <StatCard
-                    label="Demandes / assignes / restants"
+                    label="Demande / assignations / restants"
                     value={requestedCount}
-                    helper={`${assignedCount} assignes, ${remainingCount} restants`}
+                    helper={`${assignedCount} assignations actives, ${remainingCount} restants`}
                   />
                   <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
                     <p className="text-sm font-medium text-[#7a6859]">
@@ -954,7 +954,7 @@ export default function ProfessionnelDetailPage() {
                     </div>
                     <div>
                       <dt className="text-sm font-medium text-[#8a6f5d]">
-                        Assignes
+                        Assignations actives
                       </dt>
                       <dd className="mt-1 text-sm text-[#332820]">
                         {assignedCount}

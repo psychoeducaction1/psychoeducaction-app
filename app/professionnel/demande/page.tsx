@@ -169,7 +169,11 @@ export default function ProfessionnelDemandePage() {
     setRequestedCount(normalizedRequestedCount)
     setAssignedCount(normalizedAssignedCount)
     setRemainingCount(nextRemainingCount)
-    setRequestMessage('Demande active sauvegardée.')
+    setRequestMessage(
+      nextRemainingCount === 0 && normalizedRequestedCount > 0
+        ? 'Demande complétée sauvegardée.'
+        : 'Demande active sauvegardée.'
+    )
     setSavingRequest(false)
   }
 
@@ -226,6 +230,7 @@ export default function ProfessionnelDemandePage() {
     remainingCount,
     requestedCount,
   })
+  const isRequestCompleted = hasExistingRequest && requestedCount > 0 && remainingCount === 0
 
   return (
     <>
@@ -269,6 +274,13 @@ export default function ProfessionnelDemandePage() {
                   désactive la demande actuelle.
                 </p>
               </div>
+
+              {isRequestCompleted && (
+                <div className="mt-5 rounded-2xl border border-[#d6c7aa] bg-[#f1ead9] p-4 text-sm text-[#5f5932]">
+                  Votre demande actuelle est complÃ©tÃ©e. Vous pouvez crÃ©er une
+                  nouvelle demande au besoin.
+                </div>
+              )}
 
               <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="rounded-2xl border border-[#eadfd2] bg-[#fbf6ef] p-4">

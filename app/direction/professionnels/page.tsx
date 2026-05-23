@@ -273,12 +273,10 @@ export default function DirectionProfessionnelsPage() {
                       <th className={tableHeadCellClass}>Email</th>
                       <th className={tableHeadCellClass}>Statut demande</th>
                       <th className={tableHeadCellClass}>Clients demandes</th>
-                      <th className={tableHeadCellClass}>Clients assignes</th>
-                      <th className={tableHeadCellClass}>Clients restants</th>
-                      <th className={tableHeadCellClass}>Clients actifs</th>
-                      <th className={tableHeadCellClass}>
-                        Sans reponse / service non pris
-                      </th>
+                      <th className={tableHeadCellClass}>Assignations actives</th>
+                      <th className={tableHeadCellClass}>Places restantes</th>
+                      <th className={tableHeadCellClass}>Services pris</th>
+                      <th className={tableHeadCellClass}>Services non pris</th>
                       <th className={tableHeadCellClass}>Commentaire</th>
                     </tr>
                   </thead>
@@ -326,13 +324,15 @@ export default function DirectionProfessionnelsPage() {
                               </Badge>
                             </td>
                             <td className={tableCellClass}>
-                              <Badge tone="success">{row.activeClients} actifs</Badge>
+                              <Badge tone="success">
+                                {row.activeClients} service pris
+                              </Badge>
                             </td>
                             <td className={tableCellClass}>
                               <Badge
                                 tone={row.noResponseClients > 0 ? 'danger' : 'muted'}
                               >
-                                {row.noResponseClients} sans reponse
+                                {row.noResponseClients} service non pris
                               </Badge>
                             </td>
                             <td className={tableCellClass}>{row.requestComment}</td>

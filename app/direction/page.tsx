@@ -282,14 +282,14 @@ export default function DirectionPage() {
       : null,
     rows.some((row) => row.noResponseClients >= 3)
       ? {
-          title: 'Clients sans reponse a surveiller',
+          title: 'Services non pris a surveiller',
           description: `${
             rows.filter((row) => row.noResponseClients >= 3).length
           } professionnel${
             rows.filter((row) => row.noResponseClients >= 3).length > 1
               ? 's ont'
               : ' a'
-          } plusieurs clients sans reponse.`,
+          } plusieurs services non pris.`,
           tone: 'warning' as const,
         }
       : null,
@@ -358,12 +358,12 @@ export default function DirectionPage() {
                   tone="warm"
                 />
                 <StatCard
-                  label="Clients actifs"
+                  label="Services pris"
                   value={dashboardStats.activeClients}
                   tone="success"
                 />
                 <StatCard
-                  label="Sans reponse / service non pris"
+                  label="Services non pris"
                   value={dashboardStats.noResponseClients}
                   tone="warm"
                 />
@@ -424,7 +424,7 @@ export default function DirectionPage() {
                               <Badge tone={status.tone}>{status.label}</Badge>
                             </div>
                             <p className="mt-2 text-sm text-[#7a6859]">
-                              {row.assignedCount} assignes sur {row.requestedCount}
+                              {row.assignedCount} assignations actives sur {row.requestedCount}
                             </p>
                           </div>
                         )
@@ -453,7 +453,7 @@ export default function DirectionPage() {
                             <div className="flex flex-wrap gap-2">
                               {row.noResponseClients >= 3 && (
                                 <Badge tone="danger">
-                                  {row.noResponseClients} sans reponse
+                                  {row.noResponseClients} service non pris
                                 </Badge>
                               )}
                               {row.requestActive &&

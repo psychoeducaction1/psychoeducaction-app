@@ -157,11 +157,10 @@ export default function ProfessionnelPage() {
   }, [router])
 
   const clientsToProcess = clients.filter((client) => client.is_active === null)
-  const activeClients = clients.filter((client) => client.is_active === true)
-  const noResponseClients = clients.filter((client) => client.is_active === false)
   const requestedCount = request?.requested_count ?? 0
   const assignedCount = getUsedAssignmentCount(clients)
   const remainingCount = getRemainingAssignmentCount(requestedCount, assignedCount)
+  const isRequestCompleted = Boolean(request && requestedCount > 0 && remainingCount === 0)
   const requestStatus = getAssignmentRequestStatus({
     isActive: request?.is_active ?? false,
     remainingCount,
@@ -188,16 +187,24 @@ export default function ProfessionnelPage() {
               tone: 'warning' as const,
             }
           : null,
+        isRequestCompleted
+          ? {
+              title: 'Demande complÃ©tÃ©e',
+              description:
+                'Votre demande actuelle est complÃ©tÃ©e. Vous pouvez crÃ©er une nouvelle demande au besoin.',
+              tone: 'success' as const,
+            }
+          : null,
       ].filter(
         (
           alert
         ): alert is {
           title: string
           description: string
-          tone: 'warning'
+          tone: 'warning' | 'success'
         } => Boolean(alert)
       ),
-    [clientsToProcess.length, requestStatus.label]
+    [clientsToProcess.length, isRequestCompleted, requestStatus.label]
   )
 
   const stats: DashboardStat[] = [
@@ -207,14 +214,9 @@ export default function ProfessionnelPage() {
       helper: 'Service = en attente',
     },
     {
-      label: 'Clients ayant pris le service',
-      value: activeClients.length,
-      helper: 'Service pris = oui',
-    },
-    {
-      label: "Clients n'ayant pas pris le service",
-      value: noResponseClients.length,
-      helper: 'Service = non, avec motif',
+      label: 'Places restantes',
+      value: remainingCount,
+      helper: 'Disponibles dans la demande active',
     },
   ]
 
@@ -263,7 +265,7 @@ export default function ProfessionnelPage() {
                 <EmptyState title="Aucune alerte pour le moment." />
               )}
 
-              <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {stats.map((stat) => (
                   <StatCard key={stat.label} {...stat} />
                 ))}
@@ -286,6 +288,12 @@ export default function ProfessionnelPage() {
                           {requestStatus.label}
                         </Badge>
                       </p>
+                      {isRequestCompleted && (
+                        <p className="mt-2 text-sm text-[#7a6859]">
+                          Votre demande actuelle est complÃ©tÃ©e. Vous pouvez
+                          crÃ©er une nouvelle demande au besoin.
+                        </p>
+                      )}
                     </div>
                     <Link
                       href="/professionnel/demande"

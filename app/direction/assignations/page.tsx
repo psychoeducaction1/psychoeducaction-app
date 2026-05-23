@@ -272,8 +272,8 @@ export default function DirectionAssignationsPage() {
                       <th className={tableHeadCellClass}>Email</th>
                       <th className={tableHeadCellClass}>Statut de la demande</th>
                       <th className={tableHeadCellClass}>Clients demandés</th>
-                      <th className={tableHeadCellClass}>Clients assignés</th>
-                      <th className={tableHeadCellClass}>Clients restants</th>
+                      <th className={tableHeadCellClass}>Assignations actives</th>
+                      <th className={tableHeadCellClass}>Places restantes</th>
                       <th className={tableHeadCellClass}>Commentaire</th>
                     </tr>
                   </thead>
