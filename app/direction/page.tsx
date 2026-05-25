@@ -27,10 +27,12 @@ type Profile = {
 
 type AssignedClient = {
   professional_id: string | null
+  assignment_request_id: string | null
   is_active: boolean | null
 }
 
 type AssignmentRequest = {
+  id: string
   professional_id: string
   is_active: boolean | null
   requested_count: number | null
@@ -117,12 +119,12 @@ export default function DirectionPage() {
       const [assignedClientsResponse, assignmentRequestsResponse] = await Promise.all([
         supabase
           .from('assigned_clients')
-          .select('professional_id, is_active')
+          .select('professional_id, assignment_request_id, is_active')
           .in('professional_id', professionalIds),
         supabase
           .from('assignment_requests')
           .select(
-            'professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment'
+            'id, professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment'
           )
           .in('professional_id', professionalIds),
       ])
@@ -142,12 +144,24 @@ export default function DirectionPage() {
       const assignedClients = (assignedClientsResponse.data ?? []) as AssignedClient[]
       const assignmentRequests = (assignmentRequestsResponse.data ?? []) as AssignmentRequest[]
 
-      const clientStatsByProfessionalId = new Map<string, ClientStats>()
+      const requestByProfessionalId = new Map<string, AssignmentRequest>()
+
+      assignmentRequests.forEach((request) => {
+        const currentRequest = requestByProfessionalId.get(request.professional_id)
+        const requestHasRemaining = (request.remaining_count ?? 0) > 0
+        const currentHasRemaining = (currentRequest?.remaining_count ?? 0) > 0
+
+        if (!currentRequest || (requestHasRemaining && !currentHasRemaining)) {
+          requestByProfessionalId.set(request.professional_id, request)
+        }
+      })
+
+      const clientStatsByRequestId = new Map<string, ClientStats>()
 
       assignedClients.forEach((client) => {
-        if (!client.professional_id) return
+        if (!client.assignment_request_id) return
 
-        const currentStats = clientStatsByProfessionalId.get(client.professional_id) ?? {
+        const currentStats = clientStatsByRequestId.get(client.assignment_request_id) ?? {
           total: 0,
           active: 0,
           noResponse: 0,
@@ -156,7 +170,7 @@ export default function DirectionPage() {
 
         currentStats.total += 1
 
-        if (client.is_active !== false) {
+        if (client.is_active === true) {
           currentStats.usedAssignments += 1
         }
 
@@ -166,20 +180,12 @@ export default function DirectionPage() {
           currentStats.noResponse += 1
         }
 
-        clientStatsByProfessionalId.set(client.professional_id, currentStats)
-      })
-
-      const requestByProfessionalId = new Map<string, AssignmentRequest>()
-
-      assignmentRequests.forEach((request) => {
-        if (!requestByProfessionalId.has(request.professional_id)) {
-          requestByProfessionalId.set(request.professional_id, request)
-        }
+        clientStatsByRequestId.set(client.assignment_request_id, currentStats)
       })
 
       const nextRows = professionals.map((profile) => {
         const request = requestByProfessionalId.get(profile.id)
-        const clientStats = clientStatsByProfessionalId.get(profile.id)
+        const clientStats = request ? clientStatsByRequestId.get(request.id) : undefined
 
         const requestedCount = request?.requested_count ?? 0
         const assignedCount = clientStats?.usedAssignments ?? 0
@@ -424,7 +430,7 @@ export default function DirectionPage() {
                               <Badge tone={status.tone}>{status.label}</Badge>
                             </div>
                             <p className="mt-2 text-sm text-[#7a6859]">
-                              {row.assignedCount} assignations actives sur {row.requestedCount}
+                              {row.assignedCount} services pris sur {row.requestedCount}
                             </p>
                           </div>
                         )

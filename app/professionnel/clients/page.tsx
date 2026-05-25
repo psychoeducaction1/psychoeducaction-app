@@ -18,6 +18,7 @@ import {
   getUsedAssignmentCount,
   nullableText,
   type AssignedClient,
+  type AssignmentRequest,
   type EditableClientField,
 } from '../shared'
 
@@ -39,6 +40,7 @@ export default function ProfessionnelClientsPage() {
   const router = useRouter()
   const [clients, setClients] = useState<AssignedClient[]>([])
   const [currentUserId, setCurrentUserId] = useState('')
+  const [currentRequestId, setCurrentRequestId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [savingClientIds, setSavingClientIds] = useState<Record<string, boolean>>({})
@@ -82,10 +84,37 @@ export default function ProfessionnelClientsPage() {
         return
       }
 
+      const { data: request, error: requestError } = await supabase
+        .from('assignment_requests')
+        .select(
+          'id, professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment'
+        )
+        .eq('professional_id', user.id)
+        .eq('is_active', true)
+        .gt('remaining_count', 0)
+        .limit(1)
+        .maybeSingle()
+
+      if (requestError) {
+        setError(requestError.message)
+        setLoading(false)
+        return
+      }
+
+      const activeRequest = (request as AssignmentRequest | null) ?? null
+      setCurrentRequestId(activeRequest?.id ?? null)
+
+      if (!activeRequest) {
+        setClients([])
+        setLoading(false)
+        return
+      }
+
       const { data, error: clientsError } = await supabase
         .from('assigned_clients')
         .select(`
           id,
+          assignment_request_id,
           first_name,
           last_name,
           email,
@@ -98,6 +127,7 @@ export default function ProfessionnelClientsPage() {
           closure_reason
         `)
         .eq('professional_id', user.id)
+        .eq('assignment_request_id', activeRequest.id)
         .order('assigned_date', { ascending: false })
 
       if (clientsError) {
@@ -159,7 +189,6 @@ export default function ProfessionnelClientsPage() {
       .from('assigned_clients')
       .update({
         is_active: client.is_active,
-        short_comment: nullableText(client.short_comment),
         closure_reason: nullableText(client.closure_reason),
       })
       .eq('id', client.id)
@@ -183,16 +212,24 @@ export default function ProfessionnelClientsPage() {
         ? {
             ...currentClient,
             is_active: client.is_active,
-            short_comment: nullableText(client.short_comment),
             closure_reason: nullableText(client.closure_reason),
           }
         : currentClient
     )
 
+    if (!currentRequestId) {
+      setClients(updatedClients)
+      setClientMessages((currentMessages) => ({
+        ...currentMessages,
+        [client.id]: 'Sauvegardé',
+      }))
+      return
+    }
+
     const { data: request, error: requestLoadError } = await supabase
       .from('assignment_requests')
       .select('requested_count')
-      .eq('professional_id', currentUserId)
+      .eq('id', currentRequestId)
       .limit(1)
       .maybeSingle()
 
@@ -216,7 +253,7 @@ export default function ProfessionnelClientsPage() {
           assigned_count: nextAssignedCount,
           remaining_count: nextRemainingCount,
         })
-        .eq('professional_id', currentUserId)
+        .eq('id', currentRequestId)
 
       if (requestUpdateError) {
         setClientErrors((currentErrors) => ({
@@ -290,17 +327,29 @@ export default function ProfessionnelClientsPage() {
     </div>
   )
 
-  const renderFollowUpFields = (client: AssignedClient) =>
+  const renderConsultationMotif = (client: AssignedClient) => (
+    <div className="rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-3 text-sm text-[#332820]">
+      <p className="text-xs font-medium uppercase text-[#8a6f5d]">
+        Motif de consultation
+      </p>
+      <p className="mt-1 whitespace-pre-wrap">
+        {client.short_comment?.trim() || '-'}
+      </p>
+    </div>
+  )
+
+  const renderServiceBadge = (client: AssignedClient) =>
     client.is_active === true ? (
       <Badge tone="success">Service pris</Badge>
-    ) : client.is_active === null ? (
-      <Badge tone="warning">En attente</Badge>
+    ) : client.is_active === false ? (
+      <Badge tone="danger">Service non pris</Badge>
     ) : (
-      <div className="space-y-2">
-        <span className="inline-flex rounded-full border border-[#e8c9bd] bg-[#fff3ee] px-2 py-0.5 text-[11px] font-medium leading-4 text-[#8a3f2b]">
-          Service non pris
-        </span>
+      <Badge tone="warning">En attente</Badge>
+    )
 
+  const renderNonServiceReason = (client: AssignedClient) =>
+    client.is_active === false ? (
+      <div className="space-y-2">
         <label className="block text-xs font-medium text-[#5d4a3d]">
           Motif de non-prise de service
           <select
@@ -317,24 +366,12 @@ export default function ProfessionnelClientsPage() {
             ))}
           </select>
         </label>
-
-        <label className="block text-xs font-medium text-[#5d4a3d]">
-          Commentaire
-          <textarea
-            value={client.short_comment ?? ''}
-            onChange={(event) =>
-              updateClientField(client.id, 'short_comment', event.target.value)
-            }
-            rows={2}
-            className="mt-1 w-full rounded-xl border border-[#dfd0bf] bg-white px-2 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
-          />
-        </label>
       </div>
-    )
+    ) : null
 
   const renderClientsTable = (sectionClients: AssignedClient[], emptyMessage: string) => (
     <>
-      <div className="space-y-4 xl:hidden">
+      <div className="space-y-4">
         {sectionClients.length === 0 ? (
           <EmptyState title={emptyMessage} />
         ) : (
@@ -345,9 +382,12 @@ export default function ProfessionnelClientsPage() {
             >
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
-                  <h3 className="break-words text-base font-semibold text-[#332820]">
-                    {client.first_name} {client.last_name}
-                  </h3>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="break-words text-base font-semibold text-[#332820]">
+                      {client.first_name} {client.last_name}
+                    </h3>
+                    {renderServiceBadge(client)}
+                  </div>
                   <div className="mt-2 grid gap-1 text-sm text-[#7a6859] sm:grid-cols-2">
                     <p className="break-words">Courriel: {client.email || '-'}</p>
                     <p>Téléphone: {client.phone || '-'}</p>
@@ -359,7 +399,9 @@ export default function ProfessionnelClientsPage() {
                 </div>
               </div>
 
-              <div className="mt-4 grid gap-4 md:grid-cols-[8.5rem_minmax(0,1fr)]">
+              <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_8.5rem_minmax(0,1fr)]">
+                {renderConsultationMotif(client)}
+
                 <label className="block text-xs font-medium text-[#5d4a3d]">
                   Service pris
                   <select
@@ -379,7 +421,7 @@ export default function ProfessionnelClientsPage() {
                   </select>
                 </label>
 
-                <div>{renderFollowUpFields(client)}</div>
+                <div>{renderNonServiceReason(client)}</div>
               </div>
               {(savingClientIds[client.id] ||
                 clientMessages[client.id] ||
@@ -391,7 +433,7 @@ export default function ProfessionnelClientsPage() {
         )}
       </div>
 
-      <div className={`${tableShellClass} hidden xl:block`}>
+      <div className={`${tableShellClass} hidden`}>
         <table className="w-full min-w-[760px] table-fixed divide-y divide-[#eadfd2] text-sm">
         <colgroup>
           <col className="w-[9%]" />
@@ -400,8 +442,9 @@ export default function ProfessionnelClientsPage() {
           <col className="w-[12%]" />
           <col className="w-[13%]" />
           <col className="w-[10%]" />
-          <col className="w-[9rem]" />
           <col />
+          <col className="w-[9rem]" />
+          <col className="w-[18rem]" />
         </colgroup>
         <thead className={tableHeaderClass}>
           <tr>
@@ -411,14 +454,15 @@ export default function ProfessionnelClientsPage() {
             <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#5d4a3d]">Téléphone</th>
             <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#5d4a3d]">Requérant</th>
             <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#5d4a3d]">Date</th>
+            <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#5d4a3d]">Motif de consultation</th>
             <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#5d4a3d]">Service</th>
-            <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#5d4a3d]">Motif / commentaire</th>
+            <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#5d4a3d]">Motif de non-prise</th>
           </tr>
         </thead>
         <tbody className={tableBodyClass}>
           {sectionClients.length === 0 ? (
             <tr>
-              <td colSpan={8} className="p-6">
+              <td colSpan={9} className="p-6">
                 <EmptyState title={emptyMessage} />
               </td>
             </tr>
@@ -435,6 +479,9 @@ export default function ProfessionnelClientsPage() {
                 <td className="break-words px-3 py-3 align-top text-[#6c5a4d]">{client.phone || '-'}</td>
                 <td className="break-words px-3 py-3 align-top text-[#6c5a4d]">{client.requester_name || '-'}</td>
                 <td className="break-words px-3 py-3 align-top text-[#6c5a4d]">{client.assigned_date}</td>
+                <td className="px-3 py-3 align-top">
+                  {renderConsultationMotif(client)}
+                </td>
                 <td className="px-3 py-3 align-top text-[#6c5a4d]">
                   <select
                     value={getServiceStatus(client.is_active)}
@@ -453,7 +500,7 @@ export default function ProfessionnelClientsPage() {
                   </select>
                 </td>
                 <td className="px-3 py-3 align-top">
-                  {renderFollowUpFields(client)}
+                  {renderNonServiceReason(client)}
                   {(savingClientIds[client.id] ||
                     clientMessages[client.id] ||
                     clientErrors[client.id]) && (
@@ -480,7 +527,7 @@ export default function ProfessionnelClientsPage() {
               Mes assignations
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#7a6859]">
-              Suivez les contacts et la prise de service de vos assignations.
+              Suivez la confirmation de service de vos assignations.
             </p>
           </div>
 

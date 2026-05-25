@@ -31,6 +31,7 @@ type Profile = {
 }
 
 type AssignmentRequest = {
+  id: string
   professional_id: string
   is_active: boolean | null
   requested_count: number | null
@@ -41,6 +42,7 @@ type AssignmentRequest = {
 
 type AssignedClient = {
   professional_id: string | null
+  assignment_request_id: string | null
   is_active: boolean | null
 }
 
@@ -137,12 +139,12 @@ export default function DirectionAssignationsPage() {
           supabase
             .from('assignment_requests')
             .select(
-              'professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment'
+              'id, professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment'
             )
             .in('professional_id', professionalIds),
           supabase
             .from('assigned_clients')
-            .select('professional_id, is_active')
+            .select('professional_id, assignment_request_id, is_active')
             .in('professional_id', professionalIds),
         ])
 
@@ -162,27 +164,31 @@ export default function DirectionAssignationsPage() {
         (assignmentRequestsResponse.data ?? []) as AssignmentRequest[]
       const assignedClients = (assignedClientsResponse.data ?? []) as AssignedClient[]
       const requestByProfessionalId = new Map<string, AssignmentRequest>()
-      const clientsByProfessionalId = new Map<string, AssignedClient[]>()
+      const clientsByRequestId = new Map<string, AssignedClient[]>()
 
       assignmentRequests.forEach((request) => {
-        if (!requestByProfessionalId.has(request.professional_id)) {
+        const currentRequest = requestByProfessionalId.get(request.professional_id)
+        const requestHasRemaining = (request.remaining_count ?? 0) > 0
+        const currentHasRemaining = (currentRequest?.remaining_count ?? 0) > 0
+
+        if (!currentRequest || (requestHasRemaining && !currentHasRemaining)) {
           requestByProfessionalId.set(request.professional_id, request)
         }
       })
 
       assignedClients.forEach((client) => {
-        if (!client.professional_id) return
+        if (!client.assignment_request_id) return
 
-        const currentClients = clientsByProfessionalId.get(client.professional_id) ?? []
+        const currentClients = clientsByRequestId.get(client.assignment_request_id) ?? []
         currentClients.push(client)
-        clientsByProfessionalId.set(client.professional_id, currentClients)
+        clientsByRequestId.set(client.assignment_request_id, currentClients)
       })
 
       const nextRows = professionals.map((profile) => {
         const request = requestByProfessionalId.get(profile.id)
         const requestedCount = request?.requested_count ?? 0
         const assignedCount = getUsedAssignmentCount(
-          clientsByProfessionalId.get(profile.id) ?? []
+          request ? clientsByRequestId.get(request.id) ?? [] : []
         )
         const remainingCount = getRemainingAssignmentCount(
           requestedCount,
@@ -272,9 +278,9 @@ export default function DirectionAssignationsPage() {
                       <th className={tableHeadCellClass}>Email</th>
                       <th className={tableHeadCellClass}>Statut de la demande</th>
                       <th className={tableHeadCellClass}>Clients demandés</th>
-                      <th className={tableHeadCellClass}>Assignations actives</th>
+                      <th className={tableHeadCellClass}>Services pris</th>
                       <th className={tableHeadCellClass}>Places restantes</th>
-                      <th className={tableHeadCellClass}>Commentaire</th>
+                      <th className={tableHeadCellClass}>Commentaire demande</th>
                     </tr>
                   </thead>
                   <tbody className={tableBodyClass}>

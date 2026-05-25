@@ -43,6 +43,7 @@ type Profile = {
 };
 
 type AssignmentRequest = {
+  id: string;
   professional_id: string;
   is_active: boolean | null;
   requested_count: number | null;
@@ -53,6 +54,7 @@ type AssignmentRequest = {
 
 type AssignedClient = {
   id: string;
+  assignment_request_id: string | null;
   first_name: string | null;
   last_name: string | null;
   assigned_date: string | null;
@@ -124,15 +126,6 @@ function getClientName(client: AssignedClient): string {
     .join(" ");
 
   return fullName || "-";
-}
-
-function getContactStatus(client: AssignedClient): {
-  label: string;
-  tone: BadgeTone;
-} {
-  return client.contacted
-    ? { label: "Contact effectue", tone: "neutral" }
-    : { label: "Contact non effectue", tone: "muted" };
 }
 
 function getServiceStatus(client: AssignedClient): {
@@ -234,6 +227,15 @@ export default function ProfessionnelDetailPage() {
   const [savingClient, setSavingClient] = useState(false);
   const [clientMessage, setClientMessage] = useState<string | null>(null);
   const [clientError, setClientError] = useState<string | null>(null);
+  const [savingClientMotifIds, setSavingClientMotifIds] = useState<
+    Record<string, boolean>
+  >({});
+  const [clientMotifMessages, setClientMotifMessages] = useState<
+    Record<string, string>
+  >({});
+  const [clientMotifErrors, setClientMotifErrors] = useState<
+    Record<string, string>
+  >({});
 
   const professionalName = useMemo(
     () => profile?.full_name?.trim() || "Professionnel",
@@ -289,26 +291,33 @@ export default function ProfessionnelDetailPage() {
           throw new Error("Profil professionnel introuvable.");
         }
 
-        const [requestResponse, clientsResponse] = await Promise.all([
-          supabase
-            .from("assignment_requests")
-            .select(
-              "professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment",
-            )
-            .eq("professional_id", professionalId)
-            .limit(1)
-            .maybeSingle(),
-          supabase
-            .from("assigned_clients")
-            .select(
-              "id, first_name, last_name, assigned_date, contacted, is_active, meeting_count, dossier_closed, closure_reason, short_comment",
-            )
-            .eq("professional_id", professionalId)
-            .order("assigned_date", { ascending: false }),
-        ]);
+        const requestResponse = await supabase
+          .from("assignment_requests")
+          .select(
+            "id, professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment",
+          )
+          .eq("professional_id", professionalId)
+          .eq("is_active", true)
+          .gt("remaining_count", 0)
+          .limit(1)
+          .maybeSingle();
 
         if (requestResponse.error) throw requestResponse.error;
-        if (clientsResponse.error) throw clientsResponse.error;
+
+        const activeRequest =
+          (requestResponse.data as AssignmentRequest | null) ?? null;
+        const clientsResponse = activeRequest
+          ? await supabase
+              .from("assigned_clients")
+              .select(
+                "id, assignment_request_id, first_name, last_name, assigned_date, contacted, is_active, meeting_count, dossier_closed, closure_reason, short_comment",
+              )
+              .eq("professional_id", professionalId)
+              .eq("assignment_request_id", activeRequest.id)
+              .order("assigned_date", { ascending: false })
+          : null;
+
+        if (clientsResponse?.error) throw clientsResponse.error;
 
         const loadedProfile = profileResponse.data as Profile;
 
@@ -323,10 +332,8 @@ export default function ProfessionnelDetailPage() {
           ),
           pref_notes: loadedProfile.pref_notes ?? "",
         });
-        setAssignmentRequest(
-          (requestResponse.data as AssignmentRequest | null) ?? null,
-        );
-        setAssignedClients((clientsResponse.data ?? []) as AssignedClient[]);
+        setAssignmentRequest(activeRequest);
+        setAssignedClients((clientsResponse?.data ?? []) as AssignedClient[]);
       } catch (caughtError: unknown) {
         setError(getErrorMessage(caughtError));
       } finally {
@@ -380,6 +387,72 @@ export default function ProfessionnelDetailPage() {
       ...currentForm,
       [field]: value,
     }));
+  };
+
+  const handleClientMotifChange = (clientId: string, value: string) => {
+    setAssignedClients((currentClients) =>
+      currentClients.map((client) =>
+        client.id === clientId ? { ...client, short_comment: value } : client,
+      ),
+    );
+    setClientMotifMessages((currentMessages) => ({
+      ...currentMessages,
+      [clientId]: "",
+    }));
+    setClientMotifErrors((currentErrors) => ({
+      ...currentErrors,
+      [clientId]: "",
+    }));
+  };
+
+  const handleSaveClientMotif = async (client: AssignedClient) => {
+    setSavingClientMotifIds((currentIds) => ({
+      ...currentIds,
+      [client.id]: true,
+    }));
+    setClientMotifMessages((currentMessages) => ({
+      ...currentMessages,
+      [client.id]: "",
+    }));
+    setClientMotifErrors((currentErrors) => ({
+      ...currentErrors,
+      [client.id]: "",
+    }));
+
+    try {
+      const { error: updateError } = await supabase
+        .from("assigned_clients")
+        .update({ short_comment: nullableText(client.short_comment ?? "") })
+        .eq("id", client.id)
+        .eq("professional_id", professionalId);
+
+      if (updateError) throw updateError;
+
+      setAssignedClients((currentClients) =>
+        currentClients.map((currentClient) =>
+          currentClient.id === client.id
+            ? {
+                ...currentClient,
+                short_comment: nullableText(client.short_comment ?? ""),
+              }
+            : currentClient,
+        ),
+      );
+      setClientMotifMessages((currentMessages) => ({
+        ...currentMessages,
+        [client.id]: "Motif sauvegarde.",
+      }));
+    } catch (caughtError: unknown) {
+      setClientMotifErrors((currentErrors) => ({
+        ...currentErrors,
+        [client.id]: getErrorMessage(caughtError),
+      }));
+    } finally {
+      setSavingClientMotifIds((currentIds) => ({
+        ...currentIds,
+        [client.id]: false,
+      }));
+    }
   };
 
   const handleSaveProfessionalProfile = async (
@@ -452,10 +525,18 @@ export default function ProfessionnelDetailPage() {
       return;
     }
 
+    if (!assignmentRequest) {
+      setClientError(
+        "Aucune demande active avec place restante pour ce professionnel.",
+      );
+      return;
+    }
+
     setSavingClient(true);
 
     try {
       const { error: insertError } = await supabase.from("assigned_clients").insert({
+        assignment_request_id: assignmentRequest.id,
         professional_id: professionalId,
         first_name: firstName,
         last_name: lastName,
@@ -490,9 +571,9 @@ export default function ProfessionnelDetailPage() {
             assigned_count: nextAssignedCount,
             remaining_count: nextRemainingCount,
           })
-          .eq("professional_id", professionalId)
+          .eq("id", assignmentRequest.id)
           .select(
-            "professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment",
+            "id, professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment",
           )
           .maybeSingle();
 
@@ -526,9 +607,6 @@ export default function ProfessionnelDetailPage() {
   const clientsPendingService = assignedClients.filter(
     (client) => client.is_active === null,
   );
-  const notContactedClients = assignedClients.filter(
-    (client) => !client.contacted,
-  );
   const requestedCount = assignmentRequest?.requested_count ?? 0;
   const assignedCount = getUsedAssignmentCount(assignedClients);
   const remainingCount = getRemainingAssignmentCount(
@@ -541,14 +619,12 @@ export default function ProfessionnelDetailPage() {
     requestedCount,
   });
   const operationalAlerts = [
-    notContactedClients.length > 0
+    clientsPendingService.length > 0
       ? {
-          title: "Clients non contactes",
-          description: `${notContactedClients.length} client${
-            notContactedClients.length > 1 ? "s n'ont" : " n'a"
-          } pas encore ete contacte${
-            notContactedClients.length > 1 ? "s" : ""
-          }.`,
+          title: "Assignations en attente",
+          description: `${clientsPendingService.length} assignation${
+            clientsPendingService.length > 1 ? "s sont" : " est"
+          } en attente de confirmation de service.`,
           tone: "warning" as BadgeTone,
         }
       : null,
@@ -654,7 +730,7 @@ export default function ProfessionnelDetailPage() {
                   <StatCard
                     label="Demande / assignations / restants"
                     value={requestedCount}
-                    helper={`${assignedCount} assignations actives, ${remainingCount} restants`}
+                    helper={`${assignedCount} services pris, ${remainingCount} restants`}
                   />
                   <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
                     <p className="text-sm font-medium text-[#7a6859]">
@@ -700,11 +776,12 @@ export default function ProfessionnelDetailPage() {
                       <thead className={tableHeaderClass}>
                         <tr>
                           <th className={tableHeadCellClass}>Client</th>
-                          <th className={tableHeadCellClass}>Contact effectue</th>
                           <th className={tableHeadCellClass}>Service pris</th>
                           <th className={tableHeadCellClass}>Rencontres</th>
                           <th className={tableHeadCellClass}>Dossier ferme</th>
-                          <th className={tableHeadCellClass}>Commentaire</th>
+                          <th className={tableHeadCellClass}>
+                            Motif de consultation
+                          </th>
                         </tr>
                       </thead>
                       <tbody className={tableBodyClass}>
@@ -712,11 +789,6 @@ export default function ProfessionnelDetailPage() {
                           <tr key={client.id} className={tableRowClass}>
                             <td className="px-4 py-3 font-medium text-[#332820]">
                               {getClientName(client)}
-                            </td>
-                            <td className={tableCellClass}>
-                              <Badge tone={getContactStatus(client).tone}>
-                                {getContactStatus(client).label}
-                              </Badge>
                             </td>
                             <td className={tableCellClass}>
                               <Badge tone={getServiceStatus(client).tone}>
@@ -733,8 +805,40 @@ export default function ProfessionnelDetailPage() {
                                 {formatBoolean(client.dossier_closed)}
                               </Badge>
                             </td>
-                            <td className={tableCellClass}>
-                              {formatText(client.short_comment)}
+                            <td className="min-w-[18rem] px-4 py-3 align-top">
+                              <textarea
+                                value={client.short_comment ?? ""}
+                                onChange={(event) =>
+                                  handleClientMotifChange(
+                                    client.id,
+                                    event.target.value,
+                                  )
+                                }
+                                rows={2}
+                                className="w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                              />
+                              <div className="mt-2 flex flex-col gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveClientMotif(client)}
+                                  disabled={savingClientMotifIds[client.id]}
+                                  className={buttonClass("secondary")}
+                                >
+                                  {savingClientMotifIds[client.id]
+                                    ? "Sauvegarde..."
+                                    : "Sauvegarder le motif"}
+                                </button>
+                                {clientMotifMessages[client.id] && (
+                                  <p className="text-xs font-medium text-green-700">
+                                    {clientMotifMessages[client.id]}
+                                  </p>
+                                )}
+                                {clientMotifErrors[client.id] && (
+                                  <p className="text-xs font-medium text-red-700">
+                                    {clientMotifErrors[client.id]}
+                                  </p>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -822,7 +926,7 @@ export default function ProfessionnelDetailPage() {
                       </label>
 
                       <label className="block text-sm font-medium text-[#5d4a3d] sm:col-span-2 lg:col-span-3">
-                        Commentaire court
+                        Motif de consultation
                         <textarea
                           value={clientForm.short_comment}
                           onChange={(event) =>
@@ -888,9 +992,6 @@ export default function ProfessionnelDetailPage() {
                           </div>
 
                           <div className="flex flex-wrap gap-2">
-                            <Badge tone={getContactStatus(client).tone}>
-                              {getContactStatus(client).label}
-                            </Badge>
                             <Badge tone={getServiceStatus(client).tone}>
                               {getServiceStatus(client).label}
                             </Badge>
@@ -913,7 +1014,7 @@ export default function ProfessionnelDetailPage() {
                             {client.short_comment && (
                               <div className="rounded-xl border border-[#eadfd2] bg-[#fffdf9] p-3">
                                 <p className="text-xs font-medium uppercase text-[#8a6f5d]">
-                                  Commentaire
+                                  Motif de consultation
                                 </p>
                                 <p className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">
                                   {formatText(client.short_comment)}
@@ -954,7 +1055,7 @@ export default function ProfessionnelDetailPage() {
                     </div>
                     <div>
                       <dt className="text-sm font-medium text-[#8a6f5d]">
-                        Assignations actives
+                        Services pris
                       </dt>
                       <dd className="mt-1 text-sm text-[#332820]">
                         {assignedCount}
@@ -970,7 +1071,7 @@ export default function ProfessionnelDetailPage() {
                     </div>
                     <div className="sm:col-span-2 lg:col-span-1">
                       <dt className="text-sm font-medium text-[#8a6f5d]">
-                        Commentaire
+                        Commentaire demande
                       </dt>
                       <dd className="mt-1 text-sm text-[#332820]">
                         {formatText(assignmentRequest.request_comment)}

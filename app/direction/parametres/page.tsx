@@ -129,7 +129,7 @@ export default function DirectionParametresPage() {
                   <li>Les professionnels peuvent gerer leurs preferences.</li>
                   <li>La direction assigne les clients.</li>
                   <li>
-                    Les professionnels indiquent contact effectue et service pris
+                    Les professionnels indiquent le statut de service: en attente, pris ou non pris
                     oui/non.
                   </li>
                 </ul>

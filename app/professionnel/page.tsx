@@ -109,38 +109,16 @@ export default function ProfessionnelPage() {
         return
       }
 
-      const [clientsResponse, requestResponse] = await Promise.all([
-        supabase
-          .from('assigned_clients')
-          .select(`
-            id,
-            first_name,
-            last_name,
-            email,
-            phone,
-            requester_name,
-            assigned_date,
-            contacted,
-            is_active,
-            short_comment,
-            closure_reason
-          `)
-          .eq('professional_id', user.id)
-          .order('assigned_date', { ascending: false }),
-        supabase
+      const requestResponse = await supabase
           .from('assignment_requests')
           .select(
-            'professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment'
+            'id, professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment'
           )
           .eq('professional_id', user.id)
-          .limit(1),
-      ])
-
-      if (clientsResponse.error) {
-        setError(clientsResponse.error.message)
-        setLoading(false)
-        return
-      }
+          .eq('is_active', true)
+          .gt('remaining_count', 0)
+          .limit(1)
+          .maybeSingle()
 
       if (requestResponse.error) {
         setError(requestResponse.error.message)
@@ -148,8 +126,43 @@ export default function ProfessionnelPage() {
         return
       }
 
+      const activeRequest = (requestResponse.data as AssignmentRequest | null) ?? null
+
+      if (!activeRequest) {
+        setClients([])
+        setRequest(null)
+        setLoading(false)
+        return
+      }
+
+      const clientsResponse = await supabase
+        .from('assigned_clients')
+        .select(`
+          id,
+          assignment_request_id,
+          first_name,
+          last_name,
+          email,
+          phone,
+          requester_name,
+          assigned_date,
+          contacted,
+          is_active,
+          short_comment,
+          closure_reason
+        `)
+        .eq('professional_id', user.id)
+        .eq('assignment_request_id', activeRequest.id)
+        .order('assigned_date', { ascending: false })
+
+      if (clientsResponse.error) {
+        setError(clientsResponse.error.message)
+        setLoading(false)
+        return
+      }
+
       setClients(clientsResponse.data || [])
-      setRequest((requestResponse.data?.[0] ?? null) as AssignmentRequest | null)
+      setRequest(activeRequest)
       setLoading(false)
     }
 
@@ -189,9 +202,9 @@ export default function ProfessionnelPage() {
           : null,
         isRequestCompleted
           ? {
-              title: 'Demande complÃ©tÃ©e',
+              title: 'Demande complétée',
               description:
-                'Votre demande actuelle est complÃ©tÃ©e. Vous pouvez crÃ©er une nouvelle demande au besoin.',
+                'Votre demande actuelle est complétée. Vous pouvez créer une nouvelle demande au besoin.',
               tone: 'success' as const,
             }
           : null,
@@ -290,8 +303,8 @@ export default function ProfessionnelPage() {
                       </p>
                       {isRequestCompleted && (
                         <p className="mt-2 text-sm text-[#7a6859]">
-                          Votre demande actuelle est complÃ©tÃ©e. Vous pouvez
-                          crÃ©er une nouvelle demande au besoin.
+                          Votre demande actuelle est complétée. Vous pouvez
+                          créer une nouvelle demande au besoin.
                         </p>
                       )}
                     </div>
@@ -314,7 +327,7 @@ export default function ProfessionnelPage() {
                     </div>
                     <div className="rounded-2xl border border-[#eadfd2] bg-[#fbf6ef] p-4">
                       <p className="text-xs font-medium uppercase text-[#8a6f5d]">
-                        Assignés
+                        Services pris
                       </p>
                       <p className="mt-1 text-2xl font-semibold text-[#332820]">
                         {assignedCount}

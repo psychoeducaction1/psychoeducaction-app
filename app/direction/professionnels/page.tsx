@@ -27,10 +27,12 @@ type Profile = {
 
 type AssignedClient = {
   professional_id: string | null
+  assignment_request_id: string | null
   is_active: boolean | null
 }
 
 type AssignmentRequest = {
+  id: string
   professional_id: string
   is_active: boolean | null
   requested_count: number | null
@@ -117,12 +119,12 @@ export default function DirectionProfessionnelsPage() {
       const [assignedClientsResponse, assignmentRequestsResponse] = await Promise.all([
         supabase
           .from('assigned_clients')
-          .select('professional_id, is_active')
+          .select('professional_id, assignment_request_id, is_active')
           .in('professional_id', professionalIds),
         supabase
           .from('assignment_requests')
           .select(
-            'professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment'
+            'id, professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment'
           )
           .in('professional_id', professionalIds),
       ])
@@ -142,12 +144,24 @@ export default function DirectionProfessionnelsPage() {
       const assignedClients = (assignedClientsResponse.data ?? []) as AssignedClient[]
       const assignmentRequests = (assignmentRequestsResponse.data ?? []) as AssignmentRequest[]
 
-      const clientStatsByProfessionalId = new Map<string, ClientStats>()
+      const requestByProfessionalId = new Map<string, AssignmentRequest>()
+
+      assignmentRequests.forEach((request) => {
+        const currentRequest = requestByProfessionalId.get(request.professional_id)
+        const requestHasRemaining = (request.remaining_count ?? 0) > 0
+        const currentHasRemaining = (currentRequest?.remaining_count ?? 0) > 0
+
+        if (!currentRequest || (requestHasRemaining && !currentHasRemaining)) {
+          requestByProfessionalId.set(request.professional_id, request)
+        }
+      })
+
+      const clientStatsByRequestId = new Map<string, ClientStats>()
 
       assignedClients.forEach((client) => {
-        if (!client.professional_id) return
+        if (!client.assignment_request_id) return
 
-        const currentStats = clientStatsByProfessionalId.get(client.professional_id) ?? {
+        const currentStats = clientStatsByRequestId.get(client.assignment_request_id) ?? {
           total: 0,
           active: 0,
           noResponse: 0,
@@ -156,7 +170,7 @@ export default function DirectionProfessionnelsPage() {
 
         currentStats.total += 1
 
-        if (client.is_active !== false) {
+        if (client.is_active === true) {
           currentStats.usedAssignments += 1
         }
 
@@ -166,20 +180,12 @@ export default function DirectionProfessionnelsPage() {
           currentStats.noResponse += 1
         }
 
-        clientStatsByProfessionalId.set(client.professional_id, currentStats)
-      })
-
-      const requestByProfessionalId = new Map<string, AssignmentRequest>()
-
-      assignmentRequests.forEach((request) => {
-        if (!requestByProfessionalId.has(request.professional_id)) {
-          requestByProfessionalId.set(request.professional_id, request)
-        }
+        clientStatsByRequestId.set(client.assignment_request_id, currentStats)
       })
 
       const nextRows = professionals.map((profile) => {
         const request = requestByProfessionalId.get(profile.id)
-        const clientStats = clientStatsByProfessionalId.get(profile.id)
+        const clientStats = request ? clientStatsByRequestId.get(request.id) : undefined
 
         const requestedCount = request?.requested_count ?? 0
         const assignedCount = clientStats?.usedAssignments ?? 0
@@ -259,7 +265,7 @@ export default function DirectionProfessionnelsPage() {
                     type="search"
                     value={searchQuery}
                     onChange={(event) => setSearchQuery(event.target.value)}
-                    placeholder="Nom, email, commentaire"
+                    placeholder="Nom, email, commentaire de demande"
                     className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none transition placeholder:text-[#a89686] focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                   />
                 </label>
@@ -273,11 +279,11 @@ export default function DirectionProfessionnelsPage() {
                       <th className={tableHeadCellClass}>Email</th>
                       <th className={tableHeadCellClass}>Statut demande</th>
                       <th className={tableHeadCellClass}>Clients demandes</th>
-                      <th className={tableHeadCellClass}>Assignations actives</th>
+                      <th className={tableHeadCellClass}>Services pris</th>
                       <th className={tableHeadCellClass}>Places restantes</th>
                       <th className={tableHeadCellClass}>Services pris</th>
                       <th className={tableHeadCellClass}>Services non pris</th>
-                      <th className={tableHeadCellClass}>Commentaire</th>
+                      <th className={tableHeadCellClass}>Commentaire demande</th>
                     </tr>
                   </thead>
                   <tbody className={tableBodyClass}>

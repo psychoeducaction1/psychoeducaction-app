@@ -1,5 +1,6 @@
 export type AssignedClient = {
   id: string
+  assignment_request_id: string | null
   first_name: string
   last_name: string
   email: string | null
@@ -13,6 +14,7 @@ export type AssignedClient = {
 }
 
 export type AssignmentRequest = {
+  id: string
   professional_id: string
   is_active: boolean | null
   requested_count: number | null
@@ -41,7 +43,6 @@ export type ProfilePreferencesRow = {
 export type EditableClientField =
   | 'contacted'
   | 'is_active'
-  | 'short_comment'
   | 'closure_reason'
 
 export const closureReasonOptions = [
@@ -61,7 +62,7 @@ export function nullableText(value: string | null): string | null {
 export function getUsedAssignmentCount(
   clients: Array<{ is_active: boolean | null }>
 ): number {
-  return clients.filter((client) => client.is_active !== false).length
+  return clients.filter((client) => client.is_active === true).length
 }
 
 export function getRemainingAssignmentCount(

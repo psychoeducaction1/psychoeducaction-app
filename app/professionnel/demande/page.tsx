@@ -14,6 +14,7 @@ import {
 export default function ProfessionnelDemandePage() {
   const router = useRouter()
   const [hasExistingRequest, setHasExistingRequest] = useState(false)
+  const [currentRequestId, setCurrentRequestId] = useState<string | null>(null)
   const [requestActive, setRequestActive] = useState(false)
   const [requestedCount, setRequestedCount] = useState(0)
   const [assignedCount, setAssignedCount] = useState(0)
@@ -60,47 +61,76 @@ export default function ProfessionnelDemandePage() {
         return
       }
 
-      const [requestResponse, clientsResponse] = await Promise.all([
+      const [activeRequestResponse, completedRequestResponse] = await Promise.all([
         supabase
           .from('assignment_requests')
           .select(
-            'professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment'
+            'id, professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment'
           )
           .eq('professional_id', user.id)
-          .limit(1),
+          .eq('is_active', true)
+          .gt('remaining_count', 0)
+          .limit(1)
+          .maybeSingle(),
         supabase
-          .from('assigned_clients')
-          .select('is_active')
-          .eq('professional_id', user.id),
+          .from('assignment_requests')
+          .select(
+            'id, professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment'
+          )
+          .eq('professional_id', user.id)
+          .eq('is_active', true)
+          .eq('remaining_count', 0)
+          .gt('requested_count', 0)
+          .limit(1)
+          .maybeSingle(),
       ])
 
-      if (requestResponse.error) {
-        setError(requestResponse.error.message)
+      if (activeRequestResponse.error) {
+        setError(activeRequestResponse.error.message)
         setLoading(false)
         return
       }
 
-      if (clientsResponse.error) {
+      if (completedRequestResponse.error) {
+        setError(completedRequestResponse.error.message)
+        setLoading(false)
+        return
+      }
+
+      const currentRequest =
+        (activeRequestResponse.data as AssignmentRequest | null) ?? null
+      const completedRequest =
+        (completedRequestResponse.data as AssignmentRequest | null) ?? null
+
+      const clientsResponse = currentRequest
+        ? await supabase
+            .from('assigned_clients')
+            .select('is_active')
+            .eq('professional_id', user.id)
+            .eq('assignment_request_id', currentRequest.id)
+        : null
+
+      if (clientsResponse?.error) {
         setError(clientsResponse.error.message)
         setLoading(false)
         return
       }
 
-      const currentRequest = (requestResponse.data?.[0] ?? null) as AssignmentRequest | null
-      const currentAssignedCount = getUsedAssignmentCount(
-        (clientsResponse.data ?? []) as Array<{ is_active: boolean | null }>
-      )
-      const currentRemainingCount = getRemainingAssignmentCount(
-        currentRequest?.requested_count ?? 0,
-        currentAssignedCount
-      )
-      const isLoadedRequestCompleted = Boolean(
-        currentRequest &&
-          currentRequest.is_active !== false &&
-          currentRemainingCount === 0
-      )
+      const currentAssignedCount = currentRequest
+        ? getUsedAssignmentCount(
+            (clientsResponse?.data ?? []) as Array<{ is_active: boolean | null }>
+          )
+        : 0
+      const currentRemainingCount = currentRequest
+        ? getRemainingAssignmentCount(
+            currentRequest.requested_count ?? 0,
+            currentAssignedCount
+          )
+        : 0
+      const isLoadedRequestCompleted = Boolean(!currentRequest && completedRequest)
 
       setHasExistingRequest(Boolean(currentRequest))
+      setCurrentRequestId(currentRequest?.id ?? null)
       setCompletedRequestHidden(isLoadedRequestCompleted)
 
       if (isLoadedRequestCompleted) {
@@ -139,20 +169,25 @@ export default function ProfessionnelDemandePage() {
       return
     }
 
-    const { data: clientsData, error: clientsError } = await supabase
-      .from('assigned_clients')
-      .select('is_active')
-      .eq('professional_id', user.id)
+    let normalizedAssignedCount = 0
 
-    if (clientsError) {
-      setRequestError(clientsError.message)
-      setSavingRequest(false)
-      return
+    if (currentRequestId) {
+      const { data: clientsData, error: clientsError } = await supabase
+        .from('assigned_clients')
+        .select('is_active')
+        .eq('professional_id', user.id)
+        .eq('assignment_request_id', currentRequestId)
+
+      if (clientsError) {
+        setRequestError(clientsError.message)
+        setSavingRequest(false)
+        return
+      }
+
+      normalizedAssignedCount = getUsedAssignmentCount(
+        (clientsData ?? []) as Array<{ is_active: boolean | null }>
+      )
     }
-
-    const normalizedAssignedCount = getUsedAssignmentCount(
-      (clientsData ?? []) as Array<{ is_active: boolean | null }>
-    )
     const nextRemainingCount = getRemainingAssignmentCount(
       normalizedRequestedCount,
       normalizedAssignedCount
@@ -167,20 +202,36 @@ export default function ProfessionnelDemandePage() {
       request_comment: requestComment.trim() || null,
     }
 
-    const { error: saveError } = hasExistingRequest
+    const saveResponse = hasExistingRequest && currentRequestId
       ? await supabase
           .from('assignment_requests')
           .update(requestPayload)
-          .eq('professional_id', user.id)
-      : await supabase.from('assignment_requests').insert(requestPayload)
+          .eq('id', currentRequestId)
+          .select(
+            'id, professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment'
+          )
+          .limit(1)
+          .maybeSingle()
+      : await supabase
+          .from('assignment_requests')
+          .insert(requestPayload)
+          .select(
+            'id, professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment'
+          )
+          .limit(1)
+          .maybeSingle()
 
-    if (saveError) {
-      setRequestError(saveError.message)
+    if (saveResponse.error) {
+      setRequestError(saveResponse.error.message)
       setSavingRequest(false)
       return
     }
 
     setHasExistingRequest(true)
+    setCurrentRequestId(
+      ((saveResponse.data as AssignmentRequest | null) ?? null)?.id ??
+        currentRequestId
+    )
     setRequestActive(true)
     setCompletedRequestHidden(false)
     setRequestedCount(normalizedRequestedCount)
@@ -219,11 +270,11 @@ export default function ProfessionnelDemandePage() {
       request_comment: null,
     }
 
-    const { error: clearError } = hasExistingRequest
+    const { error: clearError } = hasExistingRequest && currentRequestId
       ? await supabase
           .from('assignment_requests')
           .update(clearPayload)
-          .eq('professional_id', user.id)
+          .eq('id', currentRequestId)
       : await supabase.from('assignment_requests').insert(clearPayload)
 
     if (clearError) {
@@ -233,6 +284,7 @@ export default function ProfessionnelDemandePage() {
     }
 
     setHasExistingRequest(true)
+    setCurrentRequestId(null)
     setRequestActive(false)
     setCompletedRequestHidden(false)
     setRequestedCount(0)
@@ -308,7 +360,7 @@ export default function ProfessionnelDemandePage() {
                   </p>
                 </div>
                 <div className="rounded-2xl border border-[#eadfd2] bg-[#fbf6ef] p-4">
-                  <p className="text-xs font-medium uppercase text-[#8a6f5d]">Assignés</p>
+                  <p className="text-xs font-medium uppercase text-[#8a6f5d]">Services pris</p>
                   <p className="mt-1 text-2xl font-semibold text-[#332820]">
                     {assignedCount}
                   </p>
