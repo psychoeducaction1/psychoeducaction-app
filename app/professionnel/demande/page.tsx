@@ -25,6 +25,7 @@ export default function ProfessionnelDemandePage() {
   const [error, setError] = useState('')
   const [requestMessage, setRequestMessage] = useState('')
   const [requestError, setRequestError] = useState('')
+  const [completedRequestHidden, setCompletedRequestHidden] = useState(false)
 
   useEffect(() => {
     const loadData = async () => {
@@ -93,13 +94,28 @@ export default function ProfessionnelDemandePage() {
         currentRequest?.requested_count ?? 0,
         currentAssignedCount
       )
+      const isLoadedRequestCompleted = Boolean(
+        currentRequest &&
+          currentRequest.is_active !== false &&
+          currentRemainingCount === 0
+      )
 
       setHasExistingRequest(Boolean(currentRequest))
-      setRequestActive(currentRequest?.is_active ?? false)
-      setRequestedCount(currentRequest?.requested_count ?? 0)
-      setAssignedCount(currentAssignedCount)
-      setRemainingCount(currentRemainingCount)
-      setRequestComment(currentRequest?.request_comment ?? '')
+      setCompletedRequestHidden(isLoadedRequestCompleted)
+
+      if (isLoadedRequestCompleted) {
+        setRequestActive(false)
+        setRequestedCount(0)
+        setAssignedCount(0)
+        setRemainingCount(0)
+        setRequestComment('')
+      } else {
+        setRequestActive(currentRequest?.is_active ?? false)
+        setRequestedCount(currentRequest?.requested_count ?? 0)
+        setAssignedCount(currentAssignedCount)
+        setRemainingCount(currentRemainingCount)
+        setRequestComment(currentRequest?.request_comment ?? '')
+      }
       setLoading(false)
     }
 
@@ -166,6 +182,7 @@ export default function ProfessionnelDemandePage() {
 
     setHasExistingRequest(true)
     setRequestActive(true)
+    setCompletedRequestHidden(false)
     setRequestedCount(normalizedRequestedCount)
     setAssignedCount(normalizedAssignedCount)
     setRemainingCount(nextRemainingCount)
@@ -217,6 +234,7 @@ export default function ProfessionnelDemandePage() {
 
     setHasExistingRequest(true)
     setRequestActive(false)
+    setCompletedRequestHidden(false)
     setRequestedCount(0)
     setAssignedCount(0)
     setRemainingCount(0)
@@ -230,7 +248,7 @@ export default function ProfessionnelDemandePage() {
     remainingCount,
     requestedCount,
   })
-  const isRequestCompleted = hasExistingRequest && requestedCount > 0 && remainingCount === 0
+  const isRequestCompleted = completedRequestHidden
 
   return (
     <>
@@ -277,7 +295,7 @@ export default function ProfessionnelDemandePage() {
 
               {isRequestCompleted && (
                 <div className="mt-5 rounded-2xl border border-[#d6c7aa] bg-[#f1ead9] p-4 text-sm text-[#5f5932]">
-                  Votre demande actuelle est complÃ©tÃ©e. Vous pouvez crÃ©er une
+                  Votre dernière demande est complétée. Vous pouvez créer une
                   nouvelle demande au besoin.
                 </div>
               )}
@@ -344,14 +362,16 @@ export default function ProfessionnelDemandePage() {
                   {savingRequest ? 'Sauvegarde...' : 'Sauvegarder la demande'}
                 </button>
 
-                <button
-                  type="button"
-                  onClick={handleClearRequest}
-                  disabled={savingRequest || clearingRequest}
-                  className={buttonClass('secondary')}
-                >
-                  {clearingRequest ? 'Effacement...' : 'Effacer la demande'}
-                </button>
+                {!isRequestCompleted && (
+                  <button
+                    type="button"
+                    onClick={handleClearRequest}
+                    disabled={savingRequest || clearingRequest}
+                    className={buttonClass('secondary')}
+                  >
+                    {clearingRequest ? 'Effacement...' : 'Effacer la demande'}
+                  </button>
+                )}
 
                 {requestMessage && (
                   <p className="text-sm font-medium text-green-700">{requestMessage}</p>

@@ -60,6 +60,7 @@ export function AppNav() {
             { href: '/professionnel', label: 'Tableau de bord' },
             { href: '/professionnel/clients', label: 'Mes assignations' },
             { href: '/professionnel/demande', label: 'Ma demande' },
+            { href: '/professionnel/historique', label: 'Historique' },
             { href: '/professionnel/preferences', label: 'Mes préférences' },
           ]
         : []
