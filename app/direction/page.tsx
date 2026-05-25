@@ -39,6 +39,7 @@ type AssignmentRequest = {
   assigned_count: number | null
   remaining_count: number | null
   request_comment: string | null
+  created_at?: string | null
 }
 
 type ClientStats = {
@@ -124,9 +125,10 @@ export default function DirectionPage() {
         supabase
           .from('assignment_requests')
           .select(
-            'id, professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment'
+            'id, professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment, created_at'
           )
-          .in('professional_id', professionalIds),
+          .in('professional_id', professionalIds)
+          .order('created_at', { ascending: false }),
       ])
 
       if (assignedClientsResponse.error) {
@@ -143,18 +145,6 @@ export default function DirectionPage() {
 
       const assignedClients = (assignedClientsResponse.data ?? []) as AssignedClient[]
       const assignmentRequests = (assignmentRequestsResponse.data ?? []) as AssignmentRequest[]
-
-      const requestByProfessionalId = new Map<string, AssignmentRequest>()
-
-      assignmentRequests.forEach((request) => {
-        const currentRequest = requestByProfessionalId.get(request.professional_id)
-        const requestHasRemaining = (request.remaining_count ?? 0) > 0
-        const currentHasRemaining = (currentRequest?.remaining_count ?? 0) > 0
-
-        if (!currentRequest || (requestHasRemaining && !currentHasRemaining)) {
-          requestByProfessionalId.set(request.professional_id, request)
-        }
-      })
 
       const clientStatsByRequestId = new Map<string, ClientStats>()
 
@@ -183,8 +173,20 @@ export default function DirectionPage() {
         clientStatsByRequestId.set(client.assignment_request_id, currentStats)
       })
 
+      const requestsByProfessionalId = new Map<string, AssignmentRequest[]>()
+
+      assignmentRequests.forEach((request) => {
+        const currentRequests = requestsByProfessionalId.get(request.professional_id) ?? []
+        currentRequests.push(request)
+        requestsByProfessionalId.set(request.professional_id, currentRequests)
+      })
+
       const nextRows = professionals.map((profile) => {
-        const request = requestByProfessionalId.get(profile.id)
+        const professionalRequests = requestsByProfessionalId.get(profile.id) ?? []
+        const request =
+          professionalRequests.find(
+            (currentRequest) => currentRequest.is_active === true
+          ) ?? professionalRequests[0]
         const clientStats = request ? clientStatsByRequestId.get(request.id) : undefined
 
         const requestedCount = request?.requested_count ?? 0
@@ -219,7 +221,9 @@ export default function DirectionPage() {
   const dashboardStats = useMemo(
     () => ({
       totalProfessionals: rows.length,
-      activeRequests: rows.filter((row) => row.requestActive).length,
+      activeRequests: rows.filter(
+        (row) => row.requestActive && row.remainingCount > 0
+      ).length,
       activeClients: rows.reduce((total, row) => total + row.activeClients, 0),
       noResponseClients: rows.reduce((total, row) => total + row.noResponseClients, 0),
       remainingPlaces: rows.reduce((total, row) => total + row.remainingCount, 0),

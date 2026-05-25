@@ -334,21 +334,13 @@ export default function ProfessionnelHistoriquePage() {
                         </div>
                       </div>
 
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                         <div className="rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-3">
                           <p className="text-xs font-medium uppercase text-[#8a6f5d]">
                             Demande
                           </p>
                           <p className="mt-1 text-xl font-semibold text-[#332820]">
                             {requestedCount}
-                          </p>
-                        </div>
-                        <div className="rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-3">
-                          <p className="text-xs font-medium uppercase text-[#8a6f5d]">
-                            Services pris
-                          </p>
-                          <p className="mt-1 text-xl font-semibold text-[#332820]">
-                            {card.activeAssignmentCount}
                           </p>
                         </div>
                         <div className="rounded-xl border border-[#d8e2c7] bg-[#f6faef] p-3">

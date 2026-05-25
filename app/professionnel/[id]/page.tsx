@@ -50,6 +50,7 @@ type AssignmentRequest = {
   assigned_count: number | null;
   remaining_count: number | null;
   request_comment: string | null;
+  created_at?: string | null;
 };
 
 type AssignedClient = {
@@ -212,6 +213,9 @@ export default function ProfessionnelDetailPage() {
   const [assignmentRequest, setAssignmentRequest] =
     useState<AssignmentRequest | null>(null);
   const [assignedClients, setAssignedClients] = useState<AssignedClient[]>([]);
+  const [historicalClients, setHistoricalClients] = useState<AssignedClient[]>(
+    [],
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [professionalProfileForm, setProfessionalProfileForm] =
@@ -291,33 +295,45 @@ export default function ProfessionnelDetailPage() {
           throw new Error("Profil professionnel introuvable.");
         }
 
-        const requestResponse = await supabase
-          .from("assignment_requests")
-          .select(
-            "id, professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment",
-          )
-          .eq("professional_id", professionalId)
-          .eq("is_active", true)
-          .gt("remaining_count", 0)
-          .limit(1)
-          .maybeSingle();
+        const [requestsResponse, clientsResponse] = await Promise.all([
+          supabase
+            .from("assignment_requests")
+            .select(
+              "id, professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment, created_at",
+            )
+            .eq("professional_id", professionalId)
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("assigned_clients")
+            .select(
+              "id, assignment_request_id, first_name, last_name, assigned_date, contacted, is_active, meeting_count, dossier_closed, closure_reason, short_comment",
+            )
+            .eq("professional_id", professionalId)
+            .order("assigned_date", { ascending: false }),
+        ]);
 
-        if (requestResponse.error) throw requestResponse.error;
+        if (requestsResponse.error) throw requestsResponse.error;
+        if (clientsResponse.error) throw clientsResponse.error;
+
+        const loadedRequests =
+          (requestsResponse.data ?? []) as AssignmentRequest[];
+        const loadedClients = (clientsResponse.data ?? []) as AssignedClient[];
+        const clientsByRequestId = new Map<string, AssignedClient[]>();
+
+        loadedClients.forEach((client) => {
+          if (!client.assignment_request_id) return;
+
+          const requestClients =
+            clientsByRequestId.get(client.assignment_request_id) ?? [];
+          requestClients.push(client);
+          clientsByRequestId.set(client.assignment_request_id, requestClients);
+        });
 
         const activeRequest =
-          (requestResponse.data as AssignmentRequest | null) ?? null;
-        const clientsResponse = activeRequest
-          ? await supabase
-              .from("assigned_clients")
-              .select(
-                "id, assignment_request_id, first_name, last_name, assigned_date, contacted, is_active, meeting_count, dossier_closed, closure_reason, short_comment",
-              )
-              .eq("professional_id", professionalId)
-              .eq("assignment_request_id", activeRequest.id)
-              .order("assigned_date", { ascending: false })
-          : null;
-
-        if (clientsResponse?.error) throw clientsResponse.error;
+          loadedRequests.find((request) => request.is_active === true) ?? null;
+        const activeRequestClients = activeRequest
+          ? clientsByRequestId.get(activeRequest.id) ?? []
+          : [];
 
         const loadedProfile = profileResponse.data as Profile;
 
@@ -333,7 +349,8 @@ export default function ProfessionnelDetailPage() {
           pref_notes: loadedProfile.pref_notes ?? "",
         });
         setAssignmentRequest(activeRequest);
-        setAssignedClients((clientsResponse?.data ?? []) as AssignedClient[]);
+        setAssignedClients(activeRequestClients);
+        setHistoricalClients(loadedClients);
       } catch (caughtError: unknown) {
         setError(getErrorMessage(caughtError));
       } finally {
@@ -395,6 +412,11 @@ export default function ProfessionnelDetailPage() {
         client.id === clientId ? { ...client, short_comment: value } : client,
       ),
     );
+    setHistoricalClients((currentClients) =>
+      currentClients.map((client) =>
+        client.id === clientId ? { ...client, short_comment: value } : client,
+      ),
+    );
     setClientMotifMessages((currentMessages) => ({
       ...currentMessages,
       [clientId]: "",
@@ -429,6 +451,16 @@ export default function ProfessionnelDetailPage() {
       if (updateError) throw updateError;
 
       setAssignedClients((currentClients) =>
+        currentClients.map((currentClient) =>
+          currentClient.id === client.id
+            ? {
+                ...currentClient,
+                short_comment: nullableText(client.short_comment ?? ""),
+              }
+            : currentClient,
+        ),
+      );
+      setHistoricalClients((currentClients) =>
         currentClients.map((currentClient) =>
           currentClient.id === client.id
             ? {
@@ -528,6 +560,18 @@ export default function ProfessionnelDetailPage() {
     if (!assignmentRequest) {
       setClientError(
         "Aucune demande active avec place restante pour ce professionnel.",
+      );
+      return;
+    }
+
+    const currentRemainingCount = getRemainingAssignmentCount(
+      assignmentRequest.requested_count ?? 0,
+      getUsedAssignmentCount(assignedClients),
+    );
+
+    if (currentRemainingCount <= 0) {
+      setClientError(
+        "La demande actuelle est completee. Aucune place restante a assigner.",
       );
       return;
     }
@@ -968,13 +1012,13 @@ export default function ProfessionnelDetailPage() {
 
               <SectionCard
                 title="Historique client"
-                description="Timeline recente generee a partir des donnees actuelles des clients assignes."
+                description="Timeline recente generee a partir des clients assignes, incluant les anciennes demandes."
               >
-                {assignedClients.length === 0 ? (
+                {historicalClients.length === 0 ? (
                   <EmptyState title="Aucun historique client a afficher." />
                 ) : (
                   <div className="space-y-4">
-                    {assignedClients.map((client) => (
+                    {historicalClients.map((client) => (
                       <article
                         key={client.id}
                         className="relative rounded-2xl border border-[#eadfd2] bg-[#fbf6ef] p-4 pl-11"

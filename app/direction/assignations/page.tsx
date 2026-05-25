@@ -38,6 +38,7 @@ type AssignmentRequest = {
   assigned_count: number | null
   remaining_count: number | null
   request_comment: string | null
+  created_at?: string | null
 }
 
 type AssignedClient = {
@@ -73,7 +74,7 @@ function matchesFilter(row: AssignmentRow, filter: FilterOption): boolean {
   })
 
   if (filter === 'all') return true
-  if (filter === 'active') return row.requestActive
+  if (filter === 'active') return row.requestActive && row.remainingCount > 0
   if (filter === 'in_progress') return status.label === 'demande en cours'
   if (filter === 'completed') return status.label === 'demande complétée'
   return status.label === 'demande inactive'
@@ -139,9 +140,10 @@ export default function DirectionAssignationsPage() {
           supabase
             .from('assignment_requests')
             .select(
-              'id, professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment'
+              'id, professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment, created_at'
             )
-            .in('professional_id', professionalIds),
+            .in('professional_id', professionalIds)
+            .order('created_at', { ascending: false }),
           supabase
             .from('assigned_clients')
             .select('professional_id, assignment_request_id, is_active')
@@ -163,18 +165,7 @@ export default function DirectionAssignationsPage() {
       const assignmentRequests =
         (assignmentRequestsResponse.data ?? []) as AssignmentRequest[]
       const assignedClients = (assignedClientsResponse.data ?? []) as AssignedClient[]
-      const requestByProfessionalId = new Map<string, AssignmentRequest>()
       const clientsByRequestId = new Map<string, AssignedClient[]>()
-
-      assignmentRequests.forEach((request) => {
-        const currentRequest = requestByProfessionalId.get(request.professional_id)
-        const requestHasRemaining = (request.remaining_count ?? 0) > 0
-        const currentHasRemaining = (currentRequest?.remaining_count ?? 0) > 0
-
-        if (!currentRequest || (requestHasRemaining && !currentHasRemaining)) {
-          requestByProfessionalId.set(request.professional_id, request)
-        }
-      })
 
       assignedClients.forEach((client) => {
         if (!client.assignment_request_id) return
@@ -184,8 +175,20 @@ export default function DirectionAssignationsPage() {
         clientsByRequestId.set(client.assignment_request_id, currentClients)
       })
 
+      const requestsByProfessionalId = new Map<string, AssignmentRequest[]>()
+
+      assignmentRequests.forEach((request) => {
+        const currentRequests = requestsByProfessionalId.get(request.professional_id) ?? []
+        currentRequests.push(request)
+        requestsByProfessionalId.set(request.professional_id, currentRequests)
+      })
+
       const nextRows = professionals.map((profile) => {
-        const request = requestByProfessionalId.get(profile.id)
+        const professionalRequests = requestsByProfessionalId.get(profile.id) ?? []
+        const request =
+          professionalRequests.find(
+            (currentRequest) => currentRequest.is_active === true
+          ) ?? professionalRequests[0]
         const requestedCount = request?.requested_count ?? 0
         const assignedCount = getUsedAssignmentCount(
           request ? clientsByRequestId.get(request.id) ?? [] : []
