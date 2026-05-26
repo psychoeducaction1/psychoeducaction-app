@@ -1,4 +1,11 @@
 import type { ReactNode } from 'react'
+import {
+  AlertCircle,
+  CheckCircle2,
+  Clock3,
+  Circle,
+  XCircle,
+} from 'lucide-react'
 
 export type BadgeTone = 'neutral' | 'success' | 'warning' | 'danger' | 'muted'
 type ButtonTone = 'primary' | 'secondary' | 'danger' | 'ghost'
@@ -29,10 +36,22 @@ export function Badge({
   children: ReactNode
   tone?: BadgeTone
 }) {
+  const Icon =
+    tone === 'success'
+      ? CheckCircle2
+      : tone === 'warning'
+        ? Clock3
+        : tone === 'danger'
+          ? XCircle
+          : tone === 'muted'
+            ? Circle
+            : AlertCircle
+
   return (
     <span
-      className={`inline-flex max-w-full items-center rounded-full border px-2.5 py-1 text-xs font-medium leading-5 ${badgeTones[tone]}`}
+      className={`inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium leading-5 transition-colors duration-200 ${badgeTones[tone]}`}
     >
+      <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
       {children}
     </span>
   )
@@ -46,7 +65,7 @@ export function EmptyState({
   description?: string
 }) {
   return (
-    <div className="mx-auto max-w-md rounded-2xl border border-dashed border-[#dfd0bf] bg-[#fbf6ef] px-6 py-8 text-center">
+    <div className="mx-auto max-w-md rounded-2xl border border-dashed border-[#dfd0bf] bg-[#fbf6ef] px-5 py-6 text-center">
       <p className="text-sm font-semibold text-[#5d4a3d]">{title}</p>
       {description && (
         <p className="mt-2 text-sm leading-6 text-[#8a6f5d]">{description}</p>
@@ -76,7 +95,7 @@ export function AlertCard({
           : 'bg-[#fbf1e7] text-[#8a5633]'
 
   return (
-    <div className="flex gap-3 rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-4 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
+    <div className="flex gap-3 rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.05)]">
       <span
         className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${markerClass}`}
       >
@@ -91,7 +110,7 @@ export function AlertCard({
 }
 
 export function buttonClass(tone: ButtonTone = 'primary'): string {
-  return `inline-flex min-h-10 w-full items-center justify-center rounded-xl px-4 py-2 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-[#ead2bd] disabled:cursor-not-allowed sm:w-auto ${buttonTones[tone]}`
+  return `inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#ead2bd] disabled:cursor-not-allowed sm:w-auto ${buttonTones[tone]}`
 }
 
 export function getAssignmentRequestStatus({
@@ -115,7 +134,7 @@ export function getAssignmentRequestStatus({
 }
 
 export const tableShellClass =
-  'w-full overflow-x-auto rounded-2xl border border-[#eadfd2] bg-[#fffdf9] shadow-[0_1px_2px_rgba(72,49,30,0.06)]'
+  'w-full overflow-x-auto rounded-2xl border border-[#eadfd2] bg-[#fffdf9] shadow-[0_1px_2px_rgba(72,49,30,0.05)]'
 
 export const tableClass = 'min-w-[900px] divide-y divide-[#eadfd2] text-sm'
 

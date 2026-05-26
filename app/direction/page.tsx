@@ -3,6 +3,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import {
+  AlertCircle,
+  CheckCircle2,
+  ClipboardList,
+  UserCheck,
+  Users,
+  UserX,
+} from 'lucide-react'
 import { AppNav } from '@/components/AppNav'
 import {
   AlertBanner,
@@ -355,36 +363,55 @@ export default function DirectionPage() {
                       title={alert.title}
                       description={alert.description}
                       tone={alert.tone}
+                      priority={alert.tone === 'warning' ? 'high' : 'default'}
                     />
                   ))}
                 </section>
               )}
 
               <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-                <StatCard label="Professionnels" value={dashboardStats.totalProfessionals} />
+                <StatCard
+                  label="Professionnels"
+                  value={dashboardStats.totalProfessionals}
+                  priority="subtle"
+                  icon={Users}
+                />
                 <StatCard
                   label="Demandes actives"
                   value={dashboardStats.activeRequests}
                   tone="warm"
+                  priority={dashboardStats.activeRequests > 0 ? 'high' : 'default'}
+                  icon={ClipboardList}
                 />
                 <StatCard
                   label="Services pris"
                   value={dashboardStats.activeClients}
                   tone="success"
+                  priority="subtle"
+                  icon={UserCheck}
                 />
                 <StatCard
                   label="Services non pris"
                   value={dashboardStats.noResponseClients}
                   tone="warm"
+                  priority={dashboardStats.noResponseClients > 0 ? 'default' : 'subtle'}
+                  icon={UserX}
                 />
                 <StatCard
                   label="Places restantes"
                   value={dashboardStats.remainingPlaces}
+                  tone="warm"
+                  priority={dashboardStats.remainingPlaces > 0 ? 'high' : 'default'}
+                  icon={ClipboardList}
                 />
               </section>
 
               <div className="grid gap-6 xl:grid-cols-3">
-                <SectionCard title="Professionnels ayant encore des places">
+                <SectionCard
+                  title="Professionnels ayant encore des places"
+                  priority="high"
+                  icon={ClipboardList}
+                >
                   {professionalsWithRemaining.length === 0 ? (
                     <EmptyState title="Aucune place restante actuellement." />
                   ) : (
@@ -407,7 +434,11 @@ export default function DirectionPage() {
                   )}
                 </SectionCard>
 
-                <SectionCard title="Demandes completees recemment">
+                <SectionCard
+                  title="Demandes completees recemment"
+                  priority="subtle"
+                  icon={CheckCircle2}
+                >
                   {completedRequests.length === 0 ? (
                     <EmptyState title="Aucune demande completee a afficher." />
                   ) : (
@@ -443,7 +474,11 @@ export default function DirectionPage() {
                   )}
                 </SectionCard>
 
-                <SectionCard title="Demandes necessitant attention">
+                <SectionCard
+                  title="Demandes necessitant attention"
+                  priority={attentionRows.length > 0 ? 'high' : 'default'}
+                  icon={AlertCircle}
+                >
                   {attentionRows.length === 0 ? (
                     <EmptyState title="Aucune situation prioritaire detectee." />
                   ) : (

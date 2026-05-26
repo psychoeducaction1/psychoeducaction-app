@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { ClipboardList, Clock3, type LucideIcon } from 'lucide-react'
 import { AppNav } from '@/components/AppNav'
 import {
   AlertBanner,
@@ -27,6 +28,9 @@ type DashboardStat = {
   label: string
   value: number
   helper: string
+  tone?: 'neutral' | 'warm' | 'success'
+  priority?: 'default' | 'high' | 'subtle'
+  icon?: LucideIcon
 }
 
 function RequestStatusCard({
@@ -37,12 +41,12 @@ function RequestStatusCard({
   tone: BadgeTone
 }) {
   return (
-    <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
-      <p className="text-sm font-medium text-[#7a6859]">Statut de la demande</p>
+    <div className="rounded-2xl border border-[#d8b992] bg-[#fffaf4] p-5 shadow-[0_10px_28px_rgba(138,86,51,0.10)]">
+      <p className="text-sm font-semibold text-[#6c5a4d]">Statut de la demande</p>
       <div className="mt-3">
         <StatusBadge tone={tone}>{label}</StatusBadge>
       </div>
-      <p className="mt-3 text-xs text-[#8a6f5d]">
+      <p className="mt-3 text-xs leading-5 text-[#8a6f5d]">
         Inactive, en cours ou complétée selon les places restantes.
       </p>
     </div>
@@ -61,7 +65,7 @@ function QuickLink({
   return (
     <Link
       href={href}
-      className="block rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.06)] transition hover:-translate-y-0.5 hover:border-[#d8b992] hover:bg-white"
+      className="block rounded-2xl border border-[#eadfd2] bg-[#fffdf9]/80 p-5 shadow-none transition hover:-translate-y-0.5 hover:border-[#d8b992] hover:bg-white"
     >
       <h3 className="text-base font-semibold text-[#332820]">{title}</h3>
       <p className="mt-2 text-sm leading-6 text-[#7a6859]">{description}</p>
@@ -225,11 +229,17 @@ export default function ProfessionnelPage() {
       label: 'Assignations à traiter',
       value: clientsToProcess.length,
       helper: 'Service = en attente',
+      tone: 'warm',
+      priority: clientsToProcess.length > 0 ? 'high' : 'default',
+      icon: Clock3,
     },
     {
       label: 'Places restantes',
       value: remainingCount,
       helper: 'Disponibles dans la demande active',
+      tone: 'warm',
+      priority: remainingCount > 0 ? 'high' : 'default',
+      icon: ClipboardList,
     },
   ]
 
@@ -271,6 +281,7 @@ export default function ProfessionnelPage() {
                       title={alert.title}
                       description={alert.description}
                       tone={alert.tone}
+                      priority={alert.tone === 'warning' ? 'high' : 'default'}
                     />
                   ))}
                 </section>
@@ -289,10 +300,10 @@ export default function ProfessionnelPage() {
               </section>
 
               <section className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-                <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-6 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
+                <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.05)]">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <h2 className="text-lg font-semibold text-[#332820]">
+                      <h2 className="text-xl font-semibold text-[#332820]">
                         Aperçu de la demande
                       </h2>
                       <p className="mt-1 text-sm text-[#7a6859]">
@@ -333,7 +344,7 @@ export default function ProfessionnelPage() {
                         {assignedCount}
                       </p>
                     </div>
-                    <div className="rounded-2xl border border-[#eadfd2] bg-[#fbf6ef] p-4">
+                    <div className="rounded-2xl border border-[#d8b992] bg-[#fffaf4] p-4">
                       <p className="text-xs font-medium uppercase text-[#8a6f5d]">
                         Restants
                       </p>

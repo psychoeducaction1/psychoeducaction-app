@@ -14,7 +14,7 @@ function InfoCard({
   children: React.ReactNode
 }) {
   return (
-    <section className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-6 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
+    <section className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.05)]">
       <h2 className="text-lg font-semibold text-[#332820]">{title}</h2>
       <div className="mt-4 text-sm leading-6 text-[#6c5a4d]">{children}</div>
     </section>

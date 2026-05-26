@@ -720,7 +720,7 @@ export default function ProfessionnelDetailPage() {
 
           {!loading && !error && profile && (
             <div className="space-y-8">
-              <section className="rounded-3xl border border-[#eadfd2] bg-[#fffdf9] p-6 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
+              <section className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.05)]">
                 <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
                   <div>
                     <p className="text-sm font-medium text-[#9b6a3d]">

@@ -328,11 +328,11 @@ export default function ProfessionnelClientsPage() {
   )
 
   const renderConsultationMotif = (client: AssignedClient) => (
-    <div className="rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-3 text-sm text-[#332820]">
+    <div className="min-w-0 max-w-full overflow-hidden rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-3 text-sm text-[#332820]">
       <p className="text-xs font-medium uppercase text-[#8a6f5d]">
         Motif de consultation
       </p>
-      <p className="mt-1 whitespace-pre-wrap">
+      <p className="mt-1 max-w-full whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
         {client.short_comment?.trim() || '-'}
       </p>
     </div>
@@ -378,7 +378,7 @@ export default function ProfessionnelClientsPage() {
           sectionClients.map((client) => (
             <article
               key={client.id}
-              className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-4 shadow-[0_1px_2px_rgba(72,49,30,0.06)]"
+              className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.05)]"
             >
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
@@ -399,10 +399,10 @@ export default function ProfessionnelClientsPage() {
                 </div>
               </div>
 
-              <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_8.5rem_minmax(0,1fr)]">
+              <div className="mt-4 grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_10rem] xl:grid-cols-[minmax(0,0.9fr)_10rem_minmax(0,1.25fr)]">
                 {renderConsultationMotif(client)}
 
-                <label className="block text-xs font-medium text-[#5d4a3d]">
+                <label className="block min-w-0 text-xs font-medium text-[#5d4a3d]">
                   Service pris
                   <select
                     value={getServiceStatus(client.is_active)}
@@ -413,7 +413,7 @@ export default function ProfessionnelClientsPage() {
                         serviceStatusToIsActive(event.target.value as ServiceStatus)
                       )
                     }
-                    className="mt-1 w-28 rounded-xl border border-[#dfd0bf] bg-white px-2 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                    className="mt-1 w-36 max-w-full rounded-xl border border-[#dfd0bf] bg-white px-2 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                   >
                     <option value="pending">En attente</option>
                     <option value="yes">Oui</option>
@@ -421,7 +421,9 @@ export default function ProfessionnelClientsPage() {
                   </select>
                 </label>
 
-                <div>{renderNonServiceReason(client)}</div>
+                <div className="min-w-0 md:col-span-2 xl:col-span-1">
+                  {renderNonServiceReason(client)}
+                </div>
               </div>
               {(savingClientIds[client.id] ||
                 clientMessages[client.id] ||
@@ -545,7 +547,7 @@ export default function ProfessionnelClientsPage() {
 
           {!loading && !error && (
             <div className="space-y-8">
-              <section className="rounded-3xl border border-[#eadfd2] bg-[#fffdf9] p-4 shadow-[0_1px_2px_rgba(72,49,30,0.04)] sm:p-5">
+              <section className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.05)]">
                 <h2 className="mb-3 text-lg font-semibold text-[#332820]">
                   Assignations à traiter
                 </h2>
@@ -555,7 +557,7 @@ export default function ProfessionnelClientsPage() {
                 )}
               </section>
 
-              <section className="rounded-3xl border border-[#d8e2c7] bg-[#f6faef] p-4 shadow-[0_1px_2px_rgba(72,49,30,0.04)] sm:p-5">
+              <section className="rounded-2xl border border-[#d8e2c7] bg-[#f6faef] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.05)]">
                 <h2 className="mb-3 text-lg font-semibold text-[#3f4f2d]">
                   Clients ayant pris le service
                 </h2>
@@ -565,7 +567,7 @@ export default function ProfessionnelClientsPage() {
                 )}
               </section>
 
-              <section className="rounded-3xl border border-[#e9cfc5] bg-[#fff6f2] p-4 shadow-[0_1px_2px_rgba(72,49,30,0.04)] sm:p-5">
+              <section className="rounded-2xl border border-[#e9cfc5] bg-[#fff6f2] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.05)]">
                 <h2 className="mb-3 text-lg font-semibold text-[#6f3f32]">
                   Clients n&apos;ayant pas pris le service
                 </h2>
