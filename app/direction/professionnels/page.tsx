@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { AppNav } from '@/components/AppNav'
@@ -68,6 +68,11 @@ export default function DirectionProfessionnelsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [inviteFullName, setInviteFullName] = useState('')
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteLoading, setInviteLoading] = useState(false)
+  const [inviteSuccess, setInviteSuccess] = useState('')
+  const [inviteError, setInviteError] = useState('')
 
   useEffect(() => {
     const loadProfessionals = async () => {
@@ -230,6 +235,70 @@ export default function DirectionProfessionnelsPage() {
     })
   }, [rows, searchQuery])
 
+  const handleInviteProfessional = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    if (inviteLoading) return
+
+    setInviteSuccess('')
+    setInviteError('')
+
+    const fullName = inviteFullName.trim()
+    const email = inviteEmail.trim()
+
+    if (!fullName) {
+      setInviteError('Le nom complet est requis.')
+      return
+    }
+
+    if (!email) {
+      setInviteError('Le courriel est requis.')
+      return
+    }
+
+    setInviteLoading(true)
+
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession()
+
+    if (sessionError || !session?.access_token) {
+      setInviteLoading(false)
+      setInviteError('Session introuvable. Veuillez vous reconnecter.')
+      return
+    }
+
+    try {
+      const response = await fetch('/api/direction/invite-professional', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          full_name: fullName,
+          email,
+        }),
+      })
+
+      const result = (await response.json()) as { error?: string }
+
+      if (!response.ok) {
+        setInviteError(result.error ?? "Impossible d'envoyer l'invitation.")
+        return
+      }
+
+      setInviteFullName('')
+      setInviteEmail('')
+      setInviteSuccess('Invitation envoyée avec succès.')
+    } catch {
+      setInviteError("Erreur réseau pendant l'envoi de l'invitation.")
+    } finally {
+      setInviteLoading(false)
+    }
+  }
+
   return (
     <>
       <AppNav />
@@ -260,6 +329,69 @@ export default function DirectionProfessionnelsPage() {
 
           {!loading && !error && (
             <>
+              <section className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.05)]">
+                <div className="mb-5">
+                  <h2 className="text-lg font-semibold text-[#332820]">
+                    Inviter un professionnel
+                  </h2>
+                  <p className="mt-1 text-sm leading-6 text-[#7a6859]">
+                    Envoyez un lien par courriel pour permettre au professionnel
+                    de créer son compte.
+                  </p>
+                </div>
+
+                <form
+                  onSubmit={handleInviteProfessional}
+                  className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
+                >
+                  <label className="block text-sm font-medium text-[#5d4a3d]">
+                    Nom complet
+                    <input
+                      type="text"
+                      value={inviteFullName}
+                      onChange={(event) => setInviteFullName(event.target.value)}
+                      placeholder="Nom du professionnel"
+                      disabled={inviteLoading}
+                      className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none transition placeholder:text-[#a89686] focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd] disabled:cursor-not-allowed disabled:bg-[#f7efe7]"
+                    />
+                  </label>
+
+                  <label className="block text-sm font-medium text-[#5d4a3d]">
+                    Courriel
+                    <input
+                      type="email"
+                      value={inviteEmail}
+                      onChange={(event) => setInviteEmail(event.target.value)}
+                      placeholder="professionnel@exemple.com"
+                      disabled={inviteLoading}
+                      className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none transition placeholder:text-[#a89686] focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd] disabled:cursor-not-allowed disabled:bg-[#f7efe7]"
+                    />
+                  </label>
+
+                  <div className="flex items-end">
+                    <button
+                      type="submit"
+                      disabled={inviteLoading}
+                      className="inline-flex min-h-10 w-full items-center justify-center rounded-xl bg-[#8a5633] px-4 py-2 text-sm font-medium text-white transition-all duration-200 hover:bg-[#6d3f1f] disabled:cursor-not-allowed disabled:bg-[#c8b8a8] lg:w-auto"
+                    >
+                      {inviteLoading ? 'Envoi...' : "Envoyer l'invitation"}
+                    </button>
+                  </div>
+                </form>
+
+                {inviteSuccess && (
+                  <p className="mt-4 rounded-xl border border-[#d6c7aa] bg-[#f1ead9] p-3 text-sm text-[#5f5932]">
+                    {inviteSuccess}
+                  </p>
+                )}
+
+                {inviteError && (
+                  <p className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                    {inviteError}
+                  </p>
+                )}
+              </section>
+
               <section className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
                 <label className="block text-sm font-medium text-[#5d4a3d]">
                   Recherche
