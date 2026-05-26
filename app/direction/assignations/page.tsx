@@ -118,6 +118,7 @@ export default function DirectionAssignationsPage() {
         .from('profiles')
         .select('id, full_name, email')
         .eq('role', 'professionnel')
+        .eq('is_active', true)
         .order('full_name', { ascending: true })
 
       if (profilesError) {
