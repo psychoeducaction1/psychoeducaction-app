@@ -76,7 +76,7 @@ export default function HomePage() {
 
         if (!profile) {
           setErrorMessage(
-            "Aucun profil n'est associe a cet utilisateur dans la table profiles."
+            "Aucun profil n'est associé à cet utilisateur dans la table profiles."
           )
           return
         }

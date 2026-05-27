@@ -237,7 +237,7 @@ export default function DirectionAssignationsPage() {
               Assignations
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#7a6859]">
-              Suivi centralise des demandes d&apos;assignation par professionnel.
+              Suivi centralisé des demandes d&apos;assignation par professionnel.
             </p>
           </div>
 
@@ -292,7 +292,7 @@ export default function DirectionAssignationsPage() {
                       <tr>
                         <td colSpan={7} className="px-4 py-8">
                           <EmptyState
-                            title="Aucune demande trouvee"
+                            title="Aucune demande trouvée"
                             description="Changez de filtre pour voir d'autres demandes."
                           />
                         </td>

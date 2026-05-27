@@ -472,7 +472,7 @@ export default function ProfessionnelDetailPage() {
       );
       setClientMotifMessages((currentMessages) => ({
         ...currentMessages,
-        [client.id]: "Motif sauvegarde.",
+        [client.id]: "Motif sauvegardé.",
       }));
     } catch (caughtError: unknown) {
       setClientMotifErrors((currentErrors) => ({
@@ -536,7 +536,7 @@ export default function ProfessionnelDetailPage() {
         ),
         pref_notes: nextProfile.pref_notes ?? "",
       });
-      setProfessionalProfileMessage("Informations sauvegardees.");
+      setProfessionalProfileMessage("Informations sauvegardées.");
     } catch (caughtError: unknown) {
       setProfessionalProfileError(getErrorMessage(caughtError));
     } finally {
@@ -553,7 +553,7 @@ export default function ProfessionnelDetailPage() {
     const lastName = clientForm.last_name.trim();
 
     if (!firstName || !lastName) {
-      setClientError("Le prenom et le nom sont obligatoires.");
+      setClientError("Le prénom et le nom sont obligatoires.");
       return;
     }
 
@@ -571,7 +571,7 @@ export default function ProfessionnelDetailPage() {
 
     if (currentRemainingCount <= 0) {
       setClientError(
-        "La demande actuelle est completee. Aucune place restante a assigner.",
+        "La demande actuelle est complétée. Aucune place restante à assigner.",
       );
       return;
     }
@@ -633,7 +633,7 @@ export default function ProfessionnelDetailPage() {
       }
 
       setClientForm(emptyClientForm);
-      setClientMessage("Client assigne avec succes.");
+      setClientMessage("Client assigné avec succès.");
       await loadProfessionalProfile({ showLoading: false });
     } catch (caughtError: unknown) {
       setClientError(getErrorMessage(caughtError));
@@ -674,7 +674,7 @@ export default function ProfessionnelDetailPage() {
       : null,
     assignmentRequestStatus.label === "demande complétée"
       ? {
-          title: "Demande completee",
+          title: "Demande complétée",
           description:
             "La demande actuelle est entierement repondue et reste visible.",
           tone: "success" as BadgeTone,
@@ -690,7 +690,7 @@ export default function ProfessionnelDetailPage() {
     clientsWithService.length === 0
       ? {
           title: "Aucun client ayant pris le service",
-          description: "Aucun client actif n'est associe au professionnel.",
+          description: "Aucun client actif n'est associé au professionnel.",
           tone: "muted" as BadgeTone,
         }
       : null,
@@ -708,7 +708,7 @@ export default function ProfessionnelDetailPage() {
         <div className="mx-auto max-w-7xl">
           {loading && (
             <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 text-sm text-[#7a6859]">
-              Chargement des donnees...
+              Chargement des données...
             </div>
           )}
 
@@ -758,7 +758,7 @@ export default function ProfessionnelDetailPage() {
 
               <SectionCard
                 title="Resume"
-                description="Vue rapide des volumes, de la demande et des points a surveiller."
+                description="Vue rapide des volumes, de la demande et des points à surveiller."
               >
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                   <StatCard
@@ -810,10 +810,10 @@ export default function ProfessionnelDetailPage() {
 
               <SectionCard
                 title="Clients"
-                description="Liste des clients assignes et ajout rapide d'une nouvelle assignation."
+                description="Liste des clients assignés et ajout rapide d'une nouvelle assignation."
               >
                 {assignedClients.length === 0 ? (
-                  <EmptyState title="Aucun client assigne pour ce professionnel." />
+                  <EmptyState title="Aucun client assigné pour ce professionnel." />
                 ) : (
                   <div className={tableShellClass}>
                     <table className={tableClass}>
@@ -899,7 +899,7 @@ export default function ProfessionnelDetailPage() {
                   <form onSubmit={handleAssignClient} className="mt-4 space-y-4">
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                       <label className="block text-sm font-medium text-[#5d4a3d]">
-                        Prenom
+                        Prénom
                         <input
                           type="text"
                           value={clientForm.first_name}
@@ -943,7 +943,7 @@ export default function ProfessionnelDetailPage() {
                       </label>
 
                       <label className="block text-sm font-medium text-[#5d4a3d]">
-                        Telephone
+                        Téléphone
                         <input
                           type="tel"
                           value={clientForm.phone}
@@ -955,7 +955,7 @@ export default function ProfessionnelDetailPage() {
                       </label>
 
                       <label className="block text-sm font-medium text-[#5d4a3d]">
-                        Requerant
+                        Requérant
                         <input
                           type="text"
                           value={clientForm.requester_name}
@@ -1012,10 +1012,10 @@ export default function ProfessionnelDetailPage() {
 
               <SectionCard
                 title="Historique client"
-                description="Timeline recente generee a partir des clients assignes, incluant les anciennes demandes."
+                description="Timeline récente générée à partir des clients assignés, incluant les anciennes demandes."
               >
                 {historicalClients.length === 0 ? (
-                  <EmptyState title="Aucun historique client a afficher." />
+                  <EmptyState title="Aucun historique client à afficher." />
                 ) : (
                   <div className="space-y-4">
                     {historicalClients.map((client) => (
@@ -1031,7 +1031,7 @@ export default function ProfessionnelDetailPage() {
                               {getClientName(client)}
                             </h3>
                             <p className="mt-1 text-sm text-[#7a6859]">
-                              Assigne le {formatDate(client.assigned_date)}
+                              Assigné le {formatDate(client.assigned_date)}
                             </p>
                           </div>
 
@@ -1128,13 +1128,13 @@ export default function ProfessionnelDetailPage() {
               </SectionCard>
 
               <SectionCard
-                title="Preferences"
-                description="Informations de preference utiles au choix des assignations."
+                title="Préférences"
+                description="Informations de préférence utiles au choix des assignations."
               >
                 <dl className="grid gap-4 md:grid-cols-2">
                   <div>
                     <dt className="text-sm font-medium text-[#8a6f5d]">
-                      Clienteles souhaitees
+                      Clientèles souhaitées
                     </dt>
                     <dd className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">
                       {formatText(profile.pref_client_types)}
@@ -1142,7 +1142,7 @@ export default function ProfessionnelDetailPage() {
                   </div>
                   <div>
                     <dt className="text-sm font-medium text-[#8a6f5d]">
-                      Modalites souhaitees
+                      Modalités souhaitées
                     </dt>
                     <dd className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">
                       {formatText(profile.pref_modalities)}
@@ -1150,7 +1150,7 @@ export default function ProfessionnelDetailPage() {
                   </div>
                   <div>
                     <dt className="text-sm font-medium text-[#8a6f5d]">
-                      Types de suivis souhaites
+                      Types de suivis souhaités
                     </dt>
                     <dd className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">
                       {formatText(profile.pref_followup_types)}
@@ -1158,7 +1158,7 @@ export default function ProfessionnelDetailPage() {
                   </div>
                   <div>
                     <dt className="text-sm font-medium text-[#8a6f5d]">
-                      Notes / precisions
+                      Notes / précisions
                     </dt>
                     <dd className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">
                       {formatText(profile.pref_notes)}
@@ -1207,7 +1207,7 @@ export default function ProfessionnelDetailPage() {
                     </label>
 
                     <label className="block text-sm font-medium text-[#5d4a3d]">
-                      Clienteles souhaitees
+                      Clientèles souhaitées
                       <textarea
                         value={professionalProfileForm.pref_client_types}
                         onChange={(event) =>
@@ -1222,7 +1222,7 @@ export default function ProfessionnelDetailPage() {
                     </label>
 
                     <label className="block text-sm font-medium text-[#5d4a3d]">
-                      Modalites souhaitees
+                      Modalités souhaitées
                       <textarea
                         value={professionalProfileForm.pref_modalities}
                         onChange={(event) =>
@@ -1237,7 +1237,7 @@ export default function ProfessionnelDetailPage() {
                     </label>
 
                     <label className="block text-sm font-medium text-[#5d4a3d]">
-                      Types de suivis souhaites
+                      Types de suivis souhaités
                       <textarea
                         value={professionalProfileForm.pref_followup_types}
                         onChange={(event) =>
@@ -1252,7 +1252,7 @@ export default function ProfessionnelDetailPage() {
                     </label>
 
                     <label className="block text-sm font-medium text-[#5d4a3d]">
-                      Notes / precisions
+                      Notes / précisions
                       <textarea
                         value={professionalProfileForm.pref_notes}
                         onChange={(event) =>

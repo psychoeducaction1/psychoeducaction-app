@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
 
   if (!supabaseUrl || !supabaseAnonKey) {
     return jsonResponse(
-      { error: 'Configuration Supabase publique manquante cote serveur.' },
+      { error: 'Configuration Supabase publique manquante côté serveur.' },
       500
     )
   }
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
   const accessToken = getBearerToken(request)
 
   if (!accessToken) {
-    return jsonResponse({ error: 'Non autorise.' }, 401)
+    return jsonResponse({ error: 'Non autorisé.' }, 401)
   }
 
   const supabaseServer = createClient(supabaseUrl, supabaseAnonKey, {
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
   } = await supabaseServer.auth.getUser()
 
   if (userError || !currentUser) {
-    return jsonResponse({ error: 'Utilisateur connecte introuvable.' }, 401)
+    return jsonResponse({ error: 'Utilisateur connecté introuvable.' }, 401)
   }
 
   const { data: currentProfile, error: profileError } = await supabaseServer
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (currentProfile?.role !== 'direction') {
-    return jsonResponse({ error: 'Acces reserve a la direction.' }, 403)
+    return jsonResponse({ error: 'Accès réservé à la direction.' }, 403)
   }
 
   let body: ResendProfessionalAccessBody

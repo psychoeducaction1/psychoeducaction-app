@@ -276,7 +276,7 @@ export default function DirectionPage() {
   const directionAlerts = [
     professionalsWithRemaining.some((row) => row.remainingCount >= 3)
       ? {
-          title: 'Capacite disponible importante',
+          title: 'Capacité disponible importante',
           description: `${
             professionalsWithRemaining.filter((row) => row.remainingCount >= 3).length
           } professionnel${
@@ -290,9 +290,9 @@ export default function DirectionPage() {
       : null,
     completedRequests.length > 0
       ? {
-          title: 'Demandes completees',
+          title: 'Demandes complétées',
           description: `${completedRequests.length} demande${
-            completedRequests.length > 1 ? 's sont completees' : ' est completee'
+            completedRequests.length > 1 ? 's sont complétées' : ' est complétée'
           } et reste${completedRequests.length > 1 ? 'nt' : ''} visible${
             completedRequests.length > 1 ? 's' : ''
           }.`,
@@ -301,7 +301,7 @@ export default function DirectionPage() {
       : null,
     rows.some((row) => row.noResponseClients >= 3)
       ? {
-          title: 'Services non pris a surveiller',
+          title: 'Services non pris à surveiller',
           description: `${
             rows.filter((row) => row.noResponseClients >= 3).length
           } professionnel${
@@ -331,7 +331,7 @@ export default function DirectionPage() {
           <PageHeader
             eyebrow="Direction"
             title="Tableau de bord"
-            description="Vue rapide des capacites, demandes et situations a surveiller."
+            description="Vue rapide des capacités, demandes et situations à surveiller."
             actions={
               <Link
                 href="/direction/professionnels"
@@ -344,7 +344,7 @@ export default function DirectionPage() {
 
           {loading && (
             <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 text-sm text-[#7a6859]">
-              Chargement des donnees...
+              Chargement des données...
             </div>
           )}
 
@@ -436,12 +436,12 @@ export default function DirectionPage() {
                 </SectionCard>
 
                 <SectionCard
-                  title="Demandes completees recemment"
+                  title="Demandes complétées récemment"
                   priority="subtle"
                   icon={CheckCircle2}
                 >
                   {completedRequests.length === 0 ? (
-                    <EmptyState title="Aucune demande completee a afficher." />
+                    <EmptyState title="Aucune demande complétée à afficher." />
                   ) : (
                     <div className="space-y-3">
                       {completedRequests.map((row) => {
@@ -481,7 +481,7 @@ export default function DirectionPage() {
                   icon={AlertCircle}
                 >
                   {attentionRows.length === 0 ? (
-                    <EmptyState title="Aucune situation prioritaire detectee." />
+                    <EmptyState title="Aucune situation prioritaire détectée." />
                   ) : (
                     <div className="space-y-3">
                       {attentionRows.map((row) => (

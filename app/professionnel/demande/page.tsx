@@ -313,7 +313,7 @@ export default function ProfessionnelDemandePage() {
               Ma demande
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#7a6859]">
-              Creer, mettre a jour ou desactiver votre demande d&apos;assignation.
+              Créer, mettre à jour ou désactiver votre demande d&apos;assignation.
             </p>
           </div>
 

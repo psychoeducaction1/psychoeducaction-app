@@ -332,7 +332,7 @@ export default function DirectionProfessionnelsPage() {
 
   const handleDeactivateProfessional = async (professional: ProfessionalRow) => {
     const confirmed = window.confirm(
-      'Etes-vous sur de vouloir desactiver ce professionnel ? Il ne sera plus visible dans les assignations actives, mais son historique sera conserve.'
+      'Êtes-vous sûr de vouloir désactiver ce professionnel ? Il ne sera plus visible dans les assignations actives, mais son historique sera conservé.'
     )
 
     if (!confirmed) return
@@ -364,7 +364,7 @@ export default function DirectionProfessionnelsPage() {
 
   const handleReactivateProfessional = async (professional: ProfessionalRow) => {
     const confirmed = window.confirm(
-      `Reactiver le professionnel "${professional.fullName}" ? Il redeviendra visible dans les listes actives.`
+      `Réactiver le professionnel "${professional.fullName}" ? Il redeviendra visible dans les listes actives.`
     )
 
     if (!confirmed) return
@@ -396,7 +396,7 @@ export default function DirectionProfessionnelsPage() {
 
   const handleResendAccess = async (professional: ProfessionalRow) => {
     const confirmed = window.confirm(
-      `Renvoyer un lien d'acces a "${professional.fullName}" ?`
+      `Renvoyer un lien d'accès à "${professional.fullName}" ?`
     )
 
     if (!confirmed) return
@@ -432,16 +432,16 @@ export default function DirectionProfessionnelsPage() {
 
       if (!response.ok) {
         setResendAccessError(
-          result.error ?? "Impossible de renvoyer le lien d'acces."
+          result.error ?? "Impossible de renvoyer le lien d'accès."
         )
         return
       }
 
       setResendAccessSuccess(
-        `Lien d'acces envoye a ${result.email ?? professional.email}.`
+        `Lien d'accès envoyé à ${result.email ?? professional.email}.`
       )
     } catch {
-      setResendAccessError("Erreur reseau pendant l'envoi du lien d'acces.")
+      setResendAccessError("Erreur réseau pendant l'envoi du lien d'accès.")
     } finally {
       setResendingAccessProfessionalId(null)
     }
@@ -459,7 +459,7 @@ export default function DirectionProfessionnelsPage() {
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#7a6859]">
               Liste detaillee des professionnels, de leurs demandes et de leurs
-              clients assignes.
+              clients assignés.
             </p>
           </div>
 
@@ -555,13 +555,13 @@ export default function DirectionProfessionnelsPage() {
 
               {deactivateError && (
                 <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                  Impossible de desactiver le professionnel: {deactivateError}
+                  Impossible de désactiver le professionnel: {deactivateError}
                 </div>
               )}
 
               {reactivateError && (
                 <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                  Impossible de reactiver le professionnel: {reactivateError}
+                  Impossible de réactiver le professionnel: {reactivateError}
                 </div>
               )}
 
@@ -607,8 +607,8 @@ export default function DirectionProfessionnelsPage() {
                       <tr>
                         <td colSpan={9} className="px-4 py-8">
                           <EmptyState
-                            title="Aucun professionnel trouve"
-                            description="Ajustez la recherche pour elargir la liste."
+                            title="Aucun professionnel trouvé"
+                            description="Ajustez la recherche pour élargir la liste."
                           />
                         </td>
                       </tr>
@@ -663,7 +663,7 @@ export default function DirectionProfessionnelsPage() {
                                 >
                                   {resendingAccessProfessionalId === row.id
                                     ? 'Envoi...'
-                                    : 'Renvoyer acces'}
+                                    : 'Renvoyer accès'}
                                 </button>
                                 <button
                                   type="button"
@@ -672,8 +672,8 @@ export default function DirectionProfessionnelsPage() {
                                   className="inline-flex min-h-9 items-center justify-center rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   {deactivatingProfessionalId === row.id
-                                    ? 'Desactivation...'
-                                    : 'Desactiver'}
+                                    ? 'Désactivation...'
+                                    : 'Désactiver'}
                                 </button>
                               </div>
                             </td>
@@ -688,10 +688,10 @@ export default function DirectionProfessionnelsPage() {
               <section className="mt-8">
                 <div className="mb-4">
                   <h2 className="text-lg font-semibold text-[#332820]">
-                    Professionnels archives
+                    Professionnels archivés
                   </h2>
                   <p className="mt-1 text-sm text-[#7a6859]">
-                    Ces professionnels sont desactives. Leur profil et leur
+                    Ces professionnels sont désactivés. Leur profil et leur
                     historique restent conserves.
                   </p>
                 </div>
@@ -712,8 +712,8 @@ export default function DirectionProfessionnelsPage() {
                         <tr>
                           <td colSpan={5} className="px-4 py-8">
                             <EmptyState
-                              title="Aucun professionnel archive"
-                              description="Les professionnels desactives apparaitront ici."
+                              title="Aucun professionnel archivé"
+                              description="Les professionnels désactivés apparaîtront ici."
                             />
                           </td>
                         </tr>
@@ -743,7 +743,7 @@ export default function DirectionProfessionnelsPage() {
                                 >
                                   {resendingAccessProfessionalId === row.id
                                     ? 'Envoi...'
-                                    : 'Renvoyer acces'}
+                                    : 'Renvoyer accès'}
                                 </button>
                                 <button
                                   type="button"
@@ -752,8 +752,8 @@ export default function DirectionProfessionnelsPage() {
                                   className="inline-flex min-h-9 items-center justify-center rounded-xl border border-[#d6c7aa] bg-[#f1ead9] px-3 py-2 text-xs font-medium text-[#6d3f1f] transition hover:bg-[#eadfc8] disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   {reactivatingProfessionalId === row.id
-                                    ? 'Reactivation...'
-                                    : 'Reactiver'}
+                                    ? 'Réactivation...'
+                                    : 'Réactiver'}
                                 </button>
                               </div>
                             </td>

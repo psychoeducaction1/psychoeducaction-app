@@ -251,7 +251,7 @@ export default function ProfessionnelPage() {
           <PageHeader
             eyebrow="Espace professionnel"
             title="Tableau de bord"
-            description="Vue rapide de vos assignations, de votre demande et des suivis a prioriser."
+            description="Vue rapide de vos assignations, de votre demande et des suivis à prioriser."
             actions={
               <Link href="/professionnel/clients" className={buttonClass('primary')}>
                 Voir mes assignations

@@ -73,7 +73,7 @@ export default function DirectionParametresPage() {
           <div className="mb-8">
             <p className="text-sm font-medium text-[#9b6a3d]">Direction</p>
             <h1 className="mt-1 text-3xl font-semibold text-[#332820]">
-              Parametres
+              Paramètres
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#7a6859]">
               Informations administratives et rappels de configuration du MVP.
@@ -82,7 +82,7 @@ export default function DirectionParametresPage() {
 
           {loading && (
             <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 text-sm text-[#7a6859]">
-              Chargement des parametres...
+              Chargement des paramètres...
             </div>
           )}
 
@@ -101,14 +101,14 @@ export default function DirectionParametresPage() {
                 </div>
               </InfoCard>
 
-              <InfoCard title="Roles existants">
+              <InfoCard title="Rôles existants">
                 <div className="flex flex-wrap gap-2">
                   <Badge tone="success">direction</Badge>
                   <Badge tone="success">professionnel</Badge>
                 </div>
               </InfoCard>
 
-              <InfoCard title="Tables Supabase utilisees">
+              <InfoCard title="Tables Supabase utilisées">
                 <div className="flex flex-wrap gap-2">
                   <Badge tone="neutral">profiles</Badge>
                   <Badge tone="neutral">assigned_clients</Badge>
@@ -116,17 +116,17 @@ export default function DirectionParametresPage() {
                 </div>
               </InfoCard>
 
-              <InfoCard title="Securite">
+              <InfoCard title="Sécurité">
                 <p>
-                  Rappel important : les politiques RLS Supabase sont a finaliser
+                  Rappel important : les politiques RLS Supabase sont à finaliser
                   avant une mise en production.
                 </p>
               </InfoCard>
 
-              <InfoCard title="Regles metier actuelles">
+              <InfoCard title="Règles métier actuelles">
                 <ul className="space-y-2">
-                  <li>Les demandes completees restent visibles.</li>
-                  <li>Les professionnels peuvent gerer leurs preferences.</li>
+                  <li>Les demandes complétées restent visibles.</li>
+                  <li>Les professionnels peuvent gérer leurs préférences.</li>
                   <li>La direction assigne les clients.</li>
                   <li>
                     Les professionnels indiquent le statut de service: en attente, pris ou non pris

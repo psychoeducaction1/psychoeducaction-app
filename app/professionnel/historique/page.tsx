@@ -85,12 +85,12 @@ function formatDuration(
 
   if (dayCount === null) {
     return status === 'Completee'
-      ? 'Duree non disponible'
-      : 'Date de debut non disponible'
+      ? 'Durée non disponible'
+      : 'Date de début non disponible'
   }
 
   const suffix = `${dayCount} jour${dayCount > 1 ? 's' : ''}`
-  return status === 'Completee' ? `Completee en ${suffix}` : `Active depuis ${suffix}`
+  return status === 'Completee' ? `Complétée en ${suffix}` : `Active depuis ${suffix}`
 }
 
 function isMissingCreatedAtError(message: string): boolean {
@@ -283,7 +283,7 @@ export default function ProfessionnelHistoriquePage() {
           <PageHeader
             eyebrow="Espace professionnel"
             title="Historique"
-            description="Demandes d'assignation conservees dans l'application."
+            description="Demandes d'assignation conservées dans l'application."
           />
 
           {loading && (
@@ -301,7 +301,7 @@ export default function ProfessionnelHistoriquePage() {
           {!loading && !error && (
             <div className="space-y-4">
               {requestCards.length === 0 ? (
-                <EmptyState title="Aucune demande a afficher." />
+                <EmptyState title="Aucune demande à afficher." />
               ) : (
                 requestCards.map((card, index) => {
                   const requestedCount = card.request.requested_count ?? 0
@@ -319,7 +319,7 @@ export default function ProfessionnelHistoriquePage() {
                         <div>
                           <div className="flex flex-wrap items-center gap-2">
                             <Badge tone={isCompleted ? 'success' : 'warning'}>
-                              {isCompleted ? 'Completee' : 'Active'}
+                              {isCompleted ? 'Complétée' : 'Active'}
                             </Badge>
                             <span className="text-sm font-medium text-[#8a6f5d]">
                               {card.durationLabel}
@@ -329,7 +329,7 @@ export default function ProfessionnelHistoriquePage() {
                             Demande du {formatDate(card.createdDate)}
                           </h2>
                           <p className="mt-1 text-sm text-[#7a6859]">
-                            Completion estimee : {formatDate(card.completionDate)}
+                            Complétion estimée : {formatDate(card.completionDate)}
                           </p>
                         </div>
                       </div>
