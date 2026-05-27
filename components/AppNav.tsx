@@ -8,6 +8,7 @@ import {
   ClipboardList,
   History,
   LayoutDashboard,
+  ListChecks,
   Settings,
   UserCheck,
   Users,
@@ -69,6 +70,7 @@ export function AppNav() {
       ? [
           { href: '/direction', label: 'Dashboard direction', icon: LayoutDashboard },
           { href: '/direction/assignations', label: 'Assignations', icon: ClipboardList },
+          { href: '/direction/liste-attente', label: "Liste d'attente", icon: ListChecks },
           { href: '/direction/professionnels', label: 'Professionnels', icon: Users },
           { href: '/direction/parametres', label: 'Paramètres', icon: Settings },
         ]
@@ -99,6 +101,8 @@ export function AppNav() {
             ? pathname === '/direction'
             : link.href === '/direction/assignations'
               ? pathname?.startsWith('/direction/assignations')
+              : link.href === '/direction/liste-attente'
+                ? pathname?.startsWith('/direction/liste-attente')
               : link.href === '/direction/professionnels'
                 ? pathname?.startsWith('/direction/professionnels') ||
                   pathname?.startsWith('/professionnel/')
