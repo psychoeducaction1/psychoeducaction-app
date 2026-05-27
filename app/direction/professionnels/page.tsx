@@ -73,6 +73,10 @@ export default function DirectionProfessionnelsPage() {
   const [inviteLoading, setInviteLoading] = useState(false)
   const [inviteSuccess, setInviteSuccess] = useState('')
   const [inviteError, setInviteError] = useState('')
+  const [deactivatingProfessionalId, setDeactivatingProfessionalId] = useState<
+    string | null
+  >(null)
+  const [deactivateError, setDeactivateError] = useState('')
 
   useEffect(() => {
     const loadProfessionals = async () => {
@@ -300,6 +304,33 @@ export default function DirectionProfessionnelsPage() {
     }
   }
 
+  const handleDeactivateProfessional = async (professional: ProfessionalRow) => {
+    const confirmed = window.confirm(
+      `Desactiver le professionnel "${professional.fullName}" ? Son profil et son historique seront conserves.`
+    )
+
+    if (!confirmed) return
+
+    setDeactivateError('')
+    setDeactivatingProfessionalId(professional.id)
+
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({ is_active: false })
+      .eq('id', professional.id)
+
+    if (updateError) {
+      setDeactivateError(updateError.message)
+      setDeactivatingProfessionalId(null)
+      return
+    }
+
+    setRows((currentRows) =>
+      currentRows.filter((row) => row.id !== professional.id)
+    )
+    setDeactivatingProfessionalId(null)
+  }
+
   return (
     <>
       <AppNav />
@@ -406,6 +437,12 @@ export default function DirectionProfessionnelsPage() {
                 </label>
               </section>
 
+              {deactivateError && (
+                <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  Impossible de desactiver le professionnel: {deactivateError}
+                </div>
+              )}
+
               <div className={`mt-6 ${tableShellClass}`}>
                 <table className={tableClass}>
                   <thead className={tableHeaderClass}>
@@ -418,12 +455,13 @@ export default function DirectionProfessionnelsPage() {
                       <th className={tableHeadCellClass}>Places restantes</th>
                       <th className={tableHeadCellClass}>Services non pris</th>
                       <th className={tableHeadCellClass}>Commentaire demande</th>
+                      <th className={tableHeadCellClass}>Actions</th>
                     </tr>
                   </thead>
                   <tbody className={tableBodyClass}>
                     {visibleRows.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="px-4 py-8">
+                        <td colSpan={9} className="px-4 py-8">
                           <EmptyState
                             title="Aucun professionnel trouve"
                             description="Ajustez la recherche pour elargir la liste."
@@ -471,6 +509,18 @@ export default function DirectionProfessionnelsPage() {
                               </Badge>
                             </td>
                             <td className={tableCellClass}>{row.requestComment}</td>
+                            <td className={tableCellClass}>
+                              <button
+                                type="button"
+                                onClick={() => handleDeactivateProfessional(row)}
+                                disabled={deactivatingProfessionalId === row.id}
+                                className="inline-flex min-h-9 items-center justify-center rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {deactivatingProfessionalId === row.id
+                                  ? 'Desactivation...'
+                                  : 'Desactiver'}
+                              </button>
+                            </td>
                           </tr>
                         )
                       })
