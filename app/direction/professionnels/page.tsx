@@ -23,6 +23,7 @@ type Profile = {
   id: string
   full_name: string | null
   email: string | null
+  is_active: boolean | null
 }
 
 type AssignedClient = {
@@ -53,6 +54,7 @@ type ProfessionalRow = {
   id: string
   fullName: string
   email: string
+  isActive: boolean | null
   requestActive: boolean
   requestedCount: number
   assignedCount: number
@@ -65,6 +67,7 @@ type ProfessionalRow = {
 export default function DirectionProfessionnelsPage() {
   const router = useRouter()
   const [rows, setRows] = useState<ProfessionalRow[]>([])
+  const [archivedRows, setArchivedRows] = useState<ProfessionalRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -77,6 +80,14 @@ export default function DirectionProfessionnelsPage() {
     string | null
   >(null)
   const [deactivateError, setDeactivateError] = useState('')
+  const [reactivatingProfessionalId, setReactivatingProfessionalId] = useState<
+    string | null
+  >(null)
+  const [reactivateError, setReactivateError] = useState('')
+  const [resendingAccessProfessionalId, setResendingAccessProfessionalId] =
+    useState<string | null>(null)
+  const [resendAccessSuccess, setResendAccessSuccess] = useState('')
+  const [resendAccessError, setResendAccessError] = useState('')
 
   useEffect(() => {
     const loadProfessionals = async () => {
@@ -107,9 +118,8 @@ export default function DirectionProfessionnelsPage() {
 
       const { data: profilesData, error: profilesError } = await supabase
         .from('profiles')
-        .select('id, full_name, email')
+        .select('id, full_name, email, is_active')
         .eq('role', 'professionnel')
-        .eq('is_active', true)
         .order('full_name', { ascending: true })
 
       if (profilesError) {
@@ -123,6 +133,7 @@ export default function DirectionProfessionnelsPage() {
 
       if (professionalIds.length === 0) {
         setRows([])
+        setArchivedRows([])
         setLoading(false)
         return
       }
@@ -210,6 +221,7 @@ export default function DirectionProfessionnelsPage() {
           id: profile.id,
           fullName: profile.full_name ?? '-',
           email: profile.email ?? '-',
+          isActive: profile.is_active,
           requestActive: request?.is_active ?? false,
           requestedCount,
           assignedCount,
@@ -220,7 +232,8 @@ export default function DirectionProfessionnelsPage() {
         }
       })
 
-      setRows(nextRows)
+      setRows(nextRows.filter((row) => row.isActive === true))
+      setArchivedRows(nextRows.filter((row) => row.isActive === false))
       setLoading(false)
     }
 
@@ -239,6 +252,19 @@ export default function DirectionProfessionnelsPage() {
         .includes(normalizedSearch)
     })
   }, [rows, searchQuery])
+
+  const visibleArchivedRows = useMemo(() => {
+    const normalizedSearch = searchQuery.trim().toLowerCase()
+
+    return archivedRows.filter((row) => {
+      if (!normalizedSearch) return true
+
+      return [row.fullName, row.email, row.requestComment]
+        .join(' ')
+        .toLowerCase()
+        .includes(normalizedSearch)
+    })
+  }, [archivedRows, searchQuery])
 
   const handleInviteProfessional = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -306,12 +332,13 @@ export default function DirectionProfessionnelsPage() {
 
   const handleDeactivateProfessional = async (professional: ProfessionalRow) => {
     const confirmed = window.confirm(
-      `Desactiver le professionnel "${professional.fullName}" ? Son profil et son historique seront conserves.`
+      'Etes-vous sur de vouloir desactiver ce professionnel ? Il ne sera plus visible dans les assignations actives, mais son historique sera conserve.'
     )
 
     if (!confirmed) return
 
     setDeactivateError('')
+    setReactivateError('')
     setDeactivatingProfessionalId(professional.id)
 
     const { error: updateError } = await supabase
@@ -328,7 +355,96 @@ export default function DirectionProfessionnelsPage() {
     setRows((currentRows) =>
       currentRows.filter((row) => row.id !== professional.id)
     )
+    setArchivedRows((currentRows) => [
+      ...currentRows,
+      { ...professional, isActive: false },
+    ].sort((a, b) => a.fullName.localeCompare(b.fullName, 'fr')))
     setDeactivatingProfessionalId(null)
+  }
+
+  const handleReactivateProfessional = async (professional: ProfessionalRow) => {
+    const confirmed = window.confirm(
+      `Reactiver le professionnel "${professional.fullName}" ? Il redeviendra visible dans les listes actives.`
+    )
+
+    if (!confirmed) return
+
+    setDeactivateError('')
+    setReactivateError('')
+    setReactivatingProfessionalId(professional.id)
+
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({ is_active: true })
+      .eq('id', professional.id)
+
+    if (updateError) {
+      setReactivateError(updateError.message)
+      setReactivatingProfessionalId(null)
+      return
+    }
+
+    setArchivedRows((currentRows) =>
+      currentRows.filter((row) => row.id !== professional.id)
+    )
+    setRows((currentRows) => [
+      ...currentRows,
+      { ...professional, isActive: true },
+    ].sort((a, b) => a.fullName.localeCompare(b.fullName, 'fr')))
+    setReactivatingProfessionalId(null)
+  }
+
+  const handleResendAccess = async (professional: ProfessionalRow) => {
+    const confirmed = window.confirm(
+      `Renvoyer un lien d'acces a "${professional.fullName}" ?`
+    )
+
+    if (!confirmed) return
+
+    setResendAccessSuccess('')
+    setResendAccessError('')
+    setResendingAccessProfessionalId(professional.id)
+
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession()
+
+    if (sessionError || !session?.access_token) {
+      setResendingAccessProfessionalId(null)
+      setResendAccessError('Session introuvable. Veuillez vous reconnecter.')
+      return
+    }
+
+    try {
+      const response = await fetch('/api/direction/resend-professional-access', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          professionalId: professional.id,
+        }),
+      })
+
+      const result = (await response.json()) as { error?: string; email?: string }
+
+      if (!response.ok) {
+        setResendAccessError(
+          result.error ?? "Impossible de renvoyer le lien d'acces."
+        )
+        return
+      }
+
+      setResendAccessSuccess(
+        `Lien d'acces envoye a ${result.email ?? professional.email}.`
+      )
+    } catch {
+      setResendAccessError("Erreur reseau pendant l'envoi du lien d'acces.")
+    } finally {
+      setResendingAccessProfessionalId(null)
+    }
   }
 
   return (
@@ -443,8 +559,36 @@ export default function DirectionProfessionnelsPage() {
                 </div>
               )}
 
+              {reactivateError && (
+                <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  Impossible de reactiver le professionnel: {reactivateError}
+                </div>
+              )}
+
+              {resendAccessSuccess && (
+                <div className="mt-4 rounded-xl border border-[#d6c7aa] bg-[#f1ead9] p-3 text-sm text-[#5f5932]">
+                  {resendAccessSuccess}
+                </div>
+              )}
+
+              {resendAccessError && (
+                <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  {resendAccessError}
+                </div>
+              )}
+
+              <div className="mt-6">
+                <h2 className="text-lg font-semibold text-[#332820]">
+                  Professionnels actifs
+                </h2>
+                <p className="mt-1 text-sm text-[#7a6859]">
+                  Ces professionnels sont visibles dans les listes actives et les
+                  assignations.
+                </p>
+              </div>
+
               <div className={`mt-6 ${tableShellClass}`}>
-                <table className={tableClass}>
+                <table className={`${tableClass} w-full`}>
                   <thead className={tableHeaderClass}>
                     <tr>
                       <th className={tableHeadCellClass}>Nom</th>
@@ -510,16 +654,28 @@ export default function DirectionProfessionnelsPage() {
                             </td>
                             <td className={tableCellClass}>{row.requestComment}</td>
                             <td className={tableCellClass}>
-                              <button
-                                type="button"
-                                onClick={() => handleDeactivateProfessional(row)}
-                                disabled={deactivatingProfessionalId === row.id}
-                                className="inline-flex min-h-9 items-center justify-center rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                {deactivatingProfessionalId === row.id
-                                  ? 'Desactivation...'
-                                  : 'Desactiver'}
-                              </button>
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleResendAccess(row)}
+                                  disabled={resendingAccessProfessionalId === row.id}
+                                  className="inline-flex min-h-9 items-center justify-center rounded-xl border border-[#d6c7aa] bg-[#f1ead9] px-3 py-2 text-xs font-medium text-[#6d3f1f] transition hover:bg-[#eadfc8] disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {resendingAccessProfessionalId === row.id
+                                    ? 'Envoi...'
+                                    : 'Renvoyer acces'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeactivateProfessional(row)}
+                                  disabled={deactivatingProfessionalId === row.id}
+                                  className="inline-flex min-h-9 items-center justify-center rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {deactivatingProfessionalId === row.id
+                                    ? 'Desactivation...'
+                                    : 'Desactiver'}
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         )
@@ -528,6 +684,86 @@ export default function DirectionProfessionnelsPage() {
                   </tbody>
                 </table>
               </div>
+
+              <section className="mt-8">
+                <div className="mb-4">
+                  <h2 className="text-lg font-semibold text-[#332820]">
+                    Professionnels archives
+                  </h2>
+                  <p className="mt-1 text-sm text-[#7a6859]">
+                    Ces professionnels sont desactives. Leur profil et leur
+                    historique restent conserves.
+                  </p>
+                </div>
+
+                <div className={tableShellClass}>
+                  <table className={`${tableClass} w-full`}>
+                    <thead className={tableHeaderClass}>
+                      <tr>
+                        <th className={tableHeadCellClass}>Nom</th>
+                        <th className={tableHeadCellClass}>Email</th>
+                        <th className={tableHeadCellClass}>Statut</th>
+                        <th className={tableHeadCellClass}>Commentaire demande</th>
+                        <th className={tableHeadCellClass}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className={tableBodyClass}>
+                      {visibleArchivedRows.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="px-4 py-8">
+                            <EmptyState
+                              title="Aucun professionnel archive"
+                              description="Les professionnels desactives apparaitront ici."
+                            />
+                          </td>
+                        </tr>
+                      ) : (
+                        visibleArchivedRows.map((row) => (
+                          <tr key={row.id} className={tableRowClass}>
+                            <td className="px-4 py-3 align-top text-[#332820]">
+                              <Link
+                                href={`/professionnel/${row.id}`}
+                                className="font-medium text-[#6d3f1f] underline decoration-[#d9b591] underline-offset-2 hover:decoration-[#9b6a3d]"
+                              >
+                                {row.fullName}
+                              </Link>
+                            </td>
+                            <td className={tableCellClass}>{row.email}</td>
+                            <td className={tableCellClass}>
+                              <Badge tone="muted">Inactif</Badge>
+                            </td>
+                            <td className={tableCellClass}>{row.requestComment}</td>
+                            <td className={tableCellClass}>
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleResendAccess(row)}
+                                  disabled={resendingAccessProfessionalId === row.id}
+                                  className="inline-flex min-h-9 items-center justify-center rounded-xl border border-[#d6c7aa] bg-[#f1ead9] px-3 py-2 text-xs font-medium text-[#6d3f1f] transition hover:bg-[#eadfc8] disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {resendingAccessProfessionalId === row.id
+                                    ? 'Envoi...'
+                                    : 'Renvoyer acces'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleReactivateProfessional(row)}
+                                  disabled={reactivatingProfessionalId === row.id}
+                                  className="inline-flex min-h-9 items-center justify-center rounded-xl border border-[#d6c7aa] bg-[#f1ead9] px-3 py-2 text-xs font-medium text-[#6d3f1f] transition hover:bg-[#eadfc8] disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {reactivatingProfessionalId === row.id
+                                    ? 'Reactivation...'
+                                    : 'Reactiver'}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
             </>
           )}
         </div>
