@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
 import {
-  getRemainingAssignmentCount,
+  getAssignmentRequestMetrics,
 } from '@/app/professionnel/shared'
 
 type Profile = {
@@ -69,6 +69,7 @@ type DirectionRow = {
   assignedCount: number
   remainingCount: number
   requestComment: string
+  requestCompleted: boolean
 }
 
 export default function DirectionPage() {
@@ -192,18 +193,35 @@ export default function DirectionPage() {
 
       const nextRows = professionals.map((profile) => {
         const professionalRequests = requestsByProfessionalId.get(profile.id) ?? []
-        const request =
-          professionalRequests.find(
-            (currentRequest) => currentRequest.is_active === true
-          ) ?? professionalRequests[0]
+        const activeRequest =
+          professionalRequests.find((currentRequest) => {
+            const currentClientStats = clientStatsByRequestId.get(currentRequest.id)
+            return getAssignmentRequestMetrics({
+              isActive: currentRequest.is_active,
+              requestedCount: currentRequest.requested_count,
+              acceptedCount: currentClientStats?.total ?? 0,
+              remainingCount: currentRequest.remaining_count,
+            }).isActive
+          }) ?? null
+        const completedRequest =
+          professionalRequests.find((currentRequest) => {
+            const currentClientStats = clientStatsByRequestId.get(currentRequest.id)
+            return getAssignmentRequestMetrics({
+              isActive: currentRequest.is_active,
+              requestedCount: currentRequest.requested_count,
+              acceptedCount: currentClientStats?.total ?? 0,
+              remainingCount: currentRequest.remaining_count,
+            }).isCompleted
+          }) ?? null
+        const request = activeRequest ?? completedRequest ?? professionalRequests[0]
         const clientStats = request ? clientStatsByRequestId.get(request.id) : undefined
 
-        const requestedCount = request?.requested_count ?? 0
-        const assignedCount = clientStats?.usedAssignments ?? 0
-        const remainingCount = getRemainingAssignmentCount(
-          requestedCount,
-          assignedCount
-        )
+        const requestMetrics = getAssignmentRequestMetrics({
+          isActive: request?.is_active,
+          requestedCount: request?.requested_count,
+          acceptedCount: clientStats?.total ?? 0,
+          remainingCount: request?.remaining_count,
+        })
 
         return {
           id: profile.id,
@@ -212,11 +230,12 @@ export default function DirectionPage() {
           totalAssignedClients: clientStats?.total ?? 0,
           activeClients: clientStats?.active ?? 0,
           noResponseClients: clientStats?.noResponse ?? 0,
-          requestActive: request?.is_active ?? false,
-          requestedCount,
-          assignedCount,
-          remainingCount,
+          requestActive: requestMetrics.isActive,
+          requestedCount: requestMetrics.requestedCount,
+          assignedCount: requestMetrics.acceptedCount,
+          remainingCount: requestMetrics.isActive ? requestMetrics.remainingCount : 0,
           requestComment: request?.request_comment?.trim() || '-',
+          requestCompleted: requestMetrics.isCompleted,
         }
       })
 
@@ -230,12 +249,13 @@ export default function DirectionPage() {
   const dashboardStats = useMemo(
     () => ({
       totalProfessionals: rows.length,
-      activeRequests: rows.filter(
-        (row) => row.requestActive && row.remainingCount > 0
-      ).length,
+      activeRequests: rows.filter((row) => row.requestActive).length,
       activeClients: rows.reduce((total, row) => total + row.activeClients, 0),
       noResponseClients: rows.reduce((total, row) => total + row.noResponseClients, 0),
-      remainingPlaces: rows.reduce((total, row) => total + row.remainingCount, 0),
+      remainingPlaces: rows.reduce(
+        (total, row) => total + (row.requestActive ? row.remainingCount : 0),
+        0
+      ),
     }),
     [rows]
   )
@@ -252,10 +272,7 @@ export default function DirectionPage() {
   const completedRequests = useMemo(
     () =>
       rows
-        .filter(
-          (row) =>
-            row.requestActive && row.remainingCount === 0 && row.requestedCount > 0
-        )
+        .filter((row) => row.requestCompleted)
         .sort((a, b) => a.fullName.localeCompare(b.fullName, 'fr'))
         .slice(0, 8),
     [rows]
@@ -267,7 +284,7 @@ export default function DirectionPage() {
         .filter(
           (row) =>
             row.noResponseClients >= 3 ||
-            (row.requestActive && row.remainingCount === 0 && row.requestedCount > 0)
+            row.requestCompleted
         )
         .sort((a, b) => b.noResponseClients - a.noResponseClients)
         .slice(0, 8),
@@ -446,7 +463,7 @@ export default function DirectionPage() {
                     <div className="space-y-3">
                       {completedRequests.map((row) => {
                         const status = getAssignmentRequestStatus({
-                          isActive: row.requestActive,
+                          isActive: row.requestCompleted ? true : row.requestActive,
                           remainingCount: row.remainingCount,
                           requestedCount: row.requestedCount,
                         })
@@ -502,11 +519,9 @@ export default function DirectionPage() {
                                   {row.noResponseClients} service non pris
                                 </Badge>
                               )}
-                              {row.requestActive &&
-                                row.remainingCount === 0 &&
-                                row.requestedCount > 0 && (
-                                  <Badge tone="success">aucune place restante</Badge>
-                                )}
+                              {row.requestCompleted && (
+                                <Badge tone="success">aucune place restante</Badge>
+                              )}
                             </div>
                           </div>
                           <p className="mt-2 text-sm text-[#7a6859]">

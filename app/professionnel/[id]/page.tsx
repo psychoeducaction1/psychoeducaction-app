@@ -28,8 +28,8 @@ import {
 } from "@/components/ui/index";
 import { supabase } from "@/lib/supabaseClient";
 import {
+  getAssignmentRequestMetrics,
   getRemainingAssignmentCount,
-  getUsedAssignmentCount,
 } from "../shared";
 
 type Profile = {
@@ -84,6 +84,8 @@ type ProfessionalProfileForm = {
   pref_followup_types: string;
   pref_notes: string;
 };
+
+const HISTORY_PAGE_SIZE = 5;
 
 const emptyClientForm: NewAssignedClientForm = {
   first_name: "",
@@ -216,6 +218,8 @@ export default function ProfessionnelDetailPage() {
   const [historicalClients, setHistoricalClients] = useState<AssignedClient[]>(
     [],
   );
+  const [showClientHistory, setShowClientHistory] = useState(false);
+  const [clientHistoryPage, setClientHistoryPage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [professionalProfileForm, setProfessionalProfileForm] =
@@ -330,7 +334,16 @@ export default function ProfessionnelDetailPage() {
         });
 
         const activeRequest =
-          loadedRequests.find((request) => request.is_active === true) ?? null;
+          loadedRequests.find((request) => {
+            const requestAssignedCount =
+              clientsByRequestId.get(request.id)?.length ?? 0;
+            return getAssignmentRequestMetrics({
+              isActive: request.is_active,
+              requestedCount: request.requested_count,
+              acceptedCount: requestAssignedCount,
+              remainingCount: request.remaining_count,
+            }).isActive;
+          }) ?? null;
         const activeRequestClients = activeRequest
           ? clientsByRequestId.get(activeRequest.id) ?? []
           : [];
@@ -385,6 +398,10 @@ export default function ProfessionnelDetailPage() {
       cancelled = true;
     };
   }, [loadProfessionalProfile, professionalId]);
+
+  useEffect(() => {
+    setClientHistoryPage(0);
+  }, [historicalClients.length, showClientHistory]);
 
   const handleClientFormChange = (
     field: keyof NewAssignedClientForm,
@@ -564,12 +581,14 @@ export default function ProfessionnelDetailPage() {
       return;
     }
 
-    const currentRemainingCount = getRemainingAssignmentCount(
-      assignmentRequest.requested_count ?? 0,
-      getUsedAssignmentCount(assignedClients),
-    );
+    const currentRequestMetrics = getAssignmentRequestMetrics({
+      isActive: assignmentRequest.is_active,
+      requestedCount: assignmentRequest.requested_count,
+      acceptedCount: assignedClients.length,
+      remainingCount: assignmentRequest.remaining_count,
+    });
 
-    if (currentRemainingCount <= 0) {
+    if (!currentRequestMetrics.isActive) {
       setClientError(
         "La demande actuelle est complétée. Aucune place restante à assigner.",
       );
@@ -600,10 +619,7 @@ export default function ProfessionnelDetailPage() {
 
       if (assignmentRequest) {
         const requestedCount = assignmentRequest.requested_count ?? 0;
-        const nextAssignedCount = getUsedAssignmentCount([
-          ...assignedClients,
-          { is_active: null },
-        ]);
+        const nextAssignedCount = assignedClients.length + 1;
         const nextRemainingCount = getRemainingAssignmentCount(
           requestedCount,
           nextAssignedCount,
@@ -645,23 +661,35 @@ export default function ProfessionnelDetailPage() {
   const clientsWithService = assignedClients.filter(
     (client) => client.is_active === true,
   );
-  const clientsWithoutService = assignedClients.filter(
-    (client) => client.is_active === false,
-  );
   const clientsPendingService = assignedClients.filter(
     (client) => client.is_active === null,
   );
-  const requestedCount = assignmentRequest?.requested_count ?? 0;
-  const assignedCount = getUsedAssignmentCount(assignedClients);
-  const remainingCount = getRemainingAssignmentCount(
-    requestedCount,
-    assignedCount,
-  );
-  const assignmentRequestStatus = getAssignmentRequestStatus({
+  const requestMetrics = getAssignmentRequestMetrics({
     isActive: assignmentRequest?.is_active,
+    requestedCount: assignmentRequest?.requested_count,
+    acceptedCount: assignedClients.length,
+    remainingCount: assignmentRequest?.remaining_count,
+  });
+  const requestedCount = requestMetrics.requestedCount;
+  const assignedCount = requestMetrics.acceptedCount;
+  const remainingCount = requestMetrics.isActive
+    ? requestMetrics.remainingCount
+    : 0;
+  const assignmentRequestStatus = getAssignmentRequestStatus({
+    isActive: requestMetrics.isActive,
     remainingCount,
     requestedCount,
   });
+  const displayAssignmentRequest = requestMetrics.isActive
+    ? assignmentRequest
+    : null;
+  const clientHistoryPageCount = Math.ceil(
+    historicalClients.length / HISTORY_PAGE_SIZE,
+  );
+  const paginatedHistoricalClients = historicalClients.slice(
+    clientHistoryPage * HISTORY_PAGE_SIZE,
+    clientHistoryPage * HISTORY_PAGE_SIZE + HISTORY_PAGE_SIZE,
+  );
   const operationalAlerts = [
     clientsPendingService.length > 0
       ? {
@@ -670,14 +698,6 @@ export default function ProfessionnelDetailPage() {
             clientsPendingService.length > 1 ? "s sont" : " est"
           } en attente de confirmation de service.`,
           tone: "warning" as BadgeTone,
-        }
-      : null,
-    assignmentRequestStatus.label === "demande complétée"
-      ? {
-          title: "Demande complétée",
-          description:
-            "La demande actuelle est entierement repondue et reste visible.",
-          tone: "success" as BadgeTone,
         }
       : null,
     assignmentRequestStatus.label === "demande inactive"
@@ -735,9 +755,11 @@ export default function ProfessionnelDetailPage() {
                   </div>
 
                   <div className="flex flex-wrap gap-2 lg:justify-end">
-                    <Badge tone={assignmentRequestStatus.tone}>
-                      {assignmentRequestStatus.label}
-                    </Badge>
+                    {displayAssignmentRequest && (
+                      <Badge tone={assignmentRequestStatus.tone}>
+                        {assignmentRequestStatus.label}
+                      </Badge>
+                    )}
                     <Badge tone={remainingCount > 0 ? "warning" : "muted"}>
                       {remainingCount} place{remainingCount > 1 ? "s" : ""} restante
                       {remainingCount > 1 ? "s" : ""}
@@ -745,9 +767,6 @@ export default function ProfessionnelDetailPage() {
                     <Badge tone="success">
                       {clientsWithService.length} service
                       {clientsWithService.length > 1 ? "s" : ""} pris
-                    </Badge>
-                    <Badge tone="danger">
-                      {clientsWithoutService.length} service non pris
                     </Badge>
                     <Badge tone="warning">
                       {clientsPendingService.length} en attente
@@ -760,36 +779,37 @@ export default function ProfessionnelDetailPage() {
                 title="Resume"
                 description="Vue rapide des volumes, de la demande et des points à surveiller."
               >
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   <StatCard
                     label="Clients ayant pris le service"
                     value={clientsWithService.length}
                     helper="Service pris = oui"
                   />
                   <StatCard
-                    label="Services non pris"
-                    value={clientsWithoutService.length}
-                    helper="Service pris = non"
+                    label="Nombre d’assignations restantes à faire"
+                    value={remainingCount}
+                    helper={
+                      displayAssignmentRequest
+                        ? `${assignedCount} services pris sur ${requestedCount}`
+                        : "Aucune demande active"
+                    }
                   />
-                  <StatCard
-                    label="Demande / assignations / restants"
-                    value={requestedCount}
-                    helper={`${assignedCount} services pris, ${remainingCount} restants`}
-                  />
-                  <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
-                    <p className="text-sm font-medium text-[#7a6859]">
-                      Statut de la demande
-                    </p>
-                    <div className="mt-3">
-                      <Badge tone={assignmentRequestStatus.tone}>
-                        {assignmentRequestStatus.label}
-                      </Badge>
+                  {displayAssignmentRequest && (
+                    <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.06)]">
+                      <p className="text-sm font-medium text-[#7a6859]">
+                        Statut de la demande
+                      </p>
+                      <div className="mt-3">
+                        <Badge tone={assignmentRequestStatus.tone}>
+                          {assignmentRequestStatus.label}
+                        </Badge>
+                      </div>
+                      <p className="mt-3 text-xs text-[#8a6f5d]">
+                        {remainingCount} place{remainingCount > 1 ? "s" : ""} restante
+                        {remainingCount > 1 ? "s" : ""}
+                      </p>
                     </div>
-                    <p className="mt-3 text-xs text-[#8a6f5d]">
-                      {remainingCount} place{remainingCount > 1 ? "s" : ""} restante
-                      {remainingCount > 1 ? "s" : ""}
-                    </p>
-                  </div>
+                  )}
                 </div>
 
                 <div className="mt-5 grid gap-3 lg:grid-cols-2">
@@ -891,12 +911,13 @@ export default function ProfessionnelDetailPage() {
                   </div>
                 )}
 
-                <div className="mt-6 rounded-2xl border border-[#eadfd2] bg-[#fbf6ef] p-5">
-                  <h3 className="text-base font-semibold text-[#332820]">
-                    Nouvelle assignation
-                  </h3>
+                {displayAssignmentRequest ? (
+                  <div className="mt-6 rounded-2xl border border-[#eadfd2] bg-[#fbf6ef] p-5">
+                    <h3 className="text-base font-semibold text-[#332820]">
+                      Nouvelle assignation
+                    </h3>
 
-                  <form onSubmit={handleAssignClient} className="mt-4 space-y-4">
+                    <form onSubmit={handleAssignClient} className="mt-4 space-y-4">
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                       <label className="block text-sm font-medium text-[#5d4a3d]">
                         Prénom
@@ -1006,8 +1027,9 @@ export default function ProfessionnelDetailPage() {
                         </p>
                       )}
                     </div>
-                  </form>
-                </div>
+                    </form>
+                  </div>
+                ) : null}
               </SectionCard>
 
               <SectionCard
@@ -1016,9 +1038,17 @@ export default function ProfessionnelDetailPage() {
               >
                 {historicalClients.length === 0 ? (
                   <EmptyState title="Aucun historique client à afficher." />
+                ) : !showClientHistory ? (
+                  <button
+                    type="button"
+                    className={buttonClass("secondary")}
+                    onClick={() => setShowClientHistory(true)}
+                  >
+                    Voir l’historique client
+                  </button>
                 ) : (
                   <div className="space-y-4">
-                    {historicalClients.map((client) => (
+                    {paginatedHistoricalClients.map((client) => (
                       <article
                         key={client.id}
                         className="relative rounded-2xl border border-[#eadfd2] bg-[#fbf6ef] p-4 pl-11"
@@ -1069,6 +1099,40 @@ export default function ProfessionnelDetailPage() {
                         )}
                       </article>
                     ))}
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-sm text-[#7a6859]">
+                        Page {clientHistoryPage + 1} sur {clientHistoryPageCount}
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          className={buttonClass("secondary")}
+                          onClick={() =>
+                            setClientHistoryPage((currentPage) =>
+                              Math.max(currentPage - 1, 0),
+                            )
+                          }
+                          disabled={clientHistoryPage === 0}
+                        >
+                          Précédent
+                        </button>
+                        <button
+                          type="button"
+                          className={buttonClass("secondary")}
+                          onClick={() =>
+                            setClientHistoryPage((currentPage) =>
+                              Math.min(
+                                currentPage + 1,
+                                clientHistoryPageCount - 1,
+                              ),
+                            )
+                          }
+                          disabled={clientHistoryPage >= clientHistoryPageCount - 1}
+                        >
+                          Suivant
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
               </SectionCard>
@@ -1077,18 +1141,8 @@ export default function ProfessionnelDetailPage() {
                 title="Demande"
                 description="Demande actuelle transmise par le professionnel."
               >
-                {assignmentRequest ? (
-                  <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-                    <div>
-                      <dt className="text-sm font-medium text-[#8a6f5d]">
-                        Statut
-                      </dt>
-                      <dd className="mt-1">
-                        <Badge tone={assignmentRequestStatus.tone}>
-                          {assignmentRequestStatus.label}
-                        </Badge>
-                      </dd>
-                    </div>
+                {displayAssignmentRequest ? (
+                  <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                     <div>
                       <dt className="text-sm font-medium text-[#8a6f5d]">
                         Demandes
@@ -1118,12 +1172,12 @@ export default function ProfessionnelDetailPage() {
                         Commentaire demande
                       </dt>
                       <dd className="mt-1 text-sm text-[#332820]">
-                        {formatText(assignmentRequest.request_comment)}
+                        {formatText(displayAssignmentRequest.request_comment)}
                       </dd>
                     </div>
                   </dl>
                 ) : (
-                  <EmptyState title="Aucune demande actuelle pour ce professionnel." />
+                  <EmptyState title="Aucune demande active actuellement." />
                 )}
               </SectionCard>
 

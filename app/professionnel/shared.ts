@@ -74,6 +74,66 @@ export function getRemainingAssignmentCount(
   return Math.max(requestedCount - assignedCount, 0)
 }
 
+export type AssignmentRequestState = 'active' | 'completed' | 'inactive'
+
+export function getAssignmentRequestMetrics({
+  isActive,
+  requestedCount,
+  acceptedCount,
+  remainingCount,
+}: {
+  isActive: boolean | null | undefined
+  requestedCount: number | null | undefined
+  acceptedCount: number | null | undefined
+  remainingCount?: number | null | undefined
+}): {
+  requestedCount: number
+  acceptedCount: number
+  remainingCount: number
+  state: AssignmentRequestState
+  isActive: boolean
+  isCompleted: boolean
+} {
+  const normalizedRequestedCount = Math.max(requestedCount ?? 0, 0)
+  const normalizedAcceptedCount = Math.max(acceptedCount ?? 0, 0)
+  const calculatedRemainingCount = getRemainingAssignmentCount(
+    normalizedRequestedCount,
+    normalizedAcceptedCount
+  )
+  const storedRemainingCount =
+    remainingCount === null || remainingCount === undefined
+      ? null
+      : Math.max(remainingCount, 0)
+  const normalizedRemainingCount =
+    storedRemainingCount === null
+      ? calculatedRemainingCount
+      : Math.min(calculatedRemainingCount, storedRemainingCount)
+  const isCompleted =
+    normalizedRequestedCount > 0 &&
+    (normalizedAcceptedCount >= normalizedRequestedCount ||
+      normalizedRemainingCount <= 0)
+  const isCurrentlyActive =
+    isActive === true &&
+    !isCompleted &&
+    normalizedRequestedCount > 0 &&
+    (normalizedAcceptedCount < normalizedRequestedCount ||
+      normalizedRemainingCount > 0)
+  const state: AssignmentRequestState = isCompleted
+    ? 'completed'
+    : isCurrentlyActive
+      ? 'active'
+      : 'inactive'
+
+  return {
+    requestedCount: normalizedRequestedCount,
+    acceptedCount: normalizedAcceptedCount,
+    remainingCount: normalizedRemainingCount,
+    state,
+    isActive: isCurrentlyActive,
+    isCompleted,
+  }
+}
+
 export function arrayToTextareaValue(value: string[] | null): string {
   return value?.join(', ') ?? ''
 }

@@ -18,8 +18,7 @@ import {
 } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
 import {
-  getRemainingAssignmentCount,
-  getUsedAssignmentCount,
+  getAssignmentRequestMetrics,
   type AssignedClient,
   type AssignmentRequest,
 } from './shared'
@@ -120,9 +119,7 @@ export default function ProfessionnelPage() {
           )
           .eq('professional_id', user.id)
           .eq('is_active', true)
-          .gt('remaining_count', 0)
-          .limit(1)
-          .maybeSingle()
+          .order('created_at', { ascending: false })
 
       if (requestResponse.error) {
         setError(requestResponse.error.message)
@@ -130,14 +127,7 @@ export default function ProfessionnelPage() {
         return
       }
 
-      const activeRequest = (requestResponse.data as AssignmentRequest | null) ?? null
-
-      if (!activeRequest) {
-        setClients([])
-        setRequest(null)
-        setLoading(false)
-        return
-      }
+      const requests = (requestResponse.data ?? []) as AssignmentRequest[]
 
       const clientsResponse = await supabase
         .from('assigned_clients')
@@ -158,7 +148,6 @@ export default function ProfessionnelPage() {
           closure_reason
         `)
         .eq('professional_id', user.id)
-        .eq('assignment_request_id', activeRequest.id)
         .order('assigned_date', { ascending: false })
 
       if (clientsResponse.error) {
@@ -167,7 +156,39 @@ export default function ProfessionnelPage() {
         return
       }
 
-      setClients(clientsResponse.data || [])
+      const loadedClients = (clientsResponse.data || []) as AssignedClient[]
+      const clientsByRequestId = new Map<string, AssignedClient[]>()
+
+      loadedClients.forEach((client) => {
+        if (!client.assignment_request_id) return
+
+        const requestClients = clientsByRequestId.get(client.assignment_request_id) ?? []
+        requestClients.push(client)
+        clientsByRequestId.set(client.assignment_request_id, requestClients)
+      })
+
+      const activeRequest =
+        requests.find((currentRequest) => {
+          const requestClients = clientsByRequestId.get(currentRequest.id) ?? []
+          return getAssignmentRequestMetrics({
+            isActive: currentRequest.is_active,
+            requestedCount: currentRequest.requested_count,
+            acceptedCount: requestClients.length,
+            remainingCount: currentRequest.remaining_count,
+          }).isActive
+        }) ?? null
+      const activeClients = activeRequest
+        ? clientsByRequestId.get(activeRequest.id) ?? []
+        : []
+
+      if (!activeRequest) {
+        setClients([])
+        setRequest(null)
+        setLoading(false)
+        return
+      }
+
+      setClients(activeClients)
       setRequest(activeRequest)
       setLoading(false)
     }
@@ -176,12 +197,17 @@ export default function ProfessionnelPage() {
   }, [router])
 
   const clientsToProcess = clients.filter((client) => client.is_active === null)
-  const requestedCount = request?.requested_count ?? 0
-  const assignedCount = getUsedAssignmentCount(clients)
-  const remainingCount = getRemainingAssignmentCount(requestedCount, assignedCount)
-  const isRequestCompleted = Boolean(request && requestedCount > 0 && remainingCount === 0)
+  const requestMetrics = getAssignmentRequestMetrics({
+    isActive: request?.is_active,
+    requestedCount: request?.requested_count,
+    acceptedCount: clients.length,
+    remainingCount: request?.remaining_count,
+  })
+  const requestedCount = requestMetrics.requestedCount
+  const assignedCount = requestMetrics.acceptedCount
+  const remainingCount = requestMetrics.isActive ? requestMetrics.remainingCount : 0
   const requestStatus = getAssignmentRequestStatus({
-    isActive: request?.is_active ?? false,
+    isActive: requestMetrics.isActive,
     remainingCount,
     requestedCount,
   })
@@ -206,24 +232,16 @@ export default function ProfessionnelPage() {
               tone: 'warning' as const,
             }
           : null,
-        isRequestCompleted
-          ? {
-              title: 'Demande complétée',
-              description:
-                'Votre demande actuelle est complétée. Vous pouvez créer une nouvelle demande au besoin.',
-              tone: 'success' as const,
-            }
-          : null,
       ].filter(
         (
           alert
         ): alert is {
           title: string
           description: string
-          tone: 'warning' | 'success'
+          tone: 'warning'
         } => Boolean(alert)
       ),
-    [clientsToProcess.length, isRequestCompleted, requestStatus.label]
+    [clientsToProcess.length, requestStatus.label]
   )
 
   const stats: DashboardStat[] = [
@@ -303,58 +321,66 @@ export default function ProfessionnelPage() {
 
               <section className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
                 <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.05)]">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <h2 className="text-xl font-semibold text-[#332820]">
-                        Aperçu de la demande
-                      </h2>
-                      <p className="mt-1 text-sm text-[#7a6859]">
-                        Statut actuel:{' '}
-                        <Badge tone={requestStatus.tone}>
-                          {requestStatus.label}
-                        </Badge>
-                      </p>
-                      {isRequestCompleted && (
-                        <p className="mt-2 text-sm text-[#7a6859]">
-                          Votre demande actuelle est complétée. Vous pouvez
-                          créer une nouvelle demande au besoin.
-                        </p>
-                      )}
-                    </div>
-                    <Link
-                      href="/professionnel/demande"
-                      className={buttonClass('secondary')}
-                    >
-                      Gérer la demande
-                    </Link>
-                  </div>
+                  {request ? (
+                    <>
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <h2 className="text-xl font-semibold text-[#332820]">
+                            Aperçu de la demande
+                          </h2>
+                          <p className="mt-1 text-sm text-[#7a6859]">
+                            Statut actuel:{' '}
+                            <Badge tone={requestStatus.tone}>
+                              {requestStatus.label}
+                            </Badge>
+                          </p>
+                        </div>
+                        <Link
+                          href="/professionnel/demande"
+                          className={buttonClass('secondary')}
+                        >
+                          Gérer la demande
+                        </Link>
+                      </div>
 
-                  <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                    <div className="rounded-2xl border border-[#eadfd2] bg-[#fbf6ef] p-4">
-                      <p className="text-xs font-medium uppercase text-[#8a6f5d]">
-                        Demandés
-                      </p>
-                      <p className="mt-1 text-2xl font-semibold text-[#332820]">
-                        {requestedCount}
-                      </p>
+                      <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                        <div className="rounded-2xl border border-[#eadfd2] bg-[#fbf6ef] p-4">
+                          <p className="text-xs font-medium uppercase text-[#8a6f5d]">
+                            Demandés
+                          </p>
+                          <p className="mt-1 text-2xl font-semibold text-[#332820]">
+                            {requestedCount}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border border-[#eadfd2] bg-[#fbf6ef] p-4">
+                          <p className="text-xs font-medium uppercase text-[#8a6f5d]">
+                            Services pris
+                          </p>
+                          <p className="mt-1 text-2xl font-semibold text-[#332820]">
+                            {assignedCount}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border border-[#d8b992] bg-[#fffaf4] p-4">
+                          <p className="text-xs font-medium uppercase text-[#8a6f5d]">
+                            Restants
+                          </p>
+                          <p className="mt-1 text-2xl font-semibold text-[#332820]">
+                            {remainingCount}
+                          </p>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                      <EmptyState title="Aucune demande active actuellement." />
+                      <Link
+                        href="/professionnel/demande"
+                        className={buttonClass('secondary')}
+                      >
+                        Gérer la demande
+                      </Link>
                     </div>
-                    <div className="rounded-2xl border border-[#eadfd2] bg-[#fbf6ef] p-4">
-                      <p className="text-xs font-medium uppercase text-[#8a6f5d]">
-                        Services pris
-                      </p>
-                      <p className="mt-1 text-2xl font-semibold text-[#332820]">
-                        {assignedCount}
-                      </p>
-                    </div>
-                    <div className="rounded-2xl border border-[#d8b992] bg-[#fffaf4] p-4">
-                      <p className="text-xs font-medium uppercase text-[#8a6f5d]">
-                        Restants
-                      </p>
-                      <p className="mt-1 text-2xl font-semibold text-[#332820]">
-                        {remainingCount}
-                      </p>
-                    </div>
-                  </div>
+                  )}
                 </div>
 
                 <div className="grid gap-4">
