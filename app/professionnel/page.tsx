@@ -153,6 +153,8 @@ export default function ProfessionnelPage() {
           contacted,
           is_active,
           short_comment,
+          meeting_modality,
+          service_address,
           closure_reason
         `)
         .eq('professional_id', user.id)

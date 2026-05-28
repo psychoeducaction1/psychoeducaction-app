@@ -1056,11 +1056,11 @@ export default function ProfessionnelDetailPage() {
                             )}
 
                             {client.short_comment && (
-                              <div className="rounded-xl border border-[#eadfd2] bg-[#fffdf9] p-3">
+                              <div className="min-w-0 overflow-hidden rounded-xl border border-[#eadfd2] bg-[#fffdf9] p-3">
                                 <p className="text-xs font-medium uppercase text-[#8a6f5d]">
                                   Motif de consultation
                                 </p>
-                                <p className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">
+                                <p className="mt-1 max-w-full whitespace-pre-wrap break-words text-sm text-[#332820] [overflow-wrap:anywhere]">
                                   {formatText(client.short_comment)}
                                 </p>
                               </div>

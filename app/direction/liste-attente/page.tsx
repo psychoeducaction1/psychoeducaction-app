@@ -1,10 +1,11 @@
 'use client'
 
-import { type FormEvent, useEffect, useState } from 'react'
+import { type FormEvent, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppNav } from '@/components/AppNav'
 import {
   Badge,
+  type BadgeTone,
   buttonClass,
   EmptyState,
   tableBodyClass,
@@ -20,6 +21,7 @@ import { supabase } from '@/lib/supabaseClient'
 type WaitingListClient = {
   id: string
   created_at: string | null
+  contact_date: string | null
   status: string | null
   priority_level: string | null
   service_requested: string | null
@@ -35,11 +37,28 @@ type WaitingListClient = {
   contact_phone: string | null
   consultation_reason: string | null
   internal_notes: string | null
+  assigned_professional_id: string | null
+  assigned_at: string | null
+}
+
+type Professional = {
+  id: string
+  full_name: string | null
+  email: string | null
+}
+
+type ActiveAssignmentRequest = {
+  id: string
+  professional_id: string
+  is_active: boolean | null
+  requested_count: number | null
+  remaining_count: number | null
 }
 
 type WaitingListForm = {
   status: string
   priority_level: string
+  contact_date: string
   service_requested: string
   client_name: string
   first_requester_name: string
@@ -55,7 +74,7 @@ type WaitingListForm = {
 }
 
 const waitingListSelect =
-  'id, created_at, status, priority_level, service_requested, client_name, first_requester_name, second_requester_name, birth_date, city, meeting_modality, meeting_type, availability, contact_email, contact_phone, consultation_reason, internal_notes'
+  'id, created_at, contact_date, status, priority_level, service_requested, client_name, first_requester_name, second_requester_name, birth_date, city, meeting_modality, meeting_type, availability, contact_email, contact_phone, consultation_reason, internal_notes, assigned_professional_id, assigned_at'
 
 const statusOptions = ['waiting', 'assigned', 'active', 'closed', 'blacklisted']
 
@@ -67,12 +86,32 @@ const statusLabels: Record<string, string> = {
   blacklisted: 'Liste noire',
 }
 
+const statusTones: Record<string, BadgeTone> = {
+  waiting: 'warning',
+  assigned: 'success',
+  active: 'success',
+  closed: 'muted',
+  blacklisted: 'danger',
+}
+
 const priorityOptions = ['normal', 'urgent', 'existing_or_transfer']
 
 const priorityLabels: Record<string, string> = {
   normal: 'Normal',
   urgent: 'Urgent',
   existing_or_transfer: 'Existant / transfert',
+}
+
+const priorityTones: Record<string, BadgeTone> = {
+  normal: 'neutral',
+  urgent: 'danger',
+  existing_or_transfer: 'warning',
+}
+
+const prioritySortOrder: Record<string, number> = {
+  urgent: 0,
+  existing_or_transfer: 1,
+  normal: 2,
 }
 
 const serviceOptions = [
@@ -93,6 +132,7 @@ const meetingModalityOptions = [
 const emptyWaitingListForm: WaitingListForm = {
   status: 'waiting',
   priority_level: 'normal',
+  contact_date: '',
   service_requested: serviceOptions[0],
   client_name: '',
   first_requester_name: '',
@@ -150,6 +190,66 @@ function formatContact(client: WaitingListClient): string {
   )
 }
 
+function getContactSortValue(client: WaitingListClient): number {
+  const fallbackDate = client.contact_date ?? client.created_at
+
+  if (!fallbackDate) return Number.MAX_SAFE_INTEGER
+
+  const date = new Date(
+    fallbackDate.includes('T') ? fallbackDate : `${fallbackDate}T00:00:00`
+  )
+
+  return Number.isNaN(date.getTime()) ? Number.MAX_SAFE_INTEGER : date.getTime()
+}
+
+function sortClientsByContactDate(
+  clientsToSort: WaitingListClient[]
+): WaitingListClient[] {
+  return [...clientsToSort].sort(
+    (firstClient, secondClient) =>
+      getContactSortValue(firstClient) - getContactSortValue(secondClient)
+  )
+}
+
+function sortWaitingClients(clientsToSort: WaitingListClient[]): WaitingListClient[] {
+  return [...clientsToSort].sort((firstClient, secondClient) => {
+    const firstPriority =
+      prioritySortOrder[firstClient.priority_level ?? ''] ?? Number.MAX_SAFE_INTEGER
+    const secondPriority =
+      prioritySortOrder[secondClient.priority_level ?? ''] ?? Number.MAX_SAFE_INTEGER
+
+    if (firstPriority !== secondPriority) {
+      return firstPriority - secondPriority
+    }
+
+    return getContactSortValue(firstClient) - getContactSortValue(secondClient)
+  })
+}
+
+function getTodayDate(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function splitClientName(clientName: string | null): {
+  firstName: string
+  lastName: string
+} {
+  const nameParts = clientName?.trim().split(/\s+/).filter(Boolean) ?? []
+
+  if (nameParts.length === 0) {
+    return { firstName: 'Client', lastName: 'liste d’attente' }
+  }
+
+  if (nameParts.length === 1) {
+    return { firstName: nameParts[0], lastName: '-' }
+  }
+
+  return {
+    firstName: nameParts[0],
+    lastName: nameParts.slice(1).join(' '),
+  }
+}
+
 function normalizeOption(value: string | null, options: string[]): string {
   return value && options.includes(value) ? value : options[0]
 }
@@ -162,6 +262,7 @@ function clientToForm(client: WaitingListClient): WaitingListForm {
     priority_level: priorityOptions.includes(client.priority_level ?? '')
       ? client.priority_level ?? 'normal'
       : 'normal',
+    contact_date: client.contact_date ?? '',
     service_requested: normalizeOption(client.service_requested, serviceOptions),
     client_name: client.client_name ?? '',
     first_requester_name: client.first_requester_name ?? '',
@@ -184,6 +285,7 @@ function buildPayload(form: WaitingListForm) {
   return {
     status: form.status,
     priority_level: form.priority_level,
+    contact_date: nullableText(form.contact_date),
     service_requested: form.service_requested,
     client_name: nullableText(form.client_name),
     first_requester_name: nullableText(form.first_requester_name),
@@ -201,15 +303,22 @@ function buildPayload(form: WaitingListForm) {
 
 export default function DirectionListeAttentePage() {
   const router = useRouter()
+  const editSectionRef = useRef<HTMLElement | null>(null)
+  const assignmentSectionRef = useRef<HTMLElement | null>(null)
   const [clients, setClients] = useState<WaitingListClient[]>([])
+  const [professionals, setProfessionals] = useState<Professional[]>([])
+  const [activeRequests, setActiveRequests] = useState<ActiveAssignmentRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState<WaitingListForm>(emptyWaitingListForm)
   const [editingClientId, setEditingClientId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<WaitingListForm>(emptyWaitingListForm)
+  const [assigningClientId, setAssigningClientId] = useState<string | null>(null)
+  const [selectedProfessionalId, setSelectedProfessionalId] = useState('')
   const [savingClient, setSavingClient] = useState(false)
   const [savingEdit, setSavingEdit] = useState(false)
+  const [savingAssignment, setSavingAssignment] = useState(false)
   const [formMessage, setFormMessage] = useState('')
   const [formError, setFormError] = useState('')
 
@@ -243,7 +352,8 @@ export default function DirectionListeAttentePage() {
       const { data, error: waitingListError } = await supabase
         .from('waiting_list_clients')
         .select(waitingListSelect)
-        .order('created_at', { ascending: false })
+        .order('contact_date', { ascending: true })
+        .order('created_at', { ascending: true })
 
       if (waitingListError) {
         setError(waitingListError.message)
@@ -251,12 +361,77 @@ export default function DirectionListeAttentePage() {
         return
       }
 
-      setClients((data ?? []) as WaitingListClient[])
+      setClients(sortClientsByContactDate((data ?? []) as WaitingListClient[]))
+
+      const { data: professionalsData, error: professionalsError } = await supabase
+        .from('profiles')
+        .select('id, full_name, email')
+        .eq('role', 'professionnel')
+        .eq('is_active', true)
+        .order('full_name', { ascending: true })
+
+      if (professionalsError) {
+        setError(professionalsError.message)
+        setLoading(false)
+        return
+      }
+
+      const activeProfessionals = (professionalsData ?? []) as Professional[]
+      setProfessionals(activeProfessionals)
+      setSelectedProfessionalId((currentValue) =>
+        currentValue || activeProfessionals[0]?.id || ''
+      )
+
+      const professionalIds = activeProfessionals.map(
+        (professional) => professional.id
+      )
+
+      if (professionalIds.length > 0) {
+        const { data: requestsData, error: requestsError } = await supabase
+          .from('assignment_requests')
+          .select('id, professional_id, is_active, requested_count, remaining_count')
+          .eq('is_active', true)
+          .in('professional_id', professionalIds)
+          .order('created_at', { ascending: false })
+
+        if (requestsError) {
+          setError(requestsError.message)
+          setLoading(false)
+          return
+        }
+
+        setActiveRequests((requestsData ?? []) as ActiveAssignmentRequest[])
+      } else {
+        setActiveRequests([])
+      }
+
       setLoading(false)
     }
 
     loadWaitingList()
   }, [router])
+
+  useEffect(() => {
+    if (!assigningClientId) return
+
+    window.setTimeout(() => {
+      assignmentSectionRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      })
+    }, 0)
+  }, [assigningClientId])
+
+  useEffect(() => {
+    if (!editingClientId) return
+
+    window.setTimeout(() => {
+      editSectionRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      })
+    }, 0)
+  }, [editingClientId])
 
   const updateFormField = (field: keyof WaitingListForm, value: string) => {
     setForm((currentForm) => ({ ...currentForm, [field]: value }))
@@ -270,8 +445,29 @@ export default function DirectionListeAttentePage() {
     setEditingClientId(client.id)
     setEditForm(clientToForm(client))
     setShowForm(false)
+    setAssigningClientId(null)
     setFormError('')
     setFormMessage('')
+  }
+
+  const startAssigning = (client: WaitingListClient) => {
+    if (client.status !== 'waiting') {
+      setFormError('Ce client est déjà assigné ou n’est plus en attente.')
+      setFormMessage('')
+      return
+    }
+
+    setAssigningClientId(client.id)
+    setEditingClientId(null)
+    setShowForm(false)
+    setFormError('')
+    setFormMessage('')
+    setSelectedProfessionalId(
+      client.assigned_professional_id ||
+        selectedProfessionalId ||
+        professionals[0]?.id ||
+        ''
+    )
   }
 
   const stopEditing = () => {
@@ -311,8 +507,10 @@ export default function DirectionListeAttentePage() {
 
     if (data) {
       setClients((currentClients) => [
-        data as WaitingListClient,
-        ...currentClients,
+        ...sortClientsByContactDate([
+          data as WaitingListClient,
+          ...currentClients,
+        ]),
       ])
     }
 
@@ -353,8 +551,10 @@ export default function DirectionListeAttentePage() {
 
     if (data) {
       setClients((currentClients) =>
-        currentClients.map((client) =>
-          client.id === editingClientId ? (data as WaitingListClient) : client
+        sortClientsByContactDate(
+          currentClients.map((client) =>
+            client.id === editingClientId ? (data as WaitingListClient) : client
+          )
         )
       )
     }
@@ -396,8 +596,255 @@ export default function DirectionListeAttentePage() {
     setFormMessage('Client supprimé de la liste d’attente.')
   }
 
+  const handleAssignClient = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    if (!assigningClientId || savingAssignment) return
+
+    setFormMessage('')
+    setFormError('')
+
+    const client = clients.find(
+      (currentClient) => currentClient.id === assigningClientId
+    )
+
+    if (!client) {
+      setFormError('Client introuvable.')
+      return
+    }
+
+    if (client.status !== 'waiting') {
+      setFormError('Ce client est déjà assigné ou n’est plus en attente.')
+      return
+    }
+
+    if (!selectedProfessionalId) {
+      setFormError('Veuillez choisir un professionnel.')
+      return
+    }
+
+    const assignmentRequest = activeRequests.find(
+      (request) =>
+        request.professional_id === selectedProfessionalId &&
+        request.is_active === true &&
+        (request.remaining_count ?? 0) > 0
+    )
+
+    if (!assignmentRequest) {
+      setFormError(
+        'Ce professionnel n’a aucune demande active avec place restante.'
+      )
+      return
+    }
+
+    const { firstName, lastName } = splitClientName(client.client_name)
+    const requesterName = nullableText(
+      [client.first_requester_name, client.second_requester_name]
+        .map((value) => value?.trim())
+        .filter(Boolean)
+        .join(' / ')
+    )
+
+    setSavingAssignment(true)
+
+    const { error: insertError } = await supabase.from('assigned_clients').insert({
+      assignment_request_id: assignmentRequest.id,
+      professional_id: selectedProfessionalId,
+      first_name: firstName,
+      last_name: lastName,
+      email: nullableText(client.contact_email ?? ''),
+      phone: nullableText(client.contact_phone ?? ''),
+      requester_name: requesterName,
+      short_comment: nullableText(client.consultation_reason ?? ''),
+      meeting_modality: nullableText(client.meeting_modality ?? ''),
+      service_address: nullableText(client.city ?? ''),
+      assigned_date: getTodayDate(),
+      contacted: false,
+      is_active: null,
+      dossier_closed: false,
+      closure_reason: null,
+      meeting_count: 0,
+    })
+
+    if (insertError) {
+      setSavingAssignment(false)
+      setFormError(insertError.message)
+      return
+    }
+
+    const { data, error: updateError } = await supabase
+      .from('waiting_list_clients')
+      .update({
+        status: 'assigned',
+        assigned_professional_id: selectedProfessionalId,
+        assigned_at: new Date().toISOString(),
+      })
+      .eq('id', client.id)
+      .select(waitingListSelect)
+      .limit(1)
+      .maybeSingle()
+
+    setSavingAssignment(false)
+
+    if (updateError) {
+      setFormError(updateError.message)
+      return
+    }
+
+    if (data) {
+      setClients((currentClients) =>
+        sortClientsByContactDate(
+          currentClients.map((currentClient) =>
+            currentClient.id === client.id
+              ? (data as WaitingListClient)
+              : currentClient
+          )
+        )
+      )
+    }
+
+    setAssigningClientId(null)
+    setFormMessage('Client assigné au professionnel avec succès.')
+  }
+
   const inputClass =
     'w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] shadow-sm outline-none transition duration-200 placeholder:text-[#b09c8a] focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]'
+
+  const waitingClients = sortWaitingClients(
+    clients.filter((client) => client.status === 'waiting')
+  )
+  const assignedClients = clients.filter((client) => client.status === 'assigned')
+  const historyClients = clients.filter((client) =>
+    ['active', 'closed', 'blacklisted'].includes(client.status ?? '')
+  )
+
+  const renderClientsTable = (
+    sectionClients: WaitingListClient[],
+    emptyMessage: string,
+    allowAssignment: boolean
+  ) => (
+    <div className={tableShellClass}>
+      <table className={`${tableClass} w-full min-w-[1320px]`}>
+        <thead className={tableHeaderClass}>
+          <tr>
+            <th className={tableHeadCellClass}>Priorité</th>
+            <th className={tableHeadCellClass}>Statut</th>
+            <th className={tableHeadCellClass}>Date de contact</th>
+            <th className={tableHeadCellClass}>Service demandé</th>
+            <th className={tableHeadCellClass}>Client</th>
+            <th className={tableHeadCellClass}>Requérant</th>
+            <th className={tableHeadCellClass}>Date de naissance</th>
+            <th className={tableHeadCellClass}>Adresse complète</th>
+            <th className={tableHeadCellClass}>Modalité</th>
+            <th className={tableHeadCellClass}>Préférence horaire</th>
+            <th className={tableHeadCellClass}>Contact</th>
+            <th className={`${tableHeadCellClass} min-w-[24rem]`}>Motif</th>
+            <th className={`${tableHeadCellClass} w-32`}>Actions</th>
+          </tr>
+        </thead>
+        <tbody className={tableBodyClass}>
+          {sectionClients.length === 0 ? (
+            <tr>
+              <td colSpan={13} className="px-4 py-8">
+                <EmptyState title={emptyMessage} />
+              </td>
+            </tr>
+          ) : (
+            sectionClients.map((client) => {
+              const isAlreadyAssigned = client.status === 'assigned'
+
+              return (
+                <tr
+                  key={client.id}
+                  className={`${tableRowClass} ${
+                    isAlreadyAssigned ? 'bg-[#f7f2eb] opacity-80' : ''
+                  }`}
+                >
+                  <td className={tableCellClass}>
+                    <Badge tone={priorityTones[client.priority_level ?? ''] ?? 'muted'}>
+                      {priorityLabels[client.priority_level ?? ''] ??
+                        formatText(client.priority_level)}
+                    </Badge>
+                  </td>
+                  <td className={tableCellClass}>
+                    <div className="space-y-1">
+                      <Badge tone={statusTones[client.status ?? ''] ?? 'muted'}>
+                        {statusLabels[client.status ?? ''] ??
+                          formatText(client.status)}
+                      </Badge>
+                      {isAlreadyAssigned && (
+                        <p className="text-xs font-medium text-[#8a6f5d]">
+                          Assignation faite
+                        </p>
+                      )}
+                    </div>
+                  </td>
+                  <td className={tableCellClass}>
+                    {formatDate(client.contact_date ?? client.created_at)}
+                  </td>
+                  <td className={tableCellClass}>
+                    {formatText(client.service_requested)}
+                  </td>
+                  <td className={tableCellClass}>
+                    {formatText(client.client_name)}
+                  </td>
+                  <td className={tableCellClass}>{formatRequester(client)}</td>
+                  <td className={tableCellClass}>{formatDate(client.birth_date)}</td>
+                  <td className={tableCellClass}>{formatText(client.city)}</td>
+                  <td className={tableCellClass}>
+                    {formatText(client.meeting_modality)}
+                  </td>
+                  <td className={tableCellClass}>
+                    {formatText(client.availability)}
+                  </td>
+                  <td className={tableCellClass}>{formatContact(client)}</td>
+                  <td className="min-w-[24rem] whitespace-pre-wrap break-words px-4 py-3 align-top text-[#6c5a4d]">
+                    {formatText(client.consultation_reason)}
+                  </td>
+                  <td className={`${tableCellClass} w-32`}>
+                    <div className="flex w-28 flex-col gap-2">
+                      {allowAssignment && (
+                        <button
+                          type="button"
+                          className={`${buttonClass('primary')} !w-full justify-center whitespace-nowrap`}
+                          onClick={() => startAssigning(client)}
+                        >
+                          Assigner
+                        </button>
+                      )}
+                      {!allowAssignment && isAlreadyAssigned && (
+                        <button
+                          type="button"
+                          className={`${buttonClass('secondary')} !w-full justify-center whitespace-nowrap`}
+                          disabled
+                        >
+                          Déjà assigné
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className={`${buttonClass('secondary')} !w-full justify-center whitespace-nowrap`}
+                        onClick={() => startEditing(client)}
+                      >
+                        Modifier
+                      </button>
+                      <button
+                        type="button"
+                        className={`${buttonClass('danger')} !w-full justify-center whitespace-nowrap`}
+                        onClick={() => handleDeleteClient(client)}
+                      >
+                        Supprimer
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )
+            })
+          )}
+        </tbody>
+      </table>
+    </div>
+  )
 
   const renderClientForm = ({
     currentForm,
@@ -447,6 +894,15 @@ export default function DirectionListeAttentePage() {
               </option>
             ))}
           </select>
+        </label>
+        <label className="text-sm font-medium text-[#5d4a3d]">
+          Date de contact
+          <input
+            type="date"
+            value={currentForm.contact_date}
+            onChange={(event) => onChange('contact_date', event.target.value)}
+            className={`${inputClass} mt-1`}
+          />
         </label>
         <label className="text-sm font-medium text-[#5d4a3d]">
           Service demandé
@@ -636,6 +1092,7 @@ export default function DirectionListeAttentePage() {
                     onClick={() => {
                       setShowForm((currentValue) => !currentValue)
                       setEditingClientId(null)
+                      setAssigningClientId(null)
                       setFormError('')
                       setFormMessage('')
                     }}
@@ -673,7 +1130,10 @@ export default function DirectionListeAttentePage() {
               </section>
 
               {editingClientId && (
-                <section className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.05)]">
+                <section
+                  ref={editSectionRef}
+                  className="scroll-mt-6 rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.05)]"
+                >
                   <div>
                     <h2 className="text-base font-semibold text-[#332820]">
                       Modifier le client
@@ -694,7 +1154,105 @@ export default function DirectionListeAttentePage() {
                 </section>
               )}
 
-              <div className={tableShellClass}>
+              {assigningClientId && (
+                <section
+                  ref={assignmentSectionRef}
+                  className="scroll-mt-6 rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.05)]"
+                >
+                  <div>
+                    <h2 className="text-base font-semibold text-[#332820]">
+                      Assigner le client
+                    </h2>
+                    <p className="mt-1 text-sm text-[#7a6859]">
+                      Choisissez un professionnel actif avec une demande ouverte.
+                    </p>
+                  </div>
+                  <form onSubmit={handleAssignClient} className="mt-5 space-y-4">
+                    <label className="text-sm font-medium text-[#5d4a3d]">
+                      Professionnel
+                      <select
+                        value={selectedProfessionalId}
+                        onChange={(event) =>
+                          setSelectedProfessionalId(event.target.value)
+                        }
+                        className={`${inputClass} mt-1`}
+                      >
+                        {professionals.length === 0 ? (
+                          <option value="">Aucun professionnel actif</option>
+                        ) : (
+                          professionals.map((professional) => (
+                            <option key={professional.id} value={professional.id}>
+                              {professional.full_name || professional.email || 'Sans nom'}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                    </label>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+                      <button
+                        type="button"
+                        className={buttonClass('secondary')}
+                        onClick={() => {
+                          setAssigningClientId(null)
+                          setFormError('')
+                        }}
+                        disabled={savingAssignment}
+                      >
+                        Annuler
+                      </button>
+                      <button
+                        type="submit"
+                        className={buttonClass('primary')}
+                        disabled={savingAssignment || professionals.length === 0}
+                      >
+                        {savingAssignment ? 'Assignation...' : 'Confirmer l’assignation'}
+                      </button>
+                    </div>
+                  </form>
+                </section>
+              )}
+
+              <section className="space-y-3">
+                <div>
+                  <h2 className="text-base font-semibold text-[#332820]">
+                    Clients en attente
+                  </h2>
+                  <p className="mt-1 text-sm text-[#7a6859]">
+                    Liste active des clients à assigner.
+                  </p>
+                </div>
+                {renderClientsTable(waitingClients, 'Aucun client en attente.', true)}
+              </section>
+
+              <section className="space-y-3">
+                <div>
+                  <h2 className="text-base font-semibold text-[#332820]">
+                    Clients assignés
+                  </h2>
+                  <p className="mt-1 text-sm text-[#7a6859]">
+                    Clients déjà assignés à un professionnel.
+                  </p>
+                </div>
+                {renderClientsTable(assignedClients, 'Aucun client assigné.', false)}
+              </section>
+
+              <section className="space-y-3">
+                <div>
+                  <h2 className="text-base font-semibold text-[#332820]">
+                    Historique clients
+                  </h2>
+                  <p className="mt-1 text-sm text-[#7a6859]">
+                    Clients actifs, fermés ou inscrits en liste noire.
+                  </p>
+                </div>
+                {renderClientsTable(
+                  historyClients,
+                  'Aucun client dans l’historique.',
+                  false
+                )}
+              </section>
+
+              <div className="hidden">
                 <table className={`${tableClass} w-full`}>
                   <thead className={tableHeaderClass}>
                     <tr>
@@ -720,8 +1278,16 @@ export default function DirectionListeAttentePage() {
                         </td>
                       </tr>
                     ) : (
-                      clients.map((client) => (
-                        <tr key={client.id} className={tableRowClass}>
+                      clients.map((client) => {
+                        const isAlreadyAssigned = client.status === 'assigned'
+
+                        return (
+                        <tr
+                          key={client.id}
+                          className={`${tableRowClass} ${
+                            isAlreadyAssigned ? 'bg-[#f7f2eb] opacity-80' : ''
+                          }`}
+                        >
                           <td className={tableCellClass}>
                             <Badge tone="warning">
                               {priorityLabels[client.priority_level ?? ''] ??
@@ -729,10 +1295,17 @@ export default function DirectionListeAttentePage() {
                             </Badge>
                           </td>
                           <td className={tableCellClass}>
-                            <Badge tone="muted">
+                            <div className="space-y-1">
+                            <Badge tone={statusTones[client.status ?? ''] ?? 'muted'}>
                               {statusLabels[client.status ?? ''] ??
                                 formatText(client.status)}
                             </Badge>
+                            {isAlreadyAssigned && (
+                              <p className="text-xs font-medium text-[#8a6f5d]">
+                                Assignation faite
+                              </p>
+                            )}
+                            </div>
                           </td>
                           <td className={tableCellClass}>
                             {formatText(client.service_requested)}
@@ -759,6 +1332,14 @@ export default function DirectionListeAttentePage() {
                             <div className="flex flex-col gap-2 sm:flex-row">
                               <button
                                 type="button"
+                                className={buttonClass('primary')}
+                                disabled={isAlreadyAssigned}
+                                onClick={() => startAssigning(client)}
+                              >
+                                {isAlreadyAssigned ? 'Déjà assigné' : 'Assigner'}
+                              </button>
+                              <button
+                                type="button"
                                 className={buttonClass('secondary')}
                                 onClick={() => startEditing(client)}
                               >
@@ -774,7 +1355,8 @@ export default function DirectionListeAttentePage() {
                             </div>
                           </td>
                         </tr>
-                      ))
+                        )
+                      })
                     )}
                   </tbody>
                 </table>

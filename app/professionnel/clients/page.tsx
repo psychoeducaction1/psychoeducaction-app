@@ -124,6 +124,8 @@ export default function ProfessionnelClientsPage() {
           contacted,
           is_active,
           short_comment,
+          meeting_modality,
+          service_address,
           closure_reason
         `)
         .eq('professional_id', user.id)
@@ -338,6 +340,33 @@ export default function ProfessionnelClientsPage() {
     </div>
   )
 
+  const renderMeetingDetails = (client: AssignedClient) => {
+    const meetingModality = client.meeting_modality?.trim() ?? ''
+    const showAddress =
+      meetingModality === 'À domicile' && Boolean(client.service_address?.trim())
+
+    return (
+      <div className="min-w-0 max-w-full overflow-hidden rounded-xl border border-[#eadfd2] bg-white p-3 text-sm text-[#332820]">
+        <p className="text-xs font-medium uppercase text-[#8a6f5d]">
+          Modalité de rencontre
+        </p>
+        <p className="mt-1 max-w-full whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+          {meetingModality || '-'}
+        </p>
+        {showAddress && (
+          <>
+            <p className="mt-3 text-xs font-medium uppercase text-[#8a6f5d]">
+              Adresse complète
+            </p>
+            <p className="mt-1 max-w-full whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+              {client.service_address}
+            </p>
+          </>
+        )}
+      </div>
+    )
+  }
+
   const renderServiceBadge = (client: AssignedClient) =>
     client.is_active === true ? (
       <Badge tone="success">Service pris</Badge>
@@ -388,19 +417,46 @@ export default function ProfessionnelClientsPage() {
                     </h3>
                     {renderServiceBadge(client)}
                   </div>
-                  <div className="mt-2 grid gap-1 text-sm text-[#7a6859] sm:grid-cols-2">
-                    <p className="break-words">Courriel: {client.email || '-'}</p>
-                    <p>Téléphone: {client.phone || '-'}</p>
-                    <p className="break-words">
-                      Requérant: {client.requester_name || '-'}
-                    </p>
-                    <p>Date: {client.assigned_date}</p>
-                  </div>
+                  <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="min-w-0 rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-3">
+                      <dt className="text-xs font-medium uppercase text-[#8a6f5d]">
+                        Courriel
+                      </dt>
+                      <dd className="mt-1 break-words text-[#332820]">
+                        {client.email || '-'}
+                      </dd>
+                    </div>
+                    <div className="min-w-0 rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-3">
+                      <dt className="text-xs font-medium uppercase text-[#8a6f5d]">
+                        Téléphone
+                      </dt>
+                      <dd className="mt-1 break-words text-[#332820]">
+                        {client.phone || '-'}
+                      </dd>
+                    </div>
+                    <div className="min-w-0 rounded-xl border border-[#d6c7aa] bg-[#f1ead9] p-3">
+                      <dt className="text-xs font-semibold uppercase text-[#6d3f1f]">
+                        Requérant
+                      </dt>
+                      <dd className="mt-1 break-words font-semibold text-[#332820]">
+                        {client.requester_name || '-'}
+                      </dd>
+                    </div>
+                    <div className="min-w-0 rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-3">
+                      <dt className="text-xs font-medium uppercase text-[#8a6f5d]">
+                        Date
+                      </dt>
+                      <dd className="mt-1 break-words text-[#332820]">
+                        {client.assigned_date}
+                      </dd>
+                    </div>
+                  </dl>
                 </div>
               </div>
 
-              <div className="mt-4 grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_10rem] xl:grid-cols-[minmax(0,0.9fr)_10rem_minmax(0,1.25fr)]">
+              <div className="mt-4 grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_10rem]">
                 {renderConsultationMotif(client)}
+                {renderMeetingDetails(client)}
 
                 <label className="block min-w-0 text-xs font-medium text-[#5d4a3d]">
                   Service pris
@@ -421,7 +477,7 @@ export default function ProfessionnelClientsPage() {
                   </select>
                 </label>
 
-                <div className="min-w-0 md:col-span-2 xl:col-span-1">
+                <div className="min-w-0 lg:col-span-3">
                   {renderNonServiceReason(client)}
                 </div>
               </div>

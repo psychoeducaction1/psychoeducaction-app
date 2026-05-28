@@ -10,6 +10,8 @@ export type AssignedClient = {
   contacted: boolean
   is_active: boolean | null
   short_comment: string | null
+  meeting_modality: string | null
+  service_address: string | null
   closure_reason: string | null
 }
 
