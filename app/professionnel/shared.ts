@@ -1,6 +1,7 @@
 export type AssignedClient = {
   id: string
   assignment_request_id: string | null
+  waiting_list_client_id?: string | null
   first_name: string
   last_name: string
   email: string | null
@@ -96,28 +97,22 @@ export function getAssignmentRequestMetrics({
 } {
   const normalizedRequestedCount = Math.max(requestedCount ?? 0, 0)
   const normalizedAcceptedCount = Math.max(acceptedCount ?? 0, 0)
-  const calculatedRemainingCount = getRemainingAssignmentCount(
-    normalizedRequestedCount,
-    normalizedAcceptedCount
-  )
-  const storedRemainingCount =
-    remainingCount === null || remainingCount === undefined
-      ? null
-      : Math.max(remainingCount, 0)
   const normalizedRemainingCount =
-    storedRemainingCount === null
-      ? calculatedRemainingCount
-      : Math.min(calculatedRemainingCount, storedRemainingCount)
+    normalizedRequestedCount > 0
+      ? getRemainingAssignmentCount(
+          normalizedRequestedCount,
+          normalizedAcceptedCount
+        )
+      : Math.max(remainingCount ?? 0, 0)
   const isCompleted =
     normalizedRequestedCount > 0 &&
-    (normalizedAcceptedCount >= normalizedRequestedCount ||
-      normalizedRemainingCount <= 0)
+    normalizedAcceptedCount >= normalizedRequestedCount
   const isCurrentlyActive =
     isActive === true &&
     !isCompleted &&
-    normalizedRequestedCount > 0 &&
-    (normalizedAcceptedCount < normalizedRequestedCount ||
-      normalizedRemainingCount > 0)
+    (normalizedRequestedCount > 0
+      ? normalizedAcceptedCount < normalizedRequestedCount
+      : normalizedRemainingCount > 0)
   const state: AssignmentRequestState = isCompleted
     ? 'completed'
     : isCurrentlyActive

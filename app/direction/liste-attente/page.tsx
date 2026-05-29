@@ -1,6 +1,6 @@
 'use client'
 
-import { type FormEvent, useEffect, useRef, useState } from 'react'
+import { type FormEvent, type RefObject, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppNav } from '@/components/AppNav'
 import {
@@ -17,6 +17,10 @@ import {
   tableShellClass,
 } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
+import {
+  getAssignmentRequestMetrics,
+  getUsedAssignmentCount,
+} from '@/app/professionnel/shared'
 
 type WaitingListClient = {
   id: string
@@ -53,6 +57,12 @@ type ActiveAssignmentRequest = {
   is_active: boolean | null
   requested_count: number | null
   remaining_count: number | null
+  service_taken_count: number
+}
+
+type AssignedClient = {
+  assignment_request_id: string | null
+  is_active: boolean | null
 }
 
 type WaitingListForm = {
@@ -75,6 +85,9 @@ type WaitingListForm = {
 
 const waitingListSelect =
   'id, created_at, contact_date, status, priority_level, service_requested, client_name, first_requester_name, second_requester_name, birth_date, city, meeting_modality, meeting_type, availability, contact_email, contact_phone, consultation_reason, internal_notes, assigned_professional_id, assigned_at'
+
+const CLIENTS_PER_PAGE = 10
+const HISTORY_CLIENTS_PER_PAGE = 5
 
 const statusOptions = ['waiting', 'assigned', 'active', 'closed', 'blacklisted']
 
@@ -305,6 +318,9 @@ export default function DirectionListeAttentePage() {
   const router = useRouter()
   const editSectionRef = useRef<HTMLElement | null>(null)
   const assignmentSectionRef = useRef<HTMLElement | null>(null)
+  const waitingSectionRef = useRef<HTMLElement | null>(null)
+  const assignedSectionRef = useRef<HTMLElement | null>(null)
+  const historySectionRef = useRef<HTMLElement | null>(null)
   const [clients, setClients] = useState<WaitingListClient[]>([])
   const [professionals, setProfessionals] = useState<Professional[]>([])
   const [activeRequests, setActiveRequests] = useState<ActiveAssignmentRequest[]>([])
@@ -321,6 +337,10 @@ export default function DirectionListeAttentePage() {
   const [savingAssignment, setSavingAssignment] = useState(false)
   const [formMessage, setFormMessage] = useState('')
   const [formError, setFormError] = useState('')
+  const [waitingPage, setWaitingPage] = useState(0)
+  const [assignedPage, setAssignedPage] = useState(0)
+  const [historyPage, setHistoryPage] = useState(0)
+  const [expandedMotifIds, setExpandedMotifIds] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     const loadWaitingList = async () => {
@@ -387,20 +407,66 @@ export default function DirectionListeAttentePage() {
       )
 
       if (professionalIds.length > 0) {
-        const { data: requestsData, error: requestsError } = await supabase
-          .from('assignment_requests')
-          .select('id, professional_id, is_active, requested_count, remaining_count')
-          .eq('is_active', true)
-          .in('professional_id', professionalIds)
-          .order('created_at', { ascending: false })
+        const [requestsResponse, assignedClientsResponse] = await Promise.all([
+          supabase
+            .from('assignment_requests')
+            .select('id, professional_id, is_active, requested_count, remaining_count')
+            .eq('is_active', true)
+            .in('professional_id', professionalIds)
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('assigned_clients')
+            .select('assignment_request_id, is_active')
+            .in('professional_id', professionalIds),
+        ])
 
-        if (requestsError) {
-          setError(requestsError.message)
+        if (requestsResponse.error) {
+          setError(requestsResponse.error.message)
           setLoading(false)
           return
         }
 
-        setActiveRequests((requestsData ?? []) as ActiveAssignmentRequest[])
+        if (assignedClientsResponse.error) {
+          setError(assignedClientsResponse.error.message)
+          setLoading(false)
+          return
+        }
+
+        const assignedClients =
+          (assignedClientsResponse.data ?? []) as AssignedClient[]
+        const clientsByRequestId = new Map<string, AssignedClient[]>()
+
+        assignedClients.forEach((client) => {
+          if (!client.assignment_request_id) return
+
+          const currentClients =
+            clientsByRequestId.get(client.assignment_request_id) ?? []
+          currentClients.push(client)
+          clientsByRequestId.set(client.assignment_request_id, currentClients)
+        })
+
+        const requests = (requestsResponse.data ?? []) as Omit<
+          ActiveAssignmentRequest,
+          'service_taken_count'
+        >[]
+
+        setActiveRequests(
+          requests
+            .map((request) => ({
+              ...request,
+              service_taken_count: getUsedAssignmentCount(
+                clientsByRequestId.get(request.id) ?? []
+              ),
+            }))
+            .filter((request) =>
+              getAssignmentRequestMetrics({
+                isActive: request.is_active,
+                requestedCount: request.requested_count,
+                acceptedCount: request.service_taken_count,
+                remainingCount: request.remaining_count,
+              }).isActive
+            )
+        )
       } else {
         setActiveRequests([])
       }
@@ -626,8 +692,12 @@ export default function DirectionListeAttentePage() {
     const assignmentRequest = activeRequests.find(
       (request) =>
         request.professional_id === selectedProfessionalId &&
-        request.is_active === true &&
-        (request.remaining_count ?? 0) > 0
+        getAssignmentRequestMetrics({
+          isActive: request.is_active,
+          requestedCount: request.requested_count,
+          acceptedCount: request.service_taken_count,
+          remainingCount: request.remaining_count,
+        }).isActive
     )
 
     if (!assignmentRequest) {
@@ -649,6 +719,7 @@ export default function DirectionListeAttentePage() {
 
     const { error: insertError } = await supabase.from('assigned_clients').insert({
       assignment_request_id: assignmentRequest.id,
+      waiting_list_client_id: client.id,
       professional_id: selectedProfessionalId,
       first_name: firstName,
       last_name: lastName,
@@ -717,6 +788,71 @@ export default function DirectionListeAttentePage() {
   const historyClients = clients.filter((client) =>
     ['active', 'closed', 'blacklisted'].includes(client.status ?? '')
   )
+  const getPageCount = (totalCount: number, pageSize = CLIENTS_PER_PAGE) =>
+    Math.max(Math.ceil(totalCount / pageSize), 1)
+  const getPaginatedClients = (
+    sectionClients: WaitingListClient[],
+    currentPage: number,
+    pageSize = CLIENTS_PER_PAGE
+  ) =>
+    sectionClients.slice(
+      currentPage * pageSize,
+      currentPage * pageSize + pageSize
+    )
+  const waitingPageCount = getPageCount(waitingClients.length)
+  const assignedPageCount = getPageCount(assignedClients.length)
+  const historyPageCount = getPageCount(
+    historyClients.length,
+    HISTORY_CLIENTS_PER_PAGE
+  )
+  const safeWaitingPage = Math.min(waitingPage, waitingPageCount - 1)
+  const safeAssignedPage = Math.min(assignedPage, assignedPageCount - 1)
+  const safeHistoryPage = Math.min(historyPage, historyPageCount - 1)
+  const paginatedWaitingClients = getPaginatedClients(
+    waitingClients,
+    safeWaitingPage
+  )
+  const paginatedAssignedClients = getPaginatedClients(
+    assignedClients,
+    safeAssignedPage
+  )
+  const paginatedHistoryClients = getPaginatedClients(
+    historyClients,
+    safeHistoryPage,
+    HISTORY_CLIENTS_PER_PAGE
+  )
+
+  const renderConsultationReason = (client: WaitingListClient) => {
+    const isExpanded = expandedMotifIds[client.id] === true
+
+    return (
+      <div className="space-y-2">
+        <p
+          className={`break-words text-sm text-[#6c5a4d] ${
+            isExpanded
+              ? 'whitespace-pre-wrap'
+              : 'line-clamp-2 whitespace-normal'
+          }`}
+        >
+          {formatText(client.consultation_reason)}
+        </p>
+        {client.consultation_reason?.trim() && (
+          <button
+            type="button"
+            className="text-sm font-medium text-[#6d3f1f] underline decoration-[#d9b591] underline-offset-2 hover:decoration-[#9b6a3d]"
+            onClick={() =>
+              setExpandedMotifIds((currentIds) => ({
+                ...currentIds,
+                [client.id]: !isExpanded,
+              }))
+            }
+          >
+            {isExpanded ? 'Masquer le motif' : 'Voir le motif'}
+          </button>
+        )}
+      </div>
+    )
+  }
 
   const renderClientsTable = (
     sectionClients: WaitingListClient[],
@@ -739,7 +875,7 @@ export default function DirectionListeAttentePage() {
             <th className={tableHeadCellClass}>Préférence horaire</th>
             <th className={tableHeadCellClass}>Contact</th>
             <th className={`${tableHeadCellClass} min-w-[24rem]`}>Motif</th>
-            <th className={`${tableHeadCellClass} w-32`}>Actions</th>
+            <th className={`${tableHeadCellClass} w-28`}>Actions</th>
           </tr>
         </thead>
         <tbody className={tableBodyClass}>
@@ -760,13 +896,33 @@ export default function DirectionListeAttentePage() {
                     isAlreadyAssigned ? 'bg-[#f7f2eb] opacity-80' : ''
                   }`}
                 >
-                  <td className={tableCellClass}>
-                    <Badge tone={priorityTones[client.priority_level ?? ''] ?? 'muted'}>
-                      {priorityLabels[client.priority_level ?? ''] ??
-                        formatText(client.priority_level)}
-                    </Badge>
+                  <td className="px-3 py-2 align-top text-[#6c5a4d]">
+                    <div className="flex w-28 flex-col items-start gap-2">
+                      <Badge tone={priorityTones[client.priority_level ?? ''] ?? 'muted'}>
+                        {priorityLabels[client.priority_level ?? ''] ??
+                          formatText(client.priority_level)}
+                      </Badge>
+                      {allowAssignment && (
+                        <button
+                          type="button"
+                          className={`${buttonClass('primary')} !min-h-8 !w-full justify-center whitespace-nowrap px-2 py-1 text-xs`}
+                          onClick={() => startAssigning(client)}
+                        >
+                          Assigner
+                        </button>
+                      )}
+                      {!allowAssignment && isAlreadyAssigned && (
+                        <button
+                          type="button"
+                          className={`${buttonClass('secondary')} !min-h-8 !w-full justify-center whitespace-nowrap px-2 py-1 text-xs`}
+                          disabled
+                        >
+                          Déjà assigné
+                        </button>
+                      )}
+                    </div>
                   </td>
-                  <td className={tableCellClass}>
+                  <td className="px-3 py-2 align-top text-[#6c5a4d]">
                     <div className="space-y-1">
                       <Badge tone={statusTones[client.status ?? ''] ?? 'muted'}>
                         {statusLabels[client.status ?? ''] ??
@@ -779,58 +935,48 @@ export default function DirectionListeAttentePage() {
                       )}
                     </div>
                   </td>
-                  <td className={tableCellClass}>
+                  <td className="px-3 py-2 align-top text-[#6c5a4d]">
                     {formatDate(client.contact_date ?? client.created_at)}
                   </td>
-                  <td className={tableCellClass}>
+                  <td className="px-3 py-2 align-top text-[#6c5a4d]">
                     {formatText(client.service_requested)}
                   </td>
-                  <td className={tableCellClass}>
+                  <td className="px-3 py-2 align-top text-[#6c5a4d]">
                     {formatText(client.client_name)}
                   </td>
-                  <td className={tableCellClass}>{formatRequester(client)}</td>
-                  <td className={tableCellClass}>{formatDate(client.birth_date)}</td>
-                  <td className={tableCellClass}>{formatText(client.city)}</td>
-                  <td className={tableCellClass}>
+                  <td className="px-3 py-2 align-top text-[#6c5a4d]">
+                    {formatRequester(client)}
+                  </td>
+                  <td className="px-3 py-2 align-top text-[#6c5a4d]">
+                    {formatDate(client.birth_date)}
+                  </td>
+                  <td className="px-3 py-2 align-top text-[#6c5a4d]">
+                    {formatText(client.city)}
+                  </td>
+                  <td className="px-3 py-2 align-top text-[#6c5a4d]">
                     {formatText(client.meeting_modality)}
                   </td>
-                  <td className={tableCellClass}>
+                  <td className="px-3 py-2 align-top text-[#6c5a4d]">
                     {formatText(client.availability)}
                   </td>
-                  <td className={tableCellClass}>{formatContact(client)}</td>
-                  <td className="min-w-[24rem] whitespace-pre-wrap break-words px-4 py-3 align-top text-[#6c5a4d]">
-                    {formatText(client.consultation_reason)}
+                  <td className="px-3 py-2 align-top text-[#6c5a4d]">
+                    {formatContact(client)}
                   </td>
-                  <td className={`${tableCellClass} w-32`}>
-                    <div className="flex w-28 flex-col gap-2">
-                      {allowAssignment && (
-                        <button
-                          type="button"
-                          className={`${buttonClass('primary')} !w-full justify-center whitespace-nowrap`}
-                          onClick={() => startAssigning(client)}
-                        >
-                          Assigner
-                        </button>
-                      )}
-                      {!allowAssignment && isAlreadyAssigned && (
-                        <button
-                          type="button"
-                          className={`${buttonClass('secondary')} !w-full justify-center whitespace-nowrap`}
-                          disabled
-                        >
-                          Déjà assigné
-                        </button>
-                      )}
+                  <td className="min-w-[24rem] px-3 py-2 align-top">
+                    {renderConsultationReason(client)}
+                  </td>
+                  <td className="w-28 px-3 py-2 align-top text-[#6c5a4d]">
+                    <div className="flex w-24 flex-col gap-2">
                       <button
                         type="button"
-                        className={`${buttonClass('secondary')} !w-full justify-center whitespace-nowrap`}
+                        className={`${buttonClass('secondary')} !min-h-8 !w-full justify-center whitespace-nowrap px-2 py-1 text-xs`}
                         onClick={() => startEditing(client)}
                       >
                         Modifier
                       </button>
                       <button
                         type="button"
-                        className={`${buttonClass('danger')} !w-full justify-center whitespace-nowrap`}
+                        className={`${buttonClass('danger')} !min-h-8 !w-full justify-center whitespace-nowrap px-2 py-1 text-xs`}
                         onClick={() => handleDeleteClient(client)}
                       >
                         Supprimer
@@ -845,6 +991,74 @@ export default function DirectionListeAttentePage() {
       </table>
     </div>
   )
+
+  const renderPagination = ({
+    totalCount,
+    currentPage,
+    pageCount,
+    onPageChange,
+    sectionRef,
+    pageSize = CLIENTS_PER_PAGE,
+  }: {
+    totalCount: number
+    currentPage: number
+    pageCount: number
+    onPageChange: (page: number) => void
+    sectionRef: RefObject<HTMLElement | null>
+    pageSize?: number
+  }) => {
+    if (totalCount <= pageSize) return null
+    const changePage = (nextPage: number) => {
+      onPageChange(nextPage)
+      window.setTimeout(() => {
+        sectionRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        })
+      }, 0)
+    }
+
+    return (
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-[#7a6859]">
+          Page {currentPage + 1} sur {pageCount}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className={`${buttonClass('secondary')} !w-auto min-w-10 px-3`}
+            onClick={() => changePage(Math.max(currentPage - 1, 0))}
+            disabled={currentPage === 0}
+          >
+            &lt;
+          </button>
+          {Array.from({ length: pageCount }, (_, pageIndex) => (
+            <button
+              key={pageIndex}
+              type="button"
+              className={`min-h-10 min-w-10 rounded-xl px-3 py-2 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-[#ead2bd] ${
+                pageIndex === currentPage
+                  ? 'border border-[#d8b992] bg-[#8a5633] text-white shadow-[0_8px_18px_rgba(138,86,51,0.18)]'
+                  : 'border border-[#eadfd2] bg-[#fffdf9] text-[#6c5a4d] hover:border-[#d8b992] hover:bg-[#fffaf4] hover:text-[#332820]'
+              }`}
+              onClick={() => changePage(pageIndex)}
+              aria-current={pageIndex === currentPage ? 'page' : undefined}
+            >
+              {pageIndex + 1}
+            </button>
+          ))}
+          <button
+            type="button"
+            className={`${buttonClass('secondary')} !w-auto min-w-10 px-3`}
+            onClick={() => changePage(Math.min(currentPage + 1, pageCount - 1))}
+            disabled={currentPage >= pageCount - 1}
+          >
+            &gt;
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   const renderClientForm = ({
     currentForm,
@@ -1212,44 +1426,74 @@ export default function DirectionListeAttentePage() {
                 </section>
               )}
 
-              <section className="space-y-3">
+              <section ref={waitingSectionRef} className="scroll-mt-6 space-y-3">
                 <div>
                   <h2 className="text-base font-semibold text-[#332820]">
-                    Clients en attente
+                    Clients en attente ({waitingClients.length})
                   </h2>
                   <p className="mt-1 text-sm text-[#7a6859]">
                     Liste active des clients à assigner.
                   </p>
                 </div>
-                {renderClientsTable(waitingClients, 'Aucun client en attente.', true)}
+                {renderClientsTable(
+                  paginatedWaitingClients,
+                  'Aucun client en attente.',
+                  true
+                )}
+                {renderPagination({
+                  totalCount: waitingClients.length,
+                  currentPage: safeWaitingPage,
+                  pageCount: waitingPageCount,
+                  onPageChange: setWaitingPage,
+                  sectionRef: waitingSectionRef,
+                })}
               </section>
 
-              <section className="space-y-3">
+              <section ref={assignedSectionRef} className="scroll-mt-6 space-y-3">
                 <div>
                   <h2 className="text-base font-semibold text-[#332820]">
-                    Clients assignés
+                    Clients assignés ({assignedClients.length})
                   </h2>
                   <p className="mt-1 text-sm text-[#7a6859]">
                     Clients déjà assignés à un professionnel.
                   </p>
                 </div>
-                {renderClientsTable(assignedClients, 'Aucun client assigné.', false)}
+                {renderClientsTable(
+                  paginatedAssignedClients,
+                  'Aucun client assigné.',
+                  false
+                )}
+                {renderPagination({
+                  totalCount: assignedClients.length,
+                  currentPage: safeAssignedPage,
+                  pageCount: assignedPageCount,
+                  onPageChange: setAssignedPage,
+                  sectionRef: assignedSectionRef,
+                })}
               </section>
 
-              <section className="space-y-3">
+              <section ref={historySectionRef} className="scroll-mt-6 space-y-3">
                 <div>
                   <h2 className="text-base font-semibold text-[#332820]">
-                    Historique clients
+                    Historique clients ({historyClients.length})
                   </h2>
                   <p className="mt-1 text-sm text-[#7a6859]">
                     Clients actifs, fermés ou inscrits en liste noire.
                   </p>
                 </div>
                 {renderClientsTable(
-                  historyClients,
+                  paginatedHistoryClients,
                   'Aucun client dans l’historique.',
                   false
                 )}
+                {renderPagination({
+                  totalCount: historyClients.length,
+                  currentPage: safeHistoryPage,
+                  pageCount: historyPageCount,
+                  onPageChange: setHistoryPage,
+                  sectionRef: historySectionRef,
+                  pageSize: HISTORY_CLIENTS_PER_PAGE,
+                })}
               </section>
 
               <div className="hidden">

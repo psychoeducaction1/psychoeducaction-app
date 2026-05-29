@@ -19,6 +19,7 @@ import {
 import { supabase } from '@/lib/supabaseClient'
 import {
   getAssignmentRequestMetrics,
+  getUsedAssignmentCount,
   type AssignedClient,
   type AssignmentRequest,
 } from './shared'
@@ -30,6 +31,7 @@ type DashboardStat = {
   tone?: 'neutral' | 'warm' | 'success'
   priority?: 'default' | 'high' | 'subtle'
   icon?: LucideIcon
+  href?: string
 }
 
 function RequestStatusCard({
@@ -118,7 +120,6 @@ export default function ProfessionnelPage() {
             'id, professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment'
           )
           .eq('professional_id', user.id)
-          .eq('is_active', true)
           .order('created_at', { ascending: false })
 
       if (requestResponse.error) {
@@ -167,18 +168,20 @@ export default function ProfessionnelPage() {
         clientsByRequestId.set(client.assignment_request_id, requestClients)
       })
 
+      const latestRequest = requests[0] ?? null
+      const latestRequestClients = latestRequest
+        ? clientsByRequestId.get(latestRequest.id) ?? []
+        : []
+      const latestRequestMetrics = getAssignmentRequestMetrics({
+        isActive: latestRequest?.is_active,
+        requestedCount: latestRequest?.requested_count,
+        acceptedCount: getUsedAssignmentCount(latestRequestClients),
+        remainingCount: latestRequest?.remaining_count,
+      })
       const activeRequest =
-        requests.find((currentRequest) => {
-          const requestClients = clientsByRequestId.get(currentRequest.id) ?? []
-          return getAssignmentRequestMetrics({
-            isActive: currentRequest.is_active,
-            requestedCount: currentRequest.requested_count,
-            acceptedCount: requestClients.length,
-            remainingCount: currentRequest.remaining_count,
-          }).isActive
-        }) ?? null
+        latestRequest && latestRequestMetrics.isActive ? latestRequest : null
       const activeClients = activeRequest
-        ? clientsByRequestId.get(activeRequest.id) ?? []
+        ? latestRequestClients
         : []
 
       if (!activeRequest) {
@@ -200,7 +203,7 @@ export default function ProfessionnelPage() {
   const requestMetrics = getAssignmentRequestMetrics({
     isActive: request?.is_active,
     requestedCount: request?.requested_count,
-    acceptedCount: clients.length,
+    acceptedCount: getUsedAssignmentCount(clients),
     remainingCount: request?.remaining_count,
   })
   const requestedCount = requestMetrics.requestedCount
@@ -252,6 +255,7 @@ export default function ProfessionnelPage() {
       tone: 'warm',
       priority: clientsToProcess.length > 0 ? 'high' : 'default',
       icon: Clock3,
+      href: '/professionnel/clients',
     },
     {
       label: 'Places restantes',
@@ -310,9 +314,19 @@ export default function ProfessionnelPage() {
               )}
 
               <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {stats.map((stat) => (
-                  <StatCard key={stat.label} {...stat} />
-                ))}
+                {stats.map((stat) =>
+                  stat.href ? (
+                    <Link
+                      key={stat.label}
+                      href={stat.href}
+                      className="block rounded-2xl transition hover:-translate-y-0.5 hover:shadow-[0_12px_30px_rgba(138,86,51,0.12)]"
+                    >
+                      <StatCard {...stat} />
+                    </Link>
+                  ) : (
+                    <StatCard key={stat.label} {...stat} />
+                  )
+                )}
                 <RequestStatusCard
                   label={requestStatus.label}
                   tone={requestStatus.tone}

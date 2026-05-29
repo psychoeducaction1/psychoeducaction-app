@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
 import {
-  getRemainingAssignmentCount,
+  getAssignmentRequestMetrics,
   getUsedAssignmentCount,
 } from '@/app/professionnel/shared'
 
@@ -56,6 +56,7 @@ type AssignmentRow = {
   assignedCount: number
   remainingCount: number
   requestComment: string
+  requestCompleted: boolean
 }
 
 const filterOptions: Array<{ value: FilterOption; label: string }> = [
@@ -67,17 +68,11 @@ const filterOptions: Array<{ value: FilterOption; label: string }> = [
 ]
 
 function matchesFilter(row: AssignmentRow, filter: FilterOption): boolean {
-  const status = getAssignmentRequestStatus({
-    isActive: row.requestActive,
-    remainingCount: row.remainingCount,
-    requestedCount: row.requestedCount,
-  })
-
   if (filter === 'all') return true
-  if (filter === 'active') return row.requestActive && row.remainingCount > 0
-  if (filter === 'in_progress') return status.label === 'demande en cours'
-  if (filter === 'completed') return status.label === 'demande complétée'
-  return status.label === 'demande inactive'
+  if (filter === 'active') return row.requestActive
+  if (filter === 'in_progress') return row.requestActive
+  if (filter === 'completed') return row.requestCompleted
+  return !row.requestActive && !row.requestCompleted
 }
 
 export default function DirectionAssignationsPage() {
@@ -186,28 +181,49 @@ export default function DirectionAssignationsPage() {
 
       const nextRows = professionals.map((profile) => {
         const professionalRequests = requestsByProfessionalId.get(profile.id) ?? []
-        const request =
-          professionalRequests.find(
-            (currentRequest) => currentRequest.is_active === true
-          ) ?? professionalRequests[0]
-        const requestedCount = request?.requested_count ?? 0
+        const activeRequest =
+          professionalRequests.find((currentRequest) =>
+            getAssignmentRequestMetrics({
+              isActive: currentRequest.is_active,
+              requestedCount: currentRequest.requested_count,
+              acceptedCount: getUsedAssignmentCount(
+                clientsByRequestId.get(currentRequest.id) ?? []
+              ),
+              remainingCount: currentRequest.remaining_count,
+            }).isActive
+          ) ?? null
+        const completedRequest =
+          professionalRequests.find((currentRequest) =>
+            getAssignmentRequestMetrics({
+              isActive: currentRequest.is_active,
+              requestedCount: currentRequest.requested_count,
+              acceptedCount: getUsedAssignmentCount(
+                clientsByRequestId.get(currentRequest.id) ?? []
+              ),
+              remainingCount: currentRequest.remaining_count,
+            }).isCompleted
+          ) ?? null
+        const request = activeRequest ?? completedRequest ?? professionalRequests[0]
         const assignedCount = getUsedAssignmentCount(
           request ? clientsByRequestId.get(request.id) ?? [] : []
         )
-        const remainingCount = getRemainingAssignmentCount(
-          requestedCount,
-          assignedCount
-        )
+        const requestMetrics = getAssignmentRequestMetrics({
+          isActive: request?.is_active,
+          requestedCount: request?.requested_count,
+          acceptedCount: assignedCount,
+          remainingCount: request?.remaining_count,
+        })
 
         return {
           id: profile.id,
           fullName: profile.full_name ?? '-',
           email: profile.email ?? '-',
-          requestActive: request?.is_active ?? false,
-          requestedCount,
-          assignedCount,
-          remainingCount,
+          requestActive: requestMetrics.isActive,
+          requestedCount: requestMetrics.requestedCount,
+          assignedCount: requestMetrics.acceptedCount,
+          remainingCount: requestMetrics.isActive ? requestMetrics.remainingCount : 0,
           requestComment: request?.request_comment?.trim() || '-',
+          requestCompleted: requestMetrics.isCompleted,
         }
       })
 
@@ -300,7 +316,7 @@ export default function DirectionAssignationsPage() {
                     ) : (
                       visibleRows.map((row) => {
                         const status = getAssignmentRequestStatus({
-                          isActive: row.requestActive,
+                          isActive: row.requestCompleted ? true : row.requestActive,
                           remainingCount: row.remainingCount,
                           requestedCount: row.requestedCount,
                         })

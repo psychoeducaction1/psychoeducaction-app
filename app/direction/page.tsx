@@ -9,7 +9,6 @@ import {
   ClipboardList,
   UserCheck,
   Users,
-  UserX,
 } from 'lucide-react'
 import { AppNav } from '@/components/AppNav'
 import {
@@ -39,6 +38,11 @@ type AssignedClient = {
   is_active: boolean | null
 }
 
+type WaitingListClient = {
+  status: string | null
+  priority_level: string | null
+}
+
 type AssignmentRequest = {
   id: string
   professional_id: string
@@ -54,7 +58,13 @@ type ClientStats = {
   total: number
   active: number
   noResponse: number
+  pending: number
   usedAssignments: number
+}
+
+type WaitingListStats = {
+  waiting: number
+  urgent: number
 }
 
 type DirectionRow = {
@@ -64,10 +74,12 @@ type DirectionRow = {
   totalAssignedClients: number
   activeClients: number
   noResponseClients: number
+  pendingClients: number
   requestActive: boolean
   requestedCount: number
   assignedCount: number
   remainingCount: number
+  unassignedCount: number
   requestComment: string
   requestCompleted: boolean
 }
@@ -75,6 +87,10 @@ type DirectionRow = {
 export default function DirectionPage() {
   const router = useRouter()
   const [rows, setRows] = useState<DirectionRow[]>([])
+  const [waitingListStats, setWaitingListStats] = useState<WaitingListStats>({
+    waiting: 0,
+    urgent: 0,
+  })
   const [loading, setLoading] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -121,6 +137,30 @@ export default function DirectionPage() {
       const professionals = (profilesData ?? []) as Profile[]
       const professionalIds = professionals.map((profile) => profile.id)
 
+      const { data: waitingListData, error: waitingListError } = await supabase
+        .from('waiting_list_clients')
+        .select('status, priority_level')
+
+      if (waitingListError) {
+        setError(waitingListError.message)
+        setLoading(false)
+        return
+      }
+
+      const waitingListClients = (waitingListData ?? []) as WaitingListClient[]
+      const waitingClients = waitingListClients.filter(
+        (client) => client.status === 'waiting'
+      )
+
+      setWaitingListStats({
+        waiting: waitingClients.length,
+        urgent: waitingClients.filter(
+          (client) =>
+            client.priority_level === 'urgent' ||
+            client.priority_level === 'existing_or_transfer'
+        ).length,
+      })
+
       if (professionalIds.length === 0) {
         setRows([])
         setLoading(false)
@@ -165,6 +205,7 @@ export default function DirectionPage() {
           total: 0,
           active: 0,
           noResponse: 0,
+          pending: 0,
           usedAssignments: 0,
         }
 
@@ -178,6 +219,8 @@ export default function DirectionPage() {
           currentStats.active += 1
         } else if (client.is_active === false) {
           currentStats.noResponse += 1
+        } else {
+          currentStats.pending += 1
         }
 
         clientStatsByRequestId.set(client.assignment_request_id, currentStats)
@@ -199,7 +242,7 @@ export default function DirectionPage() {
             return getAssignmentRequestMetrics({
               isActive: currentRequest.is_active,
               requestedCount: currentRequest.requested_count,
-              acceptedCount: currentClientStats?.total ?? 0,
+              acceptedCount: currentClientStats?.usedAssignments ?? 0,
               remainingCount: currentRequest.remaining_count,
             }).isActive
           }) ?? null
@@ -209,7 +252,7 @@ export default function DirectionPage() {
             return getAssignmentRequestMetrics({
               isActive: currentRequest.is_active,
               requestedCount: currentRequest.requested_count,
-              acceptedCount: currentClientStats?.total ?? 0,
+              acceptedCount: currentClientStats?.usedAssignments ?? 0,
               remainingCount: currentRequest.remaining_count,
             }).isCompleted
           }) ?? null
@@ -219,9 +262,17 @@ export default function DirectionPage() {
         const requestMetrics = getAssignmentRequestMetrics({
           isActive: request?.is_active,
           requestedCount: request?.requested_count,
-          acceptedCount: clientStats?.total ?? 0,
+          acceptedCount: clientStats?.usedAssignments ?? 0,
           remainingCount: request?.remaining_count,
         })
+        const unassignedCount = requestMetrics.isActive
+          ? Math.max(
+              requestMetrics.requestedCount -
+                requestMetrics.acceptedCount -
+                (clientStats?.pending ?? 0),
+              0
+            )
+          : 0
 
         return {
           id: profile.id,
@@ -230,10 +281,12 @@ export default function DirectionPage() {
           totalAssignedClients: clientStats?.total ?? 0,
           activeClients: clientStats?.active ?? 0,
           noResponseClients: clientStats?.noResponse ?? 0,
+          pendingClients: clientStats?.pending ?? 0,
           requestActive: requestMetrics.isActive,
           requestedCount: requestMetrics.requestedCount,
           assignedCount: requestMetrics.acceptedCount,
           remainingCount: requestMetrics.isActive ? requestMetrics.remainingCount : 0,
+          unassignedCount,
           requestComment: request?.request_comment?.trim() || '-',
           requestCompleted: requestMetrics.isCompleted,
         }
@@ -251,9 +304,10 @@ export default function DirectionPage() {
       totalProfessionals: rows.length,
       activeRequests: rows.filter((row) => row.requestActive).length,
       activeClients: rows.reduce((total, row) => total + row.activeClients, 0),
+      pendingClients: rows.reduce((total, row) => total + row.pendingClients, 0),
       noResponseClients: rows.reduce((total, row) => total + row.noResponseClients, 0),
       remainingPlaces: rows.reduce(
-        (total, row) => total + (row.requestActive ? row.remainingCount : 0),
+        (total, row) => total + (row.requestActive ? row.unassignedCount : 0),
         0
       ),
     }),
@@ -263,8 +317,8 @@ export default function DirectionPage() {
   const professionalsWithRemaining = useMemo(
     () =>
       rows
-        .filter((row) => row.requestActive && row.remainingCount > 0)
-        .sort((a, b) => b.remainingCount - a.remainingCount)
+        .filter((row) => row.requestActive && row.unassignedCount > 0)
+        .sort((a, b) => b.unassignedCount - a.unassignedCount)
         .slice(0, 8),
     [rows]
   )
@@ -284,24 +338,24 @@ export default function DirectionPage() {
         .filter(
           (row) =>
             row.noResponseClients >= 3 ||
-            row.requestCompleted
+            row.pendingClients > 0
         )
-        .sort((a, b) => b.noResponseClients - a.noResponseClients)
+        .sort((a, b) => b.pendingClients - a.pendingClients)
         .slice(0, 8),
     [rows]
   )
   const directionAlerts = [
-    professionalsWithRemaining.some((row) => row.remainingCount >= 3)
+    professionalsWithRemaining.some((row) => row.unassignedCount >= 3)
       ? {
           title: 'Capacité disponible importante',
           description: `${
-            professionalsWithRemaining.filter((row) => row.remainingCount >= 3).length
+            professionalsWithRemaining.filter((row) => row.unassignedCount >= 3).length
           } professionnel${
-            professionalsWithRemaining.filter((row) => row.remainingCount >= 3)
+            professionalsWithRemaining.filter((row) => row.unassignedCount >= 3)
               .length > 1
               ? 's ont'
               : ' a'
-          } encore beaucoup de places.`,
+          } encore plusieurs assignations à faire.`,
           tone: 'warning' as const,
         }
       : null,
@@ -316,16 +370,21 @@ export default function DirectionPage() {
           tone: 'success' as const,
         }
       : null,
-    rows.some((row) => row.noResponseClients >= 3)
+    waitingListStats.urgent > 0
       ? {
-          title: 'Services non pris à surveiller',
-          description: `${
-            rows.filter((row) => row.noResponseClients >= 3).length
-          } professionnel${
-            rows.filter((row) => row.noResponseClients >= 3).length > 1
-              ? 's ont'
-              : ' a'
-          } plusieurs services non pris.`,
+          title: 'Priorités en liste d’attente',
+          description: `${waitingListStats.urgent} client${
+            waitingListStats.urgent > 1 ? 's sont' : ' est'
+          } urgent${waitingListStats.urgent > 1 ? 's' : ''} ou en transfert.`,
+          tone: 'warning' as const,
+        }
+      : null,
+    dashboardStats.pendingClients > 0
+      ? {
+          title: 'Confirmations à suivre',
+          description: `${dashboardStats.pendingClients} client${
+            dashboardStats.pendingClients > 1 ? 's assignés attendent' : ' assigné attend'
+          } une confirmation du service.`,
           tone: 'warning' as const,
         }
       : null,
@@ -389,49 +448,55 @@ export default function DirectionPage() {
 
               <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
                 <StatCard
-                  label="Professionnels"
-                  value={dashboardStats.totalProfessionals}
-                  priority="subtle"
+                  label="Clients en liste d’attente"
+                  value={waitingListStats.waiting}
+                  helper="Clients non encore assignés"
+                  tone="warm"
+                  priority={waitingListStats.waiting > 0 ? 'high' : 'default'}
                   icon={Users}
                 />
                 <StatCard
-                  label="Demandes actives"
-                  value={dashboardStats.activeRequests}
+                  label="Assignations à faire"
+                  value={dashboardStats.remainingPlaces}
+                  helper="Places non assignées"
                   tone="warm"
-                  priority={dashboardStats.activeRequests > 0 ? 'high' : 'default'}
+                  priority={dashboardStats.remainingPlaces > 0 ? 'high' : 'default'}
+                  icon={ClipboardList}
+                />
+                <StatCard
+                  label="Clients assignés en attente"
+                  value={dashboardStats.pendingClients}
+                  helper="En attente de réponse du client"
+                  tone="warm"
+                  priority={dashboardStats.pendingClients > 0 ? 'high' : 'default'}
                   icon={ClipboardList}
                 />
                 <StatCard
                   label="Services pris"
                   value={dashboardStats.activeClients}
+                  helper="Services confirmés"
                   tone="success"
                   priority="subtle"
                   icon={UserCheck}
                 />
                 <StatCard
-                  label="Services non pris"
-                  value={dashboardStats.noResponseClients}
+                  label="Alertes / urgences"
+                  value={waitingListStats.urgent}
+                  helper="Urgents ou transferts"
                   tone="warm"
-                  priority={dashboardStats.noResponseClients > 0 ? 'default' : 'subtle'}
-                  icon={UserX}
-                />
-                <StatCard
-                  label="Places restantes"
-                  value={dashboardStats.remainingPlaces}
-                  tone="warm"
-                  priority={dashboardStats.remainingPlaces > 0 ? 'high' : 'default'}
-                  icon={ClipboardList}
+                  priority={waitingListStats.urgent > 0 ? 'high' : 'default'}
+                  icon={AlertCircle}
                 />
               </section>
 
               <div className="grid gap-6 xl:grid-cols-3">
                 <SectionCard
-                  title="Professionnels ayant encore des places"
+                  title="Professionnels disponibles pour assignation"
                   priority="high"
                   icon={ClipboardList}
                 >
                   {professionalsWithRemaining.length === 0 ? (
-                    <EmptyState title="Aucune place restante actuellement." />
+                    <EmptyState title="Aucune assignation à faire actuellement." />
                   ) : (
                     <div className="space-y-3">
                       {professionalsWithRemaining.map((row) => (
@@ -445,21 +510,21 @@ export default function DirectionPage() {
                           >
                             {row.fullName}
                           </Link>
-                          <Badge tone="warning">{row.remainingCount} places</Badge>
+                          <Badge tone="warning">
+                            {row.unassignedCount} à assigner
+                          </Badge>
                         </div>
                       ))}
                     </div>
                   )}
                 </SectionCard>
 
-                <SectionCard
-                  title="Demandes complétées récemment"
-                  priority="subtle"
-                  icon={CheckCircle2}
-                >
-                  {completedRequests.length === 0 ? (
-                    <EmptyState title="Aucune demande complétée à afficher." />
-                  ) : (
+                {completedRequests.length > 0 && (
+                  <SectionCard
+                    title="Demandes complétées récemment"
+                    priority="subtle"
+                    icon={CheckCircle2}
+                  >
                     <div className="space-y-3">
                       {completedRequests.map((row) => {
                         const status = getAssignmentRequestStatus({
@@ -489,11 +554,11 @@ export default function DirectionPage() {
                         )
                       })}
                     </div>
-                  )}
-                </SectionCard>
+                  </SectionCard>
+                )}
 
                 <SectionCard
-                  title="Demandes necessitant attention"
+                  title="Demandes nécessitant attention"
                   priority={attentionRows.length > 0 ? 'high' : 'default'}
                   icon={AlertCircle}
                 >
@@ -519,8 +584,10 @@ export default function DirectionPage() {
                                   {row.noResponseClients} service non pris
                                 </Badge>
                               )}
-                              {row.requestCompleted && (
-                                <Badge tone="success">aucune place restante</Badge>
+                              {row.pendingClients > 0 && (
+                                <Badge tone="warning">
+                                  {row.pendingClients} à confirmer
+                                </Badge>
                               )}
                             </div>
                           </div>
