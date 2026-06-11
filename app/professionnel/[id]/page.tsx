@@ -899,7 +899,50 @@ export default function ProfessionnelDetailPage() {
                 title="Resume"
                 description="Vue rapide des volumes, de la demande et des points à surveiller."
               >
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {displayAssignmentRequest ? (
+                  <div className="mb-5 rounded-2xl border border-[#d8b992] bg-[#fff4e8] p-5 shadow-[0_10px_28px_rgba(138,86,51,0.10)]">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <p className="text-sm font-semibold uppercase text-[#8a5633]">
+                          Demande active
+                        </p>
+                        <h2 className="mt-1 text-2xl font-semibold text-[#332820]">
+                          {requestedCount} assignation
+                          {requestedCount > 1 ? "s" : ""} demandée
+                          {requestedCount > 1 ? "s" : ""}
+                        </h2>
+                        <p className="mt-2 text-sm text-[#6c5a4d]">
+                          Ce professionnel a une demande active de{" "}
+                          {requestedCount} assignation
+                          {requestedCount > 1 ? "s" : ""}.
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] px-4 py-3 text-sm font-semibold text-[#5d4a3d]">
+                        {assignedCount} service{assignedCount > 1 ? "s" : ""} pris
+                        {" - "}
+                        {remainingCount} à combler
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mb-5 rounded-2xl border border-[#eadfd2] bg-[#fbf6ef] p-5">
+                    <p className="text-sm font-medium text-[#7a6859]">
+                      Aucune demande active actuellement.
+                    </p>
+                  </div>
+                )}
+
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                  <StatCard
+                    label="Assignations demandées"
+                    value={requestedCount}
+                    helper={
+                      displayAssignmentRequest
+                        ? "Nombre total demandé"
+                        : "Aucune demande active"
+                    }
+                    priority={displayAssignmentRequest ? "high" : "default"}
+                  />
                   <StatCard
                     label="Clients ayant pris le service"
                     value={clientsWithService.length}

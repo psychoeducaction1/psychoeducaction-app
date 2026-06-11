@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppNav } from '@/components/AppNav'
-import { Badge, EmptyState, PageHeader } from '@/components/ui/index'
+import { Badge, buttonClass, EmptyState, PageHeader } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
 import {
   getRemainingAssignmentCount,
@@ -22,8 +22,17 @@ type AssignmentRequestHistoryRow = {
 }
 
 type AssignedClientHistoryRow = {
+  id: string
   assignment_request_id: string | null
+  first_name: string | null
+  last_name: string | null
+  email: string | null
+  phone: string | null
+  requester_name: string | null
   assigned_date: string | null
+  meeting_modality: string | null
+  closure_reason: string | null
+  short_comment: string | null
   is_active: boolean | null
 }
 
@@ -31,6 +40,7 @@ type RequestStatus = 'Completee' | 'Active'
 
 type RequestCardData = {
   request: AssignmentRequestHistoryRow
+  clients: AssignedClientHistoryRow[]
   createdDate: Date | null
   completionDate: Date | null
   activeAssignmentCount: number
@@ -106,6 +116,34 @@ function getClientDate(client: AssignedClientHistoryRow): Date | null {
   return parseDate(client.assigned_date)
 }
 
+function formatText(value: string | null | undefined): string {
+  return value?.trim() || '-'
+}
+
+function getClientName(client: AssignedClientHistoryRow): string {
+  return (
+    [client.first_name, client.last_name]
+      .map((value) => value?.trim())
+      .filter(Boolean)
+      .join(' ') || '-'
+  )
+}
+
+function getServiceStatus(client: AssignedClientHistoryRow): {
+  label: string
+  tone: 'success' | 'danger' | 'warning'
+} {
+  if (client.is_active === true) {
+    return { label: 'Service pris', tone: 'success' }
+  }
+
+  if (client.is_active === false) {
+    return { label: 'Service non pris', tone: 'danger' }
+  }
+
+  return { label: 'En attente', tone: 'warning' }
+}
+
 function getEstimatedCompletionDate(
   clients: AssignedClientHistoryRow[],
   remainingCount: number,
@@ -125,6 +163,12 @@ export default function ProfessionnelHistoriquePage() {
   const router = useRouter()
   const [requests, setRequests] = useState<AssignmentRequestHistoryRow[]>([])
   const [clients, setClients] = useState<AssignedClientHistoryRow[]>([])
+  const [expandedRequestIds, setExpandedRequestIds] = useState<Record<string, boolean>>(
+    {}
+  )
+  const [expandedMotifIds, setExpandedMotifIds] = useState<Record<string, boolean>>(
+    {}
+  )
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -171,7 +215,9 @@ export default function ProfessionnelHistoriquePage() {
           .order('created_at', { ascending: false }),
         supabase
           .from('assigned_clients')
-          .select('assignment_request_id, assigned_date, is_active')
+          .select(
+            'id, assignment_request_id, first_name, last_name, email, phone, requester_name, assigned_date, meeting_modality, closure_reason, short_comment, is_active'
+          )
           .eq('professional_id', user.id)
           .order('assigned_date', { ascending: false }),
       ])
@@ -257,6 +303,7 @@ export default function ProfessionnelHistoriquePage() {
 
         return {
           request,
+          clients: requestClients,
           createdDate,
           completionDate,
           activeAssignmentCount,
@@ -274,6 +321,20 @@ export default function ProfessionnelHistoriquePage() {
         return secondDate - firstDate
       })
   }, [clients, requests])
+
+  const toggleRequest = (requestId: string) => {
+    setExpandedRequestIds((currentIds) => ({
+      ...currentIds,
+      [requestId]: !currentIds[requestId],
+    }))
+  }
+
+  const toggleMotif = (clientId: string) => {
+    setExpandedMotifIds((currentIds) => ({
+      ...currentIds,
+      [clientId]: !currentIds[clientId],
+    }))
+  }
 
   return (
     <>
@@ -306,6 +367,7 @@ export default function ProfessionnelHistoriquePage() {
                 requestCards.map((card, index) => {
                   const requestedCount = card.request.requested_count ?? 0
                   const isCompleted = card.status === 'Completee'
+                  const isExpanded = expandedRequestIds[card.request.id] === true
 
                   return (
                     <article
@@ -332,6 +394,15 @@ export default function ProfessionnelHistoriquePage() {
                             Complétion estimée : {formatDate(card.completionDate)}
                           </p>
                         </div>
+                        <button
+                          type="button"
+                          onClick={() => toggleRequest(card.request.id)}
+                          className={buttonClass('secondary')}
+                        >
+                          {isExpanded
+                            ? 'Masquer les clients'
+                            : 'Voir les clients assignés'}
+                        </button>
                       </div>
 
                       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -387,6 +458,131 @@ export default function ProfessionnelHistoriquePage() {
                           </p>
                         </div>
                       </div>
+
+                      {isExpanded && (
+                        <div className="mt-4 rounded-2xl border border-[#eadfd2] bg-white p-4">
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <h3 className="text-sm font-semibold uppercase text-[#8a6f5d]">
+                              Clients assignés
+                            </h3>
+                            <span className="text-sm text-[#7a6859]">
+                              {card.clients.length} client
+                              {card.clients.length > 1 ? 's' : ''}
+                            </span>
+                          </div>
+
+                          {card.clients.length === 0 ? (
+                            <div className="mt-3">
+                              <EmptyState title="Aucun client lié à cette demande." />
+                            </div>
+                          ) : (
+                            <div className="mt-4 grid gap-3 xl:grid-cols-2">
+                              {card.clients.map((client) => {
+                                const serviceStatus = getServiceStatus(client)
+                                const motifExpanded =
+                                  expandedMotifIds[client.id] === true
+                                const hasMotif = Boolean(client.short_comment?.trim())
+
+                                return (
+                                  <article
+                                    key={client.id}
+                                    className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-4"
+                                  >
+                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                      <div>
+                                        <h4 className="text-base font-semibold text-[#332820]">
+                                          {getClientName(client)}
+                                        </h4>
+                                        <p className="mt-1 text-sm text-[#7a6859]">
+                                          Requérant:{' '}
+                                          <span className="font-semibold text-[#5d4a3d]">
+                                            {formatText(client.requester_name)}
+                                          </span>
+                                        </p>
+                                      </div>
+                                      <Badge tone={serviceStatus.tone}>
+                                        {serviceStatus.label}
+                                      </Badge>
+                                    </div>
+
+                                    <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+                                      <div className="min-w-0 rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-3">
+                                        <dt className="text-xs font-medium uppercase text-[#8a6f5d]">
+                                          Courriel
+                                        </dt>
+                                        <dd className="mt-1 break-words text-[#332820]">
+                                          {formatText(client.email)}
+                                        </dd>
+                                      </div>
+                                      <div className="min-w-0 rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-3">
+                                        <dt className="text-xs font-medium uppercase text-[#8a6f5d]">
+                                          Téléphone
+                                        </dt>
+                                        <dd className="mt-1 break-words text-[#332820]">
+                                          {formatText(client.phone)}
+                                        </dd>
+                                      </div>
+                                      <div className="min-w-0 rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-3">
+                                        <dt className="text-xs font-medium uppercase text-[#8a6f5d]">
+                                          Date d’assignation
+                                        </dt>
+                                        <dd className="mt-1 text-[#332820]">
+                                          {formatDate(client.assigned_date)}
+                                        </dd>
+                                      </div>
+                                      <div className="min-w-0 rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-3">
+                                        <dt className="text-xs font-medium uppercase text-[#8a6f5d]">
+                                          Modalité
+                                        </dt>
+                                        <dd className="mt-1 break-words text-[#332820]">
+                                          {formatText(client.meeting_modality)}
+                                        </dd>
+                                      </div>
+                                    </dl>
+
+                                    {client.closure_reason?.trim() && (
+                                      <div className="mt-3 rounded-xl border border-[#e9cfc5] bg-[#fff6f2] p-3 text-sm">
+                                        <p className="text-xs font-medium uppercase text-[#9a6a59]">
+                                          Motif de non-prise
+                                        </p>
+                                        <p className="mt-1 whitespace-pre-wrap break-words text-[#6f3f32]">
+                                          {client.closure_reason}
+                                        </p>
+                                      </div>
+                                    )}
+
+                                    {hasMotif && (
+                                      <div className="mt-3 rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-3 text-sm">
+                                        <p className="text-xs font-medium uppercase text-[#8a6f5d]">
+                                          Motif de consultation
+                                        </p>
+                                        <p
+                                          className={`mt-1 whitespace-pre-wrap break-words text-[#332820] ${
+                                            motifExpanded
+                                              ? ''
+                                              : 'max-h-12 overflow-hidden'
+                                          }`}
+                                        >
+                                          {client.short_comment}
+                                        </p>
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleMotif(client.id)}
+                                          className="mt-2 text-sm font-semibold text-[#8a5633] underline decoration-[#d9b591] underline-offset-2 hover:decoration-[#9b6a3d]"
+                                        >
+                                          {motifExpanded
+                                            ? 'Masquer le motif'
+                                            : 'Voir le motif'}
+                                        </button>
+                                      </div>
+                                    )}
+                                  </article>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </article>
                   )
                 })
