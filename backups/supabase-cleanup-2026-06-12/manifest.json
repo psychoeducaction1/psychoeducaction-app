@@ -1,0 +1,27 @@
+{
+  "created_at": "2026-06-12T19:25:42.942Z",
+  "source": "supabase",
+  "operation": "read-only export before cleanup",
+  "tables": {
+    "profiles": {
+      "rows": 9,
+      "json": "profiles.json",
+      "csv": "profiles.csv"
+    },
+    "assignment_requests": {
+      "rows": 15,
+      "json": "assignment_requests.json",
+      "csv": "assignment_requests.csv"
+    },
+    "assigned_clients": {
+      "rows": 29,
+      "json": "assigned_clients.json",
+      "csv": "assigned_clients.csv"
+    },
+    "waiting_list_clients": {
+      "rows": 47,
+      "json": "waiting_list_clients.json",
+      "csv": "waiting_list_clients.csv"
+    }
+  }
+}

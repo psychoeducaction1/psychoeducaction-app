@@ -1,0 +1,10 @@
+id,full_name,email,role,pref_client_types,pref_modalities,pref_followup_types,pref_notes,created_at,updated_at,is_active
+f9a7923a-5cab-4bb7-9ec8-7524a54046ba,Direction,hicham.boukili.psychoeducaction@outlook.com,direction,[],[],[],,2026-03-17T06:19:29.89947+00:00,2026-03-17T06:19:29.89947+00:00,true
+d32a577c-7996-4f49-ae31-2486ee5811bd,Thinhinane Ould Younes,thinhinane.ouldyounes.psychoeducaction.com,professionnel,"[""Adultes""]","[""Visio ou présentiel bureau""]","[""Santé mentale""]",,2026-05-20T16:25:51.645655+00:00,2026-05-20T16:25:51.645655+00:00,true
+dabbd6f6-d9c6-448c-bf9e-2bce2c26f85f,Tina Ould Younes,thinhinane.ouldyounes@gmail.com,professionnel,[],[],[],,2026-05-26T05:23:54.883232+00:00,2026-05-26T05:23:54.883232+00:00,true
+24808b64-31ac-4823-8d0a-ef10c624f991,Fatima Zahra Benlahcen,fz.benlahcen@gmail.com,direction,[],[],[],,2026-06-08T14:59:51.890497+00:00,2026-06-08T14:59:51.890497+00:00,true
+ab4b1214-f0ee-4e68-a219-e70f549cca6a,Aglaé Grégoire-Bélanger,aglae.gregoire-belanger.pea@outlook.com,professionnel,[],[],[],,2026-06-10T13:54:51.780771+00:00,2026-06-10T13:54:51.780771+00:00,true
+8083318f-5cd7-4011-9d14-fe4481029070,Karie Munn,karie.munn.pea@outlook.com,professionnel,[],[],[],,2026-06-10T22:26:12.47682+00:00,2026-06-10T22:26:12.47682+00:00,true
+fa53ace4-a6ba-40ed-a723-25529a1ada9f,Hicham Test,hicham.boukili10@hotmail.com,professionnel,"[""ados adultes santé mental""]","[""par visio ou au bureau de longueuil""]","[""Di - TSA""]",dgdsgsd,2026-03-17T06:20:30.416879+00:00,2026-03-17T06:20:30.416879+00:00,true
+ec6a6a4b-9a34-45e7-8bb7-db57d37c40b6,Direction,contact@psychoeducaction.com,direction,[],[],[],,2026-06-12T00:33:42.512928+00:00,2026-06-12T00:33:42.512928+00:00,true
+1fd3fac0-6b04-4847-a320-a7e40a95fa46,Mélanie Bomhower,melanie.bomhower.pea@outlook.com,professionnel,"[""Adolescents"",""jeunes adultes"",""adultes"",""famille"",""couple.""]","[""Au bureau de Longueuil \nVisioconférence""]",[],,2026-06-11T19:01:36.755843+00:00,2026-06-11T19:01:36.755843+00:00,true

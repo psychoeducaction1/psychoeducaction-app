@@ -160,14 +160,6 @@ function getIsActiveFromServiceStatus(
   return null
 }
 
-function getWaitingListStatusFromIsActive(
-  isActive: boolean | null
-): 'active' | 'closed' | 'assigned' {
-  if (isActive === true) return 'active'
-  if (isActive === false) return 'closed'
-  return 'assigned'
-}
-
 function getEstimatedCompletionDate(
   clients: AssignedClientHistoryRow[],
   remainingCount: number,
@@ -427,10 +419,13 @@ export default function ProfessionnelHistoriquePage() {
     }
 
     if (client.waiting_list_client_id) {
-      const { error: waitingListError } = await supabase
-        .from('waiting_list_clients')
-        .update({ status: getWaitingListStatusFromIsActive(nextIsActive) })
-        .eq('id', client.waiting_list_client_id)
+      const { error: waitingListError } = await supabase.rpc(
+        'sync_waiting_list_status_for_assigned_client',
+        {
+          assigned_client_id: client.id,
+          next_is_active: nextIsActive,
+        }
+      )
 
       if (waitingListError) {
         setClientErrors((currentErrors) => ({

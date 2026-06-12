@@ -1,0 +1,139 @@
+[
+  {
+    "id": "f9a7923a-5cab-4bb7-9ec8-7524a54046ba",
+    "full_name": "Direction",
+    "email": "hicham.boukili.psychoeducaction@outlook.com",
+    "role": "direction",
+    "pref_client_types": [],
+    "pref_modalities": [],
+    "pref_followup_types": [],
+    "pref_notes": null,
+    "created_at": "2026-03-17T06:19:29.89947+00:00",
+    "updated_at": "2026-03-17T06:19:29.89947+00:00",
+    "is_active": true
+  },
+  {
+    "id": "d32a577c-7996-4f49-ae31-2486ee5811bd",
+    "full_name": "Thinhinane Ould Younes",
+    "email": "thinhinane.ouldyounes.psychoeducaction.com",
+    "role": "professionnel",
+    "pref_client_types": [
+      "Adultes"
+    ],
+    "pref_modalities": [
+      "Visio ou présentiel bureau"
+    ],
+    "pref_followup_types": [
+      "Santé mentale"
+    ],
+    "pref_notes": null,
+    "created_at": "2026-05-20T16:25:51.645655+00:00",
+    "updated_at": "2026-05-20T16:25:51.645655+00:00",
+    "is_active": true
+  },
+  {
+    "id": "dabbd6f6-d9c6-448c-bf9e-2bce2c26f85f",
+    "full_name": "Tina Ould Younes",
+    "email": "thinhinane.ouldyounes@gmail.com",
+    "role": "professionnel",
+    "pref_client_types": [],
+    "pref_modalities": [],
+    "pref_followup_types": [],
+    "pref_notes": null,
+    "created_at": "2026-05-26T05:23:54.883232+00:00",
+    "updated_at": "2026-05-26T05:23:54.883232+00:00",
+    "is_active": true
+  },
+  {
+    "id": "24808b64-31ac-4823-8d0a-ef10c624f991",
+    "full_name": "Fatima Zahra Benlahcen",
+    "email": "fz.benlahcen@gmail.com",
+    "role": "direction",
+    "pref_client_types": [],
+    "pref_modalities": [],
+    "pref_followup_types": [],
+    "pref_notes": null,
+    "created_at": "2026-06-08T14:59:51.890497+00:00",
+    "updated_at": "2026-06-08T14:59:51.890497+00:00",
+    "is_active": true
+  },
+  {
+    "id": "ab4b1214-f0ee-4e68-a219-e70f549cca6a",
+    "full_name": "Aglaé Grégoire-Bélanger",
+    "email": "aglae.gregoire-belanger.pea@outlook.com",
+    "role": "professionnel",
+    "pref_client_types": [],
+    "pref_modalities": [],
+    "pref_followup_types": [],
+    "pref_notes": null,
+    "created_at": "2026-06-10T13:54:51.780771+00:00",
+    "updated_at": "2026-06-10T13:54:51.780771+00:00",
+    "is_active": true
+  },
+  {
+    "id": "8083318f-5cd7-4011-9d14-fe4481029070",
+    "full_name": "Karie Munn",
+    "email": "karie.munn.pea@outlook.com",
+    "role": "professionnel",
+    "pref_client_types": [],
+    "pref_modalities": [],
+    "pref_followup_types": [],
+    "pref_notes": null,
+    "created_at": "2026-06-10T22:26:12.47682+00:00",
+    "updated_at": "2026-06-10T22:26:12.47682+00:00",
+    "is_active": true
+  },
+  {
+    "id": "fa53ace4-a6ba-40ed-a723-25529a1ada9f",
+    "full_name": "Hicham Test",
+    "email": "hicham.boukili10@hotmail.com",
+    "role": "professionnel",
+    "pref_client_types": [
+      "ados adultes santé mental"
+    ],
+    "pref_modalities": [
+      "par visio ou au bureau de longueuil"
+    ],
+    "pref_followup_types": [
+      "Di - TSA"
+    ],
+    "pref_notes": "dgdsgsd",
+    "created_at": "2026-03-17T06:20:30.416879+00:00",
+    "updated_at": "2026-03-17T06:20:30.416879+00:00",
+    "is_active": true
+  },
+  {
+    "id": "ec6a6a4b-9a34-45e7-8bb7-db57d37c40b6",
+    "full_name": "Direction",
+    "email": "contact@psychoeducaction.com",
+    "role": "direction",
+    "pref_client_types": [],
+    "pref_modalities": [],
+    "pref_followup_types": [],
+    "pref_notes": null,
+    "created_at": "2026-06-12T00:33:42.512928+00:00",
+    "updated_at": "2026-06-12T00:33:42.512928+00:00",
+    "is_active": true
+  },
+  {
+    "id": "1fd3fac0-6b04-4847-a320-a7e40a95fa46",
+    "full_name": "Mélanie Bomhower",
+    "email": "melanie.bomhower.pea@outlook.com",
+    "role": "professionnel",
+    "pref_client_types": [
+      "Adolescents",
+      "jeunes adultes",
+      "adultes",
+      "famille",
+      "couple."
+    ],
+    "pref_modalities": [
+      "Au bureau de Longueuil \nVisioconférence"
+    ],
+    "pref_followup_types": [],
+    "pref_notes": null,
+    "created_at": "2026-06-11T19:01:36.755843+00:00",
+    "updated_at": "2026-06-11T19:01:36.755843+00:00",
+    "is_active": true
+  }
+]

@@ -27,13 +27,6 @@ type ServiceStatus = 'pending' | 'yes' | 'no'
 
 const AUTO_SAVE_DEBOUNCE_MS = 700
 
-type WaitingListClientMatch = {
-  id: string
-  client_name: string | null
-  contact_email: string | null
-  contact_phone: string | null
-}
-
 function getServiceStatus(isActive: boolean | null): ServiceStatus {
   if (isActive === null) return 'pending'
   return isActive ? 'yes' : 'no'
@@ -42,16 +35,6 @@ function getServiceStatus(isActive: boolean | null): ServiceStatus {
 function serviceStatusToIsActive(status: ServiceStatus): boolean | null {
   if (status === 'pending') return null
   return status === 'yes'
-}
-
-function getWaitingListStatus(isActive: boolean | null): 'assigned' | 'active' | 'closed' {
-  if (isActive === true) return 'active'
-  if (isActive === false) return 'closed'
-  return 'assigned'
-}
-
-function normalizeMatchValue(value: string | null | undefined): string {
-  return value?.trim().toLowerCase() ?? ''
 }
 
 export default function ProfessionnelClientsPage() {
@@ -193,68 +176,21 @@ export default function ProfessionnelClientsPage() {
     Boolean(client.closure_reason?.trim())
 
   const syncWaitingListStatus = async (
-    client: AssignedClient,
-    nextStatus: 'assigned' | 'active' | 'closed'
+    client: AssignedClient
   ): Promise<string | null> => {
-    if (client.waiting_list_client_id) {
-      const { error: updateError } = await supabase
-        .from('waiting_list_clients')
-        .update({ status: nextStatus })
-        .eq('id', client.waiting_list_client_id)
-
-      return updateError?.message ?? null
+    if (!client.waiting_list_client_id) {
+      return "Assignation sauvegardee, mais le client lie dans la liste d'attente est introuvable."
     }
 
-    const email = nullableText(client.email)
-    const phone = nullableText(client.phone)
-    const clientName = normalizeMatchValue(
-      [client.first_name, client.last_name].filter(Boolean).join(' ')
+    const { error: syncError } = await supabase.rpc(
+      'sync_waiting_list_status_for_assigned_client',
+      {
+        assigned_client_id: client.id,
+        next_is_active: client.is_active,
+      }
     )
 
-    let query = supabase
-      .from('waiting_list_clients')
-      .select('id, client_name, contact_email, contact_phone')
-      .eq('assigned_professional_id', currentUserId)
-      .in('status', ['assigned', 'active', 'closed'])
-      .order('assigned_at', { ascending: false })
-
-    if (email) {
-      query = query.eq('contact_email', email)
-    } else if (phone) {
-      query = query.eq('contact_phone', phone)
-    }
-
-    const { data, error: matchError } = await query.limit(email || phone ? 10 : 50)
-
-    if (matchError) return matchError.message
-
-    const matches = (data ?? []) as WaitingListClientMatch[]
-    const matchingClient =
-      matches.find(
-        (waitingClient) =>
-          email && normalizeMatchValue(waitingClient.contact_email) === email
-      ) ??
-      matches.find(
-        (waitingClient) =>
-          phone && normalizeMatchValue(waitingClient.contact_phone) === phone
-      ) ??
-      matches.find(
-        (waitingClient) =>
-          clientName && normalizeMatchValue(waitingClient.client_name) === clientName
-      ) ??
-      (matches.length === 1 ? matches[0] : null) ??
-      null
-
-    if (!matchingClient) {
-      return 'Assignation sauvegardée, mais le client lié dans la liste d’attente est introuvable.'
-    }
-
-    const { error: updateError } = await supabase
-      .from('waiting_list_clients')
-      .update({ status: nextStatus })
-      .eq('id', matchingClient.id)
-
-    return updateError?.message ?? null
+    return syncError?.message ?? null
   }
 
   const handleSaveClient = async (client: AssignedClient) => {
@@ -305,10 +241,7 @@ export default function ProfessionnelClientsPage() {
       return
     }
 
-    const waitingListSyncError = await syncWaitingListStatus(
-      client,
-      getWaitingListStatus(client.is_active)
-    )
+    const waitingListSyncError = await syncWaitingListStatus(client)
 
     const updatedClients = latestClientsRef.current.map((currentClient) =>
       currentClient.id === client.id
