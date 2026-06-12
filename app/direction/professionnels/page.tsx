@@ -17,7 +17,7 @@ import {
   tableShellClass,
 } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
-import { getRemainingAssignmentCount } from '@/app/professionnel/shared'
+import { getAssignmentRequestMetrics } from '@/app/professionnel/shared'
 
 type Profile = {
   id: string
@@ -205,27 +205,32 @@ export default function DirectionProfessionnelsPage() {
       const nextRows = professionals.map((profile) => {
         const professionalRequests = requestsByProfessionalId.get(profile.id) ?? []
         const request =
-          professionalRequests.find(
-            (currentRequest) => currentRequest.is_active === true
+          professionalRequests.find((currentRequest) =>
+            getAssignmentRequestMetrics({
+              isActive: currentRequest.is_active,
+              requestedCount: currentRequest.requested_count,
+              acceptedCount: currentRequest.assigned_count,
+              remainingCount: currentRequest.remaining_count,
+            }).isActive
           ) ?? professionalRequests[0]
         const clientStats = request ? clientStatsByRequestId.get(request.id) : undefined
 
-        const requestedCount = request?.requested_count ?? 0
-        const assignedCount = clientStats?.usedAssignments ?? 0
-        const remainingCount = getRemainingAssignmentCount(
-          requestedCount,
-          assignedCount
-        )
+        const requestMetrics = getAssignmentRequestMetrics({
+          isActive: request?.is_active,
+          requestedCount: request?.requested_count,
+          acceptedCount: request?.assigned_count,
+          remainingCount: request?.remaining_count,
+        })
 
         return {
           id: profile.id,
           fullName: profile.full_name ?? '-',
           email: profile.email ?? '-',
           isActive: profile.is_active,
-          requestActive: request?.is_active ?? false,
-          requestedCount,
-          assignedCount,
-          remainingCount,
+          requestActive: requestMetrics.isActive,
+          requestedCount: requestMetrics.requestedCount,
+          assignedCount: requestMetrics.acceptedCount,
+          remainingCount: requestMetrics.isActive ? requestMetrics.remainingCount : 0,
           activeClients: clientStats?.active ?? 0,
           noResponseClients: clientStats?.noResponse ?? 0,
           requestComment: request?.request_comment?.trim() || '-',

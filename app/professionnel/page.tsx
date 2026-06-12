@@ -19,7 +19,6 @@ import {
 import { supabase } from '@/lib/supabaseClient'
 import {
   getAssignmentRequestMetrics,
-  getUsedAssignmentCount,
   type AssignedClient,
   type AssignmentRequest,
 } from './shared'
@@ -168,20 +167,18 @@ export default function ProfessionnelPage() {
         clientsByRequestId.set(client.assignment_request_id, requestClients)
       })
 
-      const latestRequest = requests[0] ?? null
-      const latestRequestClients = latestRequest
-        ? clientsByRequestId.get(latestRequest.id) ?? []
-        : []
-      const latestRequestMetrics = getAssignmentRequestMetrics({
-        isActive: latestRequest?.is_active,
-        requestedCount: latestRequest?.requested_count,
-        acceptedCount: getUsedAssignmentCount(latestRequestClients),
-        remainingCount: latestRequest?.remaining_count,
-      })
       const activeRequest =
-        latestRequest && latestRequestMetrics.isActive ? latestRequest : null
+        requests.find(
+          (currentRequest) =>
+            getAssignmentRequestMetrics({
+              isActive: currentRequest.is_active,
+              requestedCount: currentRequest.requested_count,
+              acceptedCount: currentRequest.assigned_count,
+              remainingCount: currentRequest.remaining_count,
+            }).isActive
+        ) ?? null
       const activeClients = activeRequest
-        ? latestRequestClients
+        ? clientsByRequestId.get(activeRequest.id) ?? []
         : []
 
       if (!activeRequest) {
@@ -203,7 +200,7 @@ export default function ProfessionnelPage() {
   const requestMetrics = getAssignmentRequestMetrics({
     isActive: request?.is_active,
     requestedCount: request?.requested_count,
-    acceptedCount: getUsedAssignmentCount(clients),
+    acceptedCount: request?.assigned_count,
     remainingCount: request?.remaining_count,
   })
   const requestedCount = requestMetrics.requestedCount

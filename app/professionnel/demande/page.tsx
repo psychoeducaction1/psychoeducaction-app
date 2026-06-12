@@ -28,6 +28,51 @@ export default function ProfessionnelDemandePage() {
   const [requestError, setRequestError] = useState('')
   const [completedRequestHidden, setCompletedRequestHidden] = useState(false)
 
+  const sendAssignmentRequestNotification = async (requestId: string) => {
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession()
+
+    if (sessionError || !session?.access_token) {
+      console.error(
+        "[assignment-request-notification] Session introuvable pour l'envoi.",
+        sessionError
+      )
+      return
+    }
+
+    try {
+      const response = await fetch(
+        '/api/professionnel/assignment-request-notification',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ requestId }),
+        }
+      )
+
+      if (!response.ok) {
+        const result = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null
+
+        console.error(
+          "[assignment-request-notification] Échec de l'envoi:",
+          result?.error ?? response.statusText
+        )
+      }
+    } catch (notificationError) {
+      console.error(
+        "[assignment-request-notification] Erreur réseau pendant l'envoi:",
+        notificationError
+      )
+    }
+  }
+
   useEffect(() => {
     const loadData = async () => {
       setLoading(true)
@@ -202,6 +247,7 @@ export default function ProfessionnelDemandePage() {
       request_comment: requestComment.trim() || null,
     }
 
+    const isNewRequest = !hasExistingRequest || !currentRequestId
     const saveResponse = hasExistingRequest && currentRequestId
       ? await supabase
           .from('assignment_requests')
@@ -227,11 +273,12 @@ export default function ProfessionnelDemandePage() {
       return
     }
 
-    setHasExistingRequest(true)
-    setCurrentRequestId(
+    const savedRequestId =
       ((saveResponse.data as AssignmentRequest | null) ?? null)?.id ??
-        currentRequestId
-    )
+      currentRequestId
+
+    setHasExistingRequest(true)
+    setCurrentRequestId(savedRequestId)
     setRequestActive(true)
     setCompletedRequestHidden(false)
     setRequestedCount(normalizedRequestedCount)
@@ -243,6 +290,10 @@ export default function ProfessionnelDemandePage() {
         : 'Demande active sauvegardée.'
     )
     setSavingRequest(false)
+
+    if (isNewRequest && savedRequestId) {
+      void sendAssignmentRequestNotification(savedRequestId)
+    }
   }
 
   const handleClearRequest = async () => {

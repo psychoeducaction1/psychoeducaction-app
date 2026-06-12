@@ -238,21 +238,19 @@ export default function DirectionPage() {
         const professionalRequests = requestsByProfessionalId.get(profile.id) ?? []
         const activeRequest =
           professionalRequests.find((currentRequest) => {
-            const currentClientStats = clientStatsByRequestId.get(currentRequest.id)
             return getAssignmentRequestMetrics({
               isActive: currentRequest.is_active,
               requestedCount: currentRequest.requested_count,
-              acceptedCount: currentClientStats?.usedAssignments ?? 0,
+              acceptedCount: currentRequest.assigned_count,
               remainingCount: currentRequest.remaining_count,
             }).isActive
           }) ?? null
         const completedRequest =
           professionalRequests.find((currentRequest) => {
-            const currentClientStats = clientStatsByRequestId.get(currentRequest.id)
             return getAssignmentRequestMetrics({
               isActive: currentRequest.is_active,
               requestedCount: currentRequest.requested_count,
-              acceptedCount: currentClientStats?.usedAssignments ?? 0,
+              acceptedCount: currentRequest.assigned_count,
               remainingCount: currentRequest.remaining_count,
             }).isCompleted
           }) ?? null
@@ -262,7 +260,7 @@ export default function DirectionPage() {
         const requestMetrics = getAssignmentRequestMetrics({
           isActive: request?.is_active,
           requestedCount: request?.requested_count,
-          acceptedCount: clientStats?.usedAssignments ?? 0,
+          acceptedCount: request?.assigned_count,
           remainingCount: request?.remaining_count,
         })
         const unassignedCount = requestMetrics.isActive

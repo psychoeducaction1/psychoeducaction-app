@@ -22,7 +22,6 @@ import {
 import { supabase } from "@/lib/supabaseClient";
 import {
   getAssignmentRequestMetrics,
-  getUsedAssignmentCount,
 } from "../shared";
 
 type Profile = {
@@ -429,9 +428,7 @@ export default function ProfessionnelDetailPage() {
             return getAssignmentRequestMetrics({
               isActive: request.is_active,
               requestedCount: request.requested_count,
-              acceptedCount: getUsedAssignmentCount(
-                clientsByRequestId.get(request.id) ?? [],
-              ),
+              acceptedCount: request.assigned_count,
               remainingCount: request.remaining_count,
             }).isActive;
           }) ?? null;
@@ -566,6 +563,80 @@ export default function ProfessionnelDetailPage() {
     }
   };
 
+  const getPendingAssignmentCount = async (
+    selectedProfessionalId: string,
+  ): Promise<number | null> => {
+    const { count, error: countError } = await supabase
+      .from("assigned_clients")
+      .select("id", { count: "exact", head: true })
+      .eq("professional_id", selectedProfessionalId)
+      .is("is_active", null);
+
+    if (countError) {
+      console.error(
+        "[professional-assignment-notification] Impossible de compter les assignations en attente:",
+        countError,
+      );
+      return null;
+    }
+
+    return count ?? 0;
+  };
+
+  const sendProfessionalAssignmentNotification = async ({
+    selectedProfessionalId,
+    previousPendingCount,
+  }: {
+    selectedProfessionalId: string;
+    previousPendingCount: number;
+  }) => {
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession();
+
+    if (sessionError || !session?.access_token) {
+      console.error(
+        "[professional-assignment-notification] Session introuvable pour l'envoi.",
+        sessionError,
+      );
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        "/api/direction/professional-assignment-notification",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            professionalId: selectedProfessionalId,
+            previousPendingCount,
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        const result = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+
+        console.error(
+          "[professional-assignment-notification] Échec de l'envoi:",
+          result?.error ?? response.statusText,
+        );
+      }
+    } catch (notificationError) {
+      console.error(
+        "[professional-assignment-notification] Erreur réseau pendant l'envoi:",
+        notificationError,
+      );
+    }
+  };
+
   const handleAssignWaitingClient = async (client: WaitingListClient) => {
     setClientMessage(null);
     setClientError(null);
@@ -580,7 +651,7 @@ export default function ProfessionnelDetailPage() {
     const currentRequestMetrics = getAssignmentRequestMetrics({
       isActive: assignmentRequest.is_active,
       requestedCount: assignmentRequest.requested_count,
-      acceptedCount: getUsedAssignmentCount(assignedClients),
+      acceptedCount: assignmentRequest.assigned_count,
       remainingCount: assignmentRequest.remaining_count,
     });
 
@@ -594,6 +665,8 @@ export default function ProfessionnelDetailPage() {
     setSavingClient(true);
 
     try {
+      const previousPendingCount =
+        await getPendingAssignmentCount(professionalId);
       const { firstName, lastName } = splitClientName(client.client_name);
       const requesterName = nullableText(getWaitingClientRequester(client));
 
@@ -635,6 +708,12 @@ export default function ProfessionnelDetailPage() {
       );
       setClientMessage("Client assigné avec succès.");
       await loadProfessionalProfile({ showLoading: false });
+      if (previousPendingCount === 0) {
+        void sendProfessionalAssignmentNotification({
+          selectedProfessionalId: professionalId,
+          previousPendingCount,
+        });
+      }
     } catch (caughtError: unknown) {
       setClientError(getErrorMessage(caughtError));
     } finally {
@@ -651,7 +730,7 @@ export default function ProfessionnelDetailPage() {
   const requestMetrics = getAssignmentRequestMetrics({
     isActive: assignmentRequest?.is_active,
     requestedCount: assignmentRequest?.requested_count,
-    acceptedCount: getUsedAssignmentCount(assignedClients),
+    acceptedCount: assignmentRequest?.assigned_count,
     remainingCount: assignmentRequest?.remaining_count,
   });
   const requestedCount = requestMetrics.requestedCount;

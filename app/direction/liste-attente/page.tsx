@@ -19,7 +19,6 @@ import {
 import { supabase } from '@/lib/supabaseClient'
 import {
   getAssignmentRequestMetrics,
-  getUsedAssignmentCount,
 } from '@/app/professionnel/shared'
 
 type WaitingListClient = {
@@ -56,13 +55,8 @@ type ActiveAssignmentRequest = {
   professional_id: string
   is_active: boolean | null
   requested_count: number | null
+  assigned_count: number | null
   remaining_count: number | null
-  service_taken_count: number
-}
-
-type AssignedClient = {
-  assignment_request_id: string | null
-  is_active: boolean | null
 }
 
 type WaitingListForm = {
@@ -407,18 +401,14 @@ export default function DirectionListeAttentePage() {
       )
 
       if (professionalIds.length > 0) {
-        const [requestsResponse, assignedClientsResponse] = await Promise.all([
-          supabase
-            .from('assignment_requests')
-            .select('id, professional_id, is_active, requested_count, remaining_count')
-            .eq('is_active', true)
-            .in('professional_id', professionalIds)
-            .order('created_at', { ascending: false }),
-          supabase
-            .from('assigned_clients')
-            .select('assignment_request_id, is_active')
-            .in('professional_id', professionalIds),
-        ])
+        const requestsResponse = await supabase
+          .from('assignment_requests')
+          .select(
+            'id, professional_id, is_active, requested_count, assigned_count, remaining_count'
+          )
+          .eq('is_active', true)
+          .in('professional_id', professionalIds)
+          .order('created_at', { ascending: false })
 
         if (requestsResponse.error) {
           setError(requestsResponse.error.message)
@@ -426,46 +416,18 @@ export default function DirectionListeAttentePage() {
           return
         }
 
-        if (assignedClientsResponse.error) {
-          setError(assignedClientsResponse.error.message)
-          setLoading(false)
-          return
-        }
-
-        const assignedClients =
-          (assignedClientsResponse.data ?? []) as AssignedClient[]
-        const clientsByRequestId = new Map<string, AssignedClient[]>()
-
-        assignedClients.forEach((client) => {
-          if (!client.assignment_request_id) return
-
-          const currentClients =
-            clientsByRequestId.get(client.assignment_request_id) ?? []
-          currentClients.push(client)
-          clientsByRequestId.set(client.assignment_request_id, currentClients)
-        })
-
-        const requests = (requestsResponse.data ?? []) as Omit<
-          ActiveAssignmentRequest,
-          'service_taken_count'
-        >[]
+        const requests =
+          (requestsResponse.data ?? []) as ActiveAssignmentRequest[]
 
         setActiveRequests(
-          requests
-            .map((request) => ({
-              ...request,
-              service_taken_count: getUsedAssignmentCount(
-                clientsByRequestId.get(request.id) ?? []
-              ),
-            }))
-            .filter((request) =>
-              getAssignmentRequestMetrics({
-                isActive: request.is_active,
-                requestedCount: request.requested_count,
-                acceptedCount: request.service_taken_count,
-                remainingCount: request.remaining_count,
-              }).isActive
-            )
+          requests.filter((request) =>
+            getAssignmentRequestMetrics({
+              isActive: request.is_active,
+              requestedCount: request.requested_count,
+              acceptedCount: request.assigned_count,
+              remainingCount: request.remaining_count,
+            }).isActive
+          )
         )
       } else {
         setActiveRequests([])
@@ -540,6 +502,77 @@ export default function DirectionListeAttentePage() {
     setEditingClientId(null)
     setEditForm(emptyWaitingListForm)
     setFormError('')
+  }
+
+  const getPendingAssignmentCount = async (
+    professionalId: string
+  ): Promise<number | null> => {
+    const { count, error: countError } = await supabase
+      .from('assigned_clients')
+      .select('id', { count: 'exact', head: true })
+      .eq('professional_id', professionalId)
+      .is('is_active', null)
+
+    if (countError) {
+      console.error(
+        '[professional-assignment-notification] Impossible de compter les assignations en attente:',
+        countError
+      )
+      return null
+    }
+
+    return count ?? 0
+  }
+
+  const sendProfessionalAssignmentNotification = async ({
+    professionalId,
+    previousPendingCount,
+  }: {
+    professionalId: string
+    previousPendingCount: number
+  }) => {
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession()
+
+    if (sessionError || !session?.access_token) {
+      console.error(
+        "[professional-assignment-notification] Session introuvable pour l'envoi.",
+        sessionError
+      )
+      return
+    }
+
+    try {
+      const response = await fetch(
+        '/api/direction/professional-assignment-notification',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ professionalId, previousPendingCount }),
+        }
+      )
+
+      if (!response.ok) {
+        const result = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null
+
+        console.error(
+          "[professional-assignment-notification] Échec de l'envoi:",
+          result?.error ?? response.statusText
+        )
+      }
+    } catch (notificationError) {
+      console.error(
+        "[professional-assignment-notification] Erreur réseau pendant l'envoi:",
+        notificationError
+      )
+    }
   }
 
   const handleCreateClient = async (event: FormEvent<HTMLFormElement>) => {
@@ -695,7 +728,7 @@ export default function DirectionListeAttentePage() {
         getAssignmentRequestMetrics({
           isActive: request.is_active,
           requestedCount: request.requested_count,
-          acceptedCount: request.service_taken_count,
+          acceptedCount: request.assigned_count,
           remainingCount: request.remaining_count,
         }).isActive
     )
@@ -716,6 +749,9 @@ export default function DirectionListeAttentePage() {
     )
 
     setSavingAssignment(true)
+    const previousPendingCount = await getPendingAssignmentCount(
+      selectedProfessionalId
+    )
 
     const { error: insertError } = await supabase.from('assigned_clients').insert({
       assignment_request_id: assignmentRequest.id,
@@ -776,6 +812,13 @@ export default function DirectionListeAttentePage() {
 
     setAssigningClientId(null)
     setFormMessage('Client assigné au professionnel avec succès.')
+
+    if (previousPendingCount === 0) {
+      void sendProfessionalAssignmentNotification({
+        professionalId: selectedProfessionalId,
+        previousPendingCount,
+      })
+    }
   }
 
   const inputClass =

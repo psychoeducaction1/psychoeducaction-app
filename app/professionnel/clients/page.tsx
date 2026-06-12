@@ -159,15 +159,14 @@ export default function ProfessionnelClientsPage() {
       })
 
       const activeRequest =
-        requests.find((currentRequest) => {
-          const requestClients = clientsByRequestId.get(currentRequest.id) ?? []
-          return getAssignmentRequestMetrics({
+        requests.find((currentRequest) =>
+          getAssignmentRequestMetrics({
             isActive: currentRequest.is_active,
             requestedCount: currentRequest.requested_count,
-            acceptedCount: getUsedAssignmentCount(requestClients),
+            acceptedCount: currentRequest.assigned_count,
             remainingCount: currentRequest.remaining_count,
           }).isActive
-        }) ?? null
+        ) ?? null
 
       setCurrentRequestId(activeRequest?.id ?? null)
       setClients(activeRequest ? clientsByRequestId.get(activeRequest.id) ?? [] : [])

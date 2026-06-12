@@ -24,6 +24,7 @@ type AssignmentRequestHistoryRow = {
 type AssignedClientHistoryRow = {
   id: string
   assignment_request_id: string | null
+  waiting_list_client_id: string | null
   first_name: string | null
   last_name: string | null
   email: string | null
@@ -37,6 +38,7 @@ type AssignedClientHistoryRow = {
 }
 
 type RequestStatus = 'Completee' | 'Active'
+type ServiceStatusValue = 'pending' | 'taken' | 'not_taken'
 
 type RequestCardData = {
   request: AssignmentRequestHistoryRow
@@ -144,6 +146,28 @@ function getServiceStatus(client: AssignedClientHistoryRow): {
   return { label: 'En attente', tone: 'warning' }
 }
 
+function getServiceStatusValue(isActive: boolean | null): ServiceStatusValue {
+  if (isActive === true) return 'taken'
+  if (isActive === false) return 'not_taken'
+  return 'pending'
+}
+
+function getIsActiveFromServiceStatus(
+  status: ServiceStatusValue
+): boolean | null {
+  if (status === 'taken') return true
+  if (status === 'not_taken') return false
+  return null
+}
+
+function getWaitingListStatusFromIsActive(
+  isActive: boolean | null
+): 'active' | 'closed' | 'assigned' {
+  if (isActive === true) return 'active'
+  if (isActive === false) return 'closed'
+  return 'assigned'
+}
+
 function getEstimatedCompletionDate(
   clients: AssignedClientHistoryRow[],
   remainingCount: number,
@@ -161,6 +185,7 @@ function getEstimatedCompletionDate(
 
 export default function ProfessionnelHistoriquePage() {
   const router = useRouter()
+  const [currentUserId, setCurrentUserId] = useState('')
   const [requests, setRequests] = useState<AssignmentRequestHistoryRow[]>([])
   const [clients, setClients] = useState<AssignedClientHistoryRow[]>([])
   const [expandedRequestIds, setExpandedRequestIds] = useState<Record<string, boolean>>(
@@ -169,6 +194,14 @@ export default function ProfessionnelHistoriquePage() {
   const [expandedMotifIds, setExpandedMotifIds] = useState<Record<string, boolean>>(
     {}
   )
+  const [editingClientIds, setEditingClientIds] = useState<Record<string, boolean>>(
+    {}
+  )
+  const [savingClientIds, setSavingClientIds] = useState<Record<string, boolean>>(
+    {}
+  )
+  const [clientMessages, setClientMessages] = useState<Record<string, string>>({})
+  const [clientErrors, setClientErrors] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -186,6 +219,8 @@ export default function ProfessionnelHistoriquePage() {
         router.push('/login')
         return
       }
+
+      setCurrentUserId(user.id)
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
@@ -216,7 +251,7 @@ export default function ProfessionnelHistoriquePage() {
         supabase
           .from('assigned_clients')
           .select(
-            'id, assignment_request_id, first_name, last_name, email, phone, requester_name, assigned_date, meeting_modality, closure_reason, short_comment, is_active'
+            'id, assignment_request_id, waiting_list_client_id, first_name, last_name, email, phone, requester_name, assigned_date, meeting_modality, closure_reason, short_comment, is_active'
           )
           .eq('professional_id', user.id)
           .order('assigned_date', { ascending: false }),
@@ -293,7 +328,14 @@ export default function ProfessionnelHistoriquePage() {
           requestedCount,
           activeAssignmentCount
         )
-        const status: RequestStatus = remainingCount === 0 ? 'Completee' : 'Active'
+        const wasPersistedAsCompleted =
+          requestedCount > 0 &&
+          ((request.assigned_count ?? 0) >= requestedCount ||
+            request.remaining_count === 0)
+        const status: RequestStatus =
+          wasPersistedAsCompleted || remainingCount === 0
+            ? 'Completee'
+            : 'Active'
         const createdDate = parseDate(request.created_at)
         const completionDate = getEstimatedCompletionDate(
           requestClients,
@@ -334,6 +376,89 @@ export default function ProfessionnelHistoriquePage() {
       ...currentIds,
       [clientId]: !currentIds[clientId],
     }))
+  }
+
+  const toggleClientEdit = (clientId: string) => {
+    setEditingClientIds((currentIds) => ({
+      ...currentIds,
+      [clientId]: !currentIds[clientId],
+    }))
+    setClientMessages((currentMessages) => ({
+      ...currentMessages,
+      [clientId]: '',
+    }))
+    setClientErrors((currentErrors) => ({ ...currentErrors, [clientId]: '' }))
+  }
+
+  const handleServiceStatusChange = async (
+    client: AssignedClientHistoryRow,
+    status: ServiceStatusValue
+  ) => {
+    if (!currentUserId) {
+      setClientErrors((currentErrors) => ({
+        ...currentErrors,
+        [client.id]: 'Utilisateur introuvable. Veuillez recharger la page.',
+      }))
+      return
+    }
+
+    const nextIsActive = getIsActiveFromServiceStatus(status)
+
+    setSavingClientIds((currentIds) => ({ ...currentIds, [client.id]: true }))
+    setClientMessages((currentMessages) => ({
+      ...currentMessages,
+      [client.id]: '',
+    }))
+    setClientErrors((currentErrors) => ({ ...currentErrors, [client.id]: '' }))
+
+    const { error: assignedClientError } = await supabase
+      .from('assigned_clients')
+      .update({ is_active: nextIsActive })
+      .eq('id', client.id)
+      .eq('professional_id', currentUserId)
+
+    if (assignedClientError) {
+      setClientErrors((currentErrors) => ({
+        ...currentErrors,
+        [client.id]: assignedClientError.message,
+      }))
+      setSavingClientIds((currentIds) => ({ ...currentIds, [client.id]: false }))
+      return
+    }
+
+    if (client.waiting_list_client_id) {
+      const { error: waitingListError } = await supabase
+        .from('waiting_list_clients')
+        .update({ status: getWaitingListStatusFromIsActive(nextIsActive) })
+        .eq('id', client.waiting_list_client_id)
+
+      if (waitingListError) {
+        setClientErrors((currentErrors) => ({
+          ...currentErrors,
+          [client.id]: waitingListError.message,
+        }))
+        setSavingClientIds((currentIds) => ({
+          ...currentIds,
+          [client.id]: false,
+        }))
+        return
+      }
+    }
+
+    const nextClients = clients.map((currentClient) =>
+      currentClient.id === client.id
+        ? { ...currentClient, is_active: nextIsActive }
+        : currentClient
+    )
+
+    setClients(nextClients)
+
+    setClientMessages((currentMessages) => ({
+      ...currentMessages,
+      [client.id]: 'Statut sauvegardé.',
+    }))
+    setEditingClientIds((currentIds) => ({ ...currentIds, [client.id]: false }))
+    setSavingClientIds((currentIds) => ({ ...currentIds, [client.id]: false }))
   }
 
   return (
@@ -481,6 +606,8 @@ export default function ProfessionnelHistoriquePage() {
                                 const serviceStatus = getServiceStatus(client)
                                 const motifExpanded =
                                   expandedMotifIds[client.id] === true
+                                const isEditing =
+                                  editingClientIds[client.id] === true
                                 const hasMotif = Boolean(client.short_comment?.trim())
 
                                 return (
@@ -503,6 +630,77 @@ export default function ProfessionnelHistoriquePage() {
                                       <Badge tone={serviceStatus.tone}>
                                         {serviceStatus.label}
                                       </Badge>
+                                    </div>
+
+                                    <div className="mt-4 rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-3">
+                                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                        <div>
+                                          <p className="text-xs font-medium uppercase text-[#8a6f5d]">
+                                            Statut du service
+                                          </p>
+                                          <p className="mt-1 text-sm text-[#332820]">
+                                            {serviceStatus.label}
+                                          </p>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleClientEdit(client.id)}
+                                          disabled={savingClientIds[client.id] === true}
+                                          className={buttonClass('secondary')}
+                                        >
+                                          {isEditing ? 'Annuler' : 'Modifier'}
+                                        </button>
+                                      </div>
+                                      {isEditing && (
+                                        <label
+                                          htmlFor={`service-status-${client.id}`}
+                                          className="mt-3 block text-xs font-medium uppercase text-[#8a6f5d]"
+                                        >
+                                          Nouveau statut
+                                          <select
+                                            id={`service-status-${client.id}`}
+                                            value={getServiceStatusValue(
+                                              client.is_active
+                                            )}
+                                            onChange={(event) =>
+                                              void handleServiceStatusChange(
+                                                client,
+                                                event.target
+                                                  .value as ServiceStatusValue
+                                              )
+                                            }
+                                            disabled={
+                                              savingClientIds[client.id] === true
+                                            }
+                                            className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm normal-case text-[#332820] outline-none transition focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd] disabled:cursor-wait disabled:bg-[#f7efe7] disabled:text-[#8a6f5d]"
+                                          >
+                                            <option value="pending">
+                                              En attente
+                                            </option>
+                                            <option value="taken">
+                                              Service pris
+                                            </option>
+                                            <option value="not_taken">
+                                              Service non pris
+                                            </option>
+                                          </select>
+                                        </label>
+                                      )}
+                                      {savingClientIds[client.id] === true && (
+                                        <p className="mt-2 text-xs text-[#7a6859]">
+                                          Sauvegarde en cours...
+                                        </p>
+                                      )}
+                                      {clientMessages[client.id] && (
+                                        <p className="mt-2 text-xs font-medium text-[#3f4f2d]">
+                                          {clientMessages[client.id]}
+                                        </p>
+                                      )}
+                                      {clientErrors[client.id] && (
+                                        <p className="mt-2 text-xs font-medium text-red-700">
+                                          {clientErrors[client.id]}
+                                        </p>
+                                      )}
                                     </div>
 
                                     <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">

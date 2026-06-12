@@ -17,10 +17,7 @@ import {
   tableShellClass,
 } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
-import {
-  getAssignmentRequestMetrics,
-  getUsedAssignmentCount,
-} from '@/app/professionnel/shared'
+import { getAssignmentRequestMetrics } from '@/app/professionnel/shared'
 
 type FilterOption = 'all' | 'active' | 'in_progress' | 'completed' | 'inactive'
 
@@ -39,12 +36,6 @@ type AssignmentRequest = {
   remaining_count: number | null
   request_comment: string | null
   created_at?: string | null
-}
-
-type AssignedClient = {
-  professional_id: string | null
-  assignment_request_id: string | null
-  is_active: boolean | null
 }
 
 type AssignmentRow = {
@@ -131,20 +122,13 @@ export default function DirectionAssignationsPage() {
         return
       }
 
-      const [assignmentRequestsResponse, assignedClientsResponse] =
-        await Promise.all([
-          supabase
-            .from('assignment_requests')
-            .select(
-              'id, professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment, created_at'
-            )
-            .in('professional_id', professionalIds)
-            .order('created_at', { ascending: false }),
-          supabase
-            .from('assigned_clients')
-            .select('professional_id, assignment_request_id, is_active')
-            .in('professional_id', professionalIds),
-        ])
+      const assignmentRequestsResponse = await supabase
+        .from('assignment_requests')
+        .select(
+          'id, professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment, created_at'
+        )
+        .in('professional_id', professionalIds)
+        .order('created_at', { ascending: false })
 
       if (assignmentRequestsResponse.error) {
         setError(assignmentRequestsResponse.error.message)
@@ -152,24 +136,8 @@ export default function DirectionAssignationsPage() {
         return
       }
 
-      if (assignedClientsResponse.error) {
-        setError(assignedClientsResponse.error.message)
-        setLoading(false)
-        return
-      }
-
       const assignmentRequests =
         (assignmentRequestsResponse.data ?? []) as AssignmentRequest[]
-      const assignedClients = (assignedClientsResponse.data ?? []) as AssignedClient[]
-      const clientsByRequestId = new Map<string, AssignedClient[]>()
-
-      assignedClients.forEach((client) => {
-        if (!client.assignment_request_id) return
-
-        const currentClients = clientsByRequestId.get(client.assignment_request_id) ?? []
-        currentClients.push(client)
-        clientsByRequestId.set(client.assignment_request_id, currentClients)
-      })
 
       const requestsByProfessionalId = new Map<string, AssignmentRequest[]>()
 
@@ -186,9 +154,7 @@ export default function DirectionAssignationsPage() {
             getAssignmentRequestMetrics({
               isActive: currentRequest.is_active,
               requestedCount: currentRequest.requested_count,
-              acceptedCount: getUsedAssignmentCount(
-                clientsByRequestId.get(currentRequest.id) ?? []
-              ),
+              acceptedCount: currentRequest.assigned_count,
               remainingCount: currentRequest.remaining_count,
             }).isActive
           ) ?? null
@@ -197,20 +163,15 @@ export default function DirectionAssignationsPage() {
             getAssignmentRequestMetrics({
               isActive: currentRequest.is_active,
               requestedCount: currentRequest.requested_count,
-              acceptedCount: getUsedAssignmentCount(
-                clientsByRequestId.get(currentRequest.id) ?? []
-              ),
+              acceptedCount: currentRequest.assigned_count,
               remainingCount: currentRequest.remaining_count,
             }).isCompleted
           ) ?? null
         const request = activeRequest ?? completedRequest ?? professionalRequests[0]
-        const assignedCount = getUsedAssignmentCount(
-          request ? clientsByRequestId.get(request.id) ?? [] : []
-        )
         const requestMetrics = getAssignmentRequestMetrics({
           isActive: request?.is_active,
           requestedCount: request?.requested_count,
-          acceptedCount: assignedCount,
+          acceptedCount: request?.assigned_count,
           remainingCount: request?.remaining_count,
         })
 
