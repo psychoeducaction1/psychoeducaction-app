@@ -588,7 +588,7 @@ export default function ProfessionnelDetailPage() {
     previousPendingCount,
   }: {
     selectedProfessionalId: string;
-    previousPendingCount: number;
+    previousPendingCount: number | null;
   }) => {
     const {
       data: { session },
@@ -604,6 +604,11 @@ export default function ProfessionnelDetailPage() {
     }
 
     try {
+      console.log("[professional-assignment-notification] Appel route:", {
+        professionalId: selectedProfessionalId,
+        pendingBefore: previousPendingCount,
+      });
+
       const response = await fetch(
         "/api/direction/professional-assignment-notification",
         {
@@ -619,11 +624,27 @@ export default function ProfessionnelDetailPage() {
         },
       );
 
-      if (!response.ok) {
-        const result = (await response.json().catch(() => null)) as
-          | { error?: string }
-          | null;
+      const result = (await response.json().catch(() => null)) as
+        | {
+            error?: string;
+            skipped?: boolean;
+            reason?: string;
+            pendingBefore?: number | null;
+            pendingAfter?: number;
+          }
+        | null;
 
+      console.log("[professional-assignment-notification] Réponse route:", {
+        professionalId: selectedProfessionalId,
+        status: response.status,
+        ok: response.ok,
+        skipped: result?.skipped ?? false,
+        reason: result?.reason ?? null,
+        pendingBefore: result?.pendingBefore ?? previousPendingCount,
+        pendingAfter: result?.pendingAfter ?? null,
+      });
+
+      if (!response.ok) {
         console.error(
           "[professional-assignment-notification] Échec de l'envoi:",
           result?.error ?? response.statusText,
@@ -708,12 +729,10 @@ export default function ProfessionnelDetailPage() {
       );
       setClientMessage("Client assigné avec succès.");
       await loadProfessionalProfile({ showLoading: false });
-      if (previousPendingCount === 0) {
-        void sendProfessionalAssignmentNotification({
-          selectedProfessionalId: professionalId,
-          previousPendingCount,
-        });
-      }
+      void sendProfessionalAssignmentNotification({
+        selectedProfessionalId: professionalId,
+        previousPendingCount,
+      });
     } catch (caughtError: unknown) {
       setClientError(getErrorMessage(caughtError));
     } finally {

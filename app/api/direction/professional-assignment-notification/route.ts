@@ -71,15 +71,23 @@ async function sendEmail({
     }),
   })
 
+  const responseText = await response.text()
+  console.log('[professional-assignment-notification] Resend response:', {
+    status: response.status,
+    ok: response.ok,
+    body: response.ok ? undefined : responseText,
+  })
+
   if (!response.ok) {
-    const errorText = await response.text()
     throw new Error(
-      `Erreur Resend ${response.status}: ${errorText || response.statusText}`
+      `Erreur Resend ${response.status}: ${responseText || response.statusText}`
     )
   }
 }
 
 export async function POST(request: NextRequest) {
+  console.log('[professional-assignment-notification] Route appelee.')
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
@@ -144,12 +152,13 @@ export async function POST(request: NextRequest) {
   const professionalId = normalizeId(body.professionalId)
   const previousPendingCount = normalizeCount(body.previousPendingCount)
 
+  console.log('[professional-assignment-notification] Payload recu:', {
+    professionalId,
+    pendingBefore: previousPendingCount,
+  })
+
   if (!professionalId) {
     return jsonResponse({ error: "L'identifiant du professionnel est requis." }, 400)
-  }
-
-  if (previousPendingCount !== 0) {
-    return jsonResponse({ skipped: true, reason: 'transition_absente' }, 200)
   }
 
   const { count: currentPendingCount, error: countError } = await supabaseServer
@@ -162,7 +171,29 @@ export async function POST(request: NextRequest) {
     return jsonResponse({ error: countError.message }, 500)
   }
 
-  if ((currentPendingCount ?? 0) <= 0) {
+  const pendingAfter = currentPendingCount ?? 0
+  const shouldSendEmail = previousPendingCount === 0 && pendingAfter > 0
+
+  console.log('[professional-assignment-notification] Transition evaluee:', {
+    professionalId,
+    pendingBefore: previousPendingCount,
+    pendingAfter,
+    shouldSendEmail,
+  })
+
+  if (!shouldSendEmail) {
+    return jsonResponse(
+      {
+        skipped: true,
+        reason: 'transition_absente',
+        pendingBefore: previousPendingCount,
+        pendingAfter,
+      },
+      200
+    )
+  }
+
+  if (pendingAfter <= 0) {
     return jsonResponse({ skipped: true, reason: 'aucune_assignation' }, 200)
   }
 
@@ -179,6 +210,12 @@ export async function POST(request: NextRequest) {
   }
 
   const profile = professionalProfile as ProfileRow | null
+
+  console.log('[professional-assignment-notification] Profil professionnel:', {
+    professionalId,
+    role: profile?.role ?? null,
+    hasEmail: Boolean(profile?.email?.trim()),
+  })
 
   if (profile?.role !== 'professionnel' || !profile.email?.trim()) {
     return jsonResponse({ error: 'Profil professionnel introuvable.' }, 404)
