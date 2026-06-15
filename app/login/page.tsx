@@ -2,6 +2,7 @@
 
 import { type FormEvent, useState } from 'react'
 import Image from 'next/image'
+import Link from 'next/link'
 import { buttonClass } from '@/components/Ui'
 import { supabase } from '@/lib/supabaseClient'
 
@@ -101,6 +102,15 @@ export default function LoginPage() {
               className="mt-1 w-full rounded-xl border border-[#dfd0bf] bg-white p-3 text-sm text-[#332820] outline-none transition placeholder:text-[#a89686] focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd] read-only:cursor-wait read-only:bg-[#f7efe7] read-only:text-[#8a6f5d]"
             />
           </label>
+
+          <div className="text-right">
+            <Link
+              href="/auth/mot-de-passe-oublie"
+              className="text-sm font-medium text-[#8a5633] underline-offset-4 transition hover:text-[#6f4328] hover:underline"
+            >
+              Mot de passe oubli&eacute; ?
+            </Link>
+          </div>
 
           <label className="flex items-center gap-2 text-sm text-[#6c5a4d]">
             <input
