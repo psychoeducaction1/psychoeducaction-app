@@ -596,6 +596,67 @@ export default function DirectionListeAttentePage() {
     }
   }
 
+  const sendClientAssignmentNotification = async (assignedClientId: string) => {
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession()
+
+    if (sessionError || !session?.access_token) {
+      console.error(
+        "[client-assignment-notification] Session introuvable pour l'envoi.",
+        sessionError
+      )
+      return
+    }
+
+    try {
+      console.log('[client-assignment-notification] Appel route:', {
+        assignedClientId,
+      })
+
+      const response = await fetch(
+        '/api/direction/client-assignment-notification',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ assignedClientId }),
+        }
+      )
+
+      const result = (await response.json().catch(() => null)) as
+        | {
+            error?: string
+            skipped?: boolean
+            reason?: string
+          }
+        | null
+
+      console.log('[client-assignment-notification] RÃ©ponse route:', {
+        assignedClientId,
+        status: response.status,
+        ok: response.ok,
+        skipped: result?.skipped ?? false,
+        reason: result?.reason ?? null,
+      })
+
+      if (!response.ok) {
+        console.error(
+          "[client-assignment-notification] Ã‰chec de l'envoi:",
+          result?.error ?? response.statusText
+        )
+      }
+    } catch (notificationError) {
+      console.error(
+        "[client-assignment-notification] Erreur rÃ©seau pendant l'envoi:",
+        notificationError
+      )
+    }
+  }
+
   const handleCreateClient = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
@@ -774,29 +835,40 @@ export default function DirectionListeAttentePage() {
       selectedProfessionalId
     )
 
-    const { error: insertError } = await supabase.from('assigned_clients').insert({
-      assignment_request_id: assignmentRequest.id,
-      waiting_list_client_id: client.id,
-      professional_id: selectedProfessionalId,
-      first_name: firstName,
-      last_name: lastName,
-      email: nullableText(client.contact_email ?? ''),
-      phone: nullableText(client.contact_phone ?? ''),
-      requester_name: requesterName,
-      short_comment: nullableText(client.consultation_reason ?? ''),
-      meeting_modality: nullableText(client.meeting_modality ?? ''),
-      service_address: nullableText(client.city ?? ''),
-      assigned_date: getTodayDate(),
-      contacted: false,
-      is_active: null,
-      dossier_closed: false,
-      closure_reason: null,
-      meeting_count: 0,
-    })
+    const { data: insertedAssignment, error: insertError } = await supabase
+      .from('assigned_clients')
+      .insert({
+        assignment_request_id: assignmentRequest.id,
+        waiting_list_client_id: client.id,
+        professional_id: selectedProfessionalId,
+        first_name: firstName,
+        last_name: lastName,
+        email: nullableText(client.contact_email ?? ''),
+        phone: nullableText(client.contact_phone ?? ''),
+        requester_name: requesterName,
+        short_comment: nullableText(client.consultation_reason ?? ''),
+        meeting_modality: nullableText(client.meeting_modality ?? ''),
+        service_address: nullableText(client.city ?? ''),
+        assigned_date: getTodayDate(),
+        contacted: false,
+        is_active: null,
+        dossier_closed: false,
+        closure_reason: null,
+        meeting_count: 0,
+      })
+      .select('id')
+      .limit(1)
+      .maybeSingle()
 
     if (insertError) {
       setSavingAssignment(false)
       setFormError(insertError.message)
+      return
+    }
+
+    if (!insertedAssignment?.id) {
+      setSavingAssignment(false)
+      setFormError("L'assignation a Ã©tÃ© crÃ©Ã©e, mais son identifiant est introuvable.")
       return
     }
 
@@ -838,6 +910,20 @@ export default function DirectionListeAttentePage() {
       professionalId: selectedProfessionalId,
       previousPendingCount,
     })
+
+    if (client.contact_email?.trim()) {
+      const shouldNotifyClient = window.confirm(
+        "Voulez-vous envoyer un courriel au client pour l'informer de l'assignation à ce professionnel ?"
+      )
+
+      if (shouldNotifyClient) {
+        void sendClientAssignmentNotification(insertedAssignment.id)
+      }
+    } else {
+      console.log('[client-assignment-notification] Courriel client absent.', {
+        assignedClientId: insertedAssignment.id,
+      })
+    }
   }
 
   const inputClass =

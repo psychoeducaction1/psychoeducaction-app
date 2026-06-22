@@ -28,6 +28,9 @@ type Profile = {
   id: string;
   full_name: string | null;
   email: string | null;
+  professional_title: string | null;
+  professional_phone: string | null;
+  professional_license_number: string | null;
   pref_client_types: string[] | null;
   pref_modalities: string[] | null;
   pref_followup_types: string[] | null;
@@ -86,6 +89,9 @@ type WaitingListClient = {
 type ProfessionalProfileForm = {
   full_name: string;
   email: string;
+  professional_title: string;
+  professional_phone: string;
+  professional_license_number: string;
   pref_client_types: string;
   pref_modalities: string;
   pref_followup_types: string;
@@ -103,6 +109,9 @@ const waitingListPriorityOrder: Record<string, number> = {
 const emptyProfessionalProfileForm: ProfessionalProfileForm = {
   full_name: "",
   email: "",
+  professional_title: "",
+  professional_phone: "",
+  professional_license_number: "",
   pref_client_types: "",
   pref_modalities: "",
   pref_followup_types: "",
@@ -369,7 +378,7 @@ export default function ProfessionnelDetailPage() {
         const profileResponse = await supabase
           .from("profiles")
           .select(
-            "id, full_name, email, pref_client_types, pref_modalities, pref_followup_types, pref_notes",
+            "id, full_name, email, professional_title, professional_phone, professional_license_number, pref_client_types, pref_modalities, pref_followup_types, pref_notes",
           )
           .eq("id", professionalId)
           .limit(1)
@@ -442,6 +451,10 @@ export default function ProfessionnelDetailPage() {
         setProfessionalProfileForm({
           full_name: loadedProfile.full_name ?? "",
           email: loadedProfile.email ?? "",
+          professional_title: loadedProfile.professional_title ?? "",
+          professional_phone: loadedProfile.professional_phone ?? "",
+          professional_license_number:
+            loadedProfile.professional_license_number ?? "",
           pref_client_types: arrayToTextareaValue(loadedProfile.pref_client_types),
           pref_modalities: arrayToTextareaValue(loadedProfile.pref_modalities),
           pref_followup_types: arrayToTextareaValue(
@@ -520,6 +533,15 @@ export default function ProfessionnelDetailPage() {
         .update({
           full_name: nullableText(professionalProfileForm.full_name),
           email: nullableText(professionalProfileForm.email),
+          professional_title: nullableText(
+            professionalProfileForm.professional_title,
+          ),
+          professional_phone: nullableText(
+            professionalProfileForm.professional_phone,
+          ),
+          professional_license_number: nullableText(
+            professionalProfileForm.professional_license_number,
+          ),
           pref_client_types: textareaValueToArray(
             professionalProfileForm.pref_client_types,
           ),
@@ -533,7 +555,7 @@ export default function ProfessionnelDetailPage() {
         })
         .eq("id", professionalId)
         .select(
-          "id, full_name, email, pref_client_types, pref_modalities, pref_followup_types, pref_notes",
+          "id, full_name, email, professional_title, professional_phone, professional_license_number, pref_client_types, pref_modalities, pref_followup_types, pref_notes",
         )
         .limit(1)
         .maybeSingle();
@@ -548,6 +570,10 @@ export default function ProfessionnelDetailPage() {
       setProfessionalProfileForm({
         full_name: nextProfile.full_name ?? "",
         email: nextProfile.email ?? "",
+        professional_title: nextProfile.professional_title ?? "",
+        professional_phone: nextProfile.professional_phone ?? "",
+        professional_license_number:
+          nextProfile.professional_license_number ?? "",
         pref_client_types: arrayToTextareaValue(nextProfile.pref_client_types),
         pref_modalities: arrayToTextareaValue(nextProfile.pref_modalities),
         pref_followup_types: arrayToTextareaValue(
@@ -658,6 +684,67 @@ export default function ProfessionnelDetailPage() {
     }
   };
 
+  const sendClientAssignmentNotification = async (assignedClientId: string) => {
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession();
+
+    if (sessionError || !session?.access_token) {
+      console.error(
+        "[client-assignment-notification] Session introuvable pour l'envoi.",
+        sessionError,
+      );
+      return;
+    }
+
+    try {
+      console.log("[client-assignment-notification] Appel route:", {
+        assignedClientId,
+      });
+
+      const response = await fetch(
+        "/api/direction/client-assignment-notification",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ assignedClientId }),
+        },
+      );
+
+      const result = (await response.json().catch(() => null)) as
+        | {
+            error?: string;
+            skipped?: boolean;
+            reason?: string;
+          }
+        | null;
+
+      console.log("[client-assignment-notification] Reponse route:", {
+        assignedClientId,
+        status: response.status,
+        ok: response.ok,
+        skipped: result?.skipped ?? false,
+        reason: result?.reason ?? null,
+      });
+
+      if (!response.ok) {
+        console.error(
+          "[client-assignment-notification] Echec de l'envoi:",
+          result?.error ?? response.statusText,
+        );
+      }
+    } catch (notificationError) {
+      console.error(
+        "[client-assignment-notification] Erreur reseau pendant l'envoi:",
+        notificationError,
+      );
+    }
+  };
+
   const handleAssignWaitingClient = async (client: WaitingListClient) => {
     setClientMessage(null);
     setClientError(null);
@@ -691,27 +778,37 @@ export default function ProfessionnelDetailPage() {
       const { firstName, lastName } = splitClientName(client.client_name);
       const requesterName = nullableText(getWaitingClientRequester(client));
 
-      const { error: insertError } = await supabase.from("assigned_clients").insert({
-        assignment_request_id: assignmentRequest.id,
-        waiting_list_client_id: client.id,
-        professional_id: professionalId,
-        first_name: firstName,
-        last_name: lastName,
-        email: nullableText(client.contact_email ?? ""),
-        phone: nullableText(client.contact_phone ?? ""),
-        requester_name: requesterName,
-        short_comment: nullableText(client.consultation_reason ?? ""),
-        meeting_modality: nullableText(client.meeting_modality ?? ""),
-        service_address: nullableText(client.city ?? ""),
-        assigned_date: getTodayDate(),
-        contacted: false,
-        is_active: null,
-        dossier_closed: false,
-        closure_reason: null,
-        meeting_count: 0,
-      });
+      const { data: insertedAssignment, error: insertError } = await supabase
+        .from("assigned_clients")
+        .insert({
+          assignment_request_id: assignmentRequest.id,
+          waiting_list_client_id: client.id,
+          professional_id: professionalId,
+          first_name: firstName,
+          last_name: lastName,
+          email: nullableText(client.contact_email ?? ""),
+          phone: nullableText(client.contact_phone ?? ""),
+          requester_name: requesterName,
+          short_comment: nullableText(client.consultation_reason ?? ""),
+          meeting_modality: nullableText(client.meeting_modality ?? ""),
+          service_address: nullableText(client.city ?? ""),
+          assigned_date: getTodayDate(),
+          contacted: false,
+          is_active: null,
+          dossier_closed: false,
+          closure_reason: null,
+          meeting_count: 0,
+        })
+        .select("id")
+        .limit(1)
+        .maybeSingle();
 
       if (insertError) throw insertError;
+      if (!insertedAssignment?.id) {
+        throw new Error(
+          "L'assignation a ete creee, mais son identifiant est introuvable.",
+        );
+      }
 
       const { error: updateWaitingListError } = await supabase
         .from("waiting_list_clients")
@@ -733,6 +830,20 @@ export default function ProfessionnelDetailPage() {
         selectedProfessionalId: professionalId,
         previousPendingCount,
       });
+
+      if (client.contact_email?.trim()) {
+        const shouldNotifyClient = window.confirm(
+          "Voulez-vous envoyer un courriel au client pour l'informer de l'assignation à ce professionnel ?",
+        );
+
+        if (shouldNotifyClient) {
+          void sendClientAssignmentNotification(insertedAssignment.id);
+        }
+      } else {
+        console.log("[client-assignment-notification] Courriel client absent.", {
+          assignedClientId: insertedAssignment.id,
+        });
+      }
     } catch (caughtError: unknown) {
       setClientError(getErrorMessage(caughtError));
     } finally {
@@ -1289,6 +1400,38 @@ export default function ProfessionnelDetailPage() {
               </SectionCard>
 
               <SectionCard
+                title="Coordonnees professionnelles"
+                description="Informations utilisees pour les communications aux clients."
+              >
+                <dl className="grid gap-4 md:grid-cols-3">
+                  <div>
+                    <dt className="text-sm font-medium text-[#8a6f5d]">
+                      Titre professionnel
+                    </dt>
+                    <dd className="mt-1 text-sm text-[#332820]">
+                      {formatText(profile.professional_title)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-[#8a6f5d]">
+                      Téléphone professionnel
+                    </dt>
+                    <dd className="mt-1 text-sm text-[#332820]">
+                      {formatText(profile.professional_phone)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-[#8a6f5d]">
+                      Numéro de permis
+                    </dt>
+                    <dd className="mt-1 text-sm text-[#332820]">
+                      {formatText(profile.professional_license_number)}
+                    </dd>
+                  </div>
+                </dl>
+              </SectionCard>
+
+              <SectionCard
                 title="Demande"
                 description="Demande actuelle transmise par le professionnel."
               >
@@ -1404,6 +1547,53 @@ export default function ProfessionnelDetailPage() {
                         onChange={(event) =>
                           handleProfessionalProfileFormChange(
                             "email",
+                            event.target.value,
+                          )
+                        }
+                        className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                      />
+                    </label>
+
+                    <label className="block text-sm font-medium text-[#5d4a3d]">
+                      Titre professionnel
+                      <input
+                        type="text"
+                        value={professionalProfileForm.professional_title}
+                        onChange={(event) =>
+                          handleProfessionalProfileFormChange(
+                            "professional_title",
+                            event.target.value,
+                          )
+                        }
+                        className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                      />
+                    </label>
+
+                    <label className="block text-sm font-medium text-[#5d4a3d]">
+                      Téléphone professionnel
+                      <input
+                        type="tel"
+                        value={professionalProfileForm.professional_phone}
+                        onChange={(event) =>
+                          handleProfessionalProfileFormChange(
+                            "professional_phone",
+                            event.target.value,
+                          )
+                        }
+                        className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                      />
+                    </label>
+
+                    <label className="block text-sm font-medium text-[#5d4a3d]">
+                      Numéro de permis
+                      <input
+                        type="text"
+                        value={
+                          professionalProfileForm.professional_license_number
+                        }
+                        onChange={(event) =>
+                          handleProfessionalProfileFormChange(
+                            "professional_license_number",
                             event.target.value,
                           )
                         }

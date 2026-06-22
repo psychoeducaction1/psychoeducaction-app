@@ -23,6 +23,9 @@ type Profile = {
   id: string
   full_name: string | null
   email: string | null
+  professional_title: string | null
+  professional_phone: string | null
+  professional_license_number: string | null
   is_active: boolean | null
 }
 
@@ -54,6 +57,9 @@ type ProfessionalRow = {
   id: string
   fullName: string
   email: string
+  professionalTitle: string
+  professionalPhone: string
+  professionalLicenseNumber: string
   isActive: boolean | null
   requestActive: boolean
   requestedCount: number
@@ -73,6 +79,10 @@ export default function DirectionProfessionnelsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [inviteFullName, setInviteFullName] = useState('')
   const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteProfessionalTitle, setInviteProfessionalTitle] = useState('')
+  const [inviteProfessionalPhone, setInviteProfessionalPhone] = useState('')
+  const [inviteProfessionalLicenseNumber, setInviteProfessionalLicenseNumber] =
+    useState('')
   const [inviteLoading, setInviteLoading] = useState(false)
   const [inviteSuccess, setInviteSuccess] = useState('')
   const [inviteError, setInviteError] = useState('')
@@ -118,7 +128,9 @@ export default function DirectionProfessionnelsPage() {
 
       const { data: profilesData, error: profilesError } = await supabase
         .from('profiles')
-        .select('id, full_name, email, is_active')
+        .select(
+          'id, full_name, email, professional_title, professional_phone, professional_license_number, is_active'
+        )
         .eq('role', 'professionnel')
         .order('full_name', { ascending: true })
 
@@ -226,6 +238,9 @@ export default function DirectionProfessionnelsPage() {
           id: profile.id,
           fullName: profile.full_name ?? '-',
           email: profile.email ?? '-',
+          professionalTitle: profile.professional_title ?? '-',
+          professionalPhone: profile.professional_phone ?? '-',
+          professionalLicenseNumber: profile.professional_license_number ?? '-',
           isActive: profile.is_active,
           requestActive: requestMetrics.isActive,
           requestedCount: requestMetrics.requestedCount,
@@ -315,6 +330,9 @@ export default function DirectionProfessionnelsPage() {
         body: JSON.stringify({
           full_name: fullName,
           email,
+          professional_title: inviteProfessionalTitle.trim(),
+          professional_phone: inviteProfessionalPhone.trim(),
+          professional_license_number: inviteProfessionalLicenseNumber.trim(),
         }),
       })
 
@@ -327,6 +345,9 @@ export default function DirectionProfessionnelsPage() {
 
       setInviteFullName('')
       setInviteEmail('')
+      setInviteProfessionalTitle('')
+      setInviteProfessionalPhone('')
+      setInviteProfessionalLicenseNumber('')
       setInviteSuccess('Invitation envoyée avec succès.')
     } catch {
       setInviteError("Erreur réseau pendant l'envoi de l'invitation.")
@@ -495,7 +516,7 @@ export default function DirectionProfessionnelsPage() {
 
                 <form
                   onSubmit={handleInviteProfessional}
-                  className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
+                  className="grid gap-4 lg:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
                 >
                   <label className="block text-sm font-medium text-[#5d4a3d]">
                     Nom complet
@@ -521,7 +542,49 @@ export default function DirectionProfessionnelsPage() {
                     />
                   </label>
 
-                  <div className="flex items-end">
+                  <label className="block text-sm font-medium text-[#5d4a3d]">
+                    Titre professionnel
+                    <input
+                      type="text"
+                      value={inviteProfessionalTitle}
+                      onChange={(event) =>
+                        setInviteProfessionalTitle(event.target.value)
+                      }
+                      placeholder="Psychoéducatrice, psychologue..."
+                      disabled={inviteLoading}
+                      className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none transition placeholder:text-[#a89686] focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd] disabled:cursor-not-allowed disabled:bg-[#f7efe7]"
+                    />
+                  </label>
+
+                  <label className="block text-sm font-medium text-[#5d4a3d]">
+                    Téléphone professionnel
+                    <input
+                      type="tel"
+                      value={inviteProfessionalPhone}
+                      onChange={(event) =>
+                        setInviteProfessionalPhone(event.target.value)
+                      }
+                      placeholder="Téléphone"
+                      disabled={inviteLoading}
+                      className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none transition placeholder:text-[#a89686] focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd] disabled:cursor-not-allowed disabled:bg-[#f7efe7]"
+                    />
+                  </label>
+
+                  <label className="block text-sm font-medium text-[#5d4a3d]">
+                    Numéro de permis
+                    <input
+                      type="text"
+                      value={inviteProfessionalLicenseNumber}
+                      onChange={(event) =>
+                        setInviteProfessionalLicenseNumber(event.target.value)
+                      }
+                      placeholder="Numéro de permis"
+                      disabled={inviteLoading}
+                      className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none transition placeholder:text-[#a89686] focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd] disabled:cursor-not-allowed disabled:bg-[#f7efe7]"
+                    />
+                  </label>
+
+                  <div className="flex items-end xl:col-start-3 xl:row-start-1">
                     <button
                       type="submit"
                       disabled={inviteLoading}

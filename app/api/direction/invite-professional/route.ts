@@ -5,6 +5,9 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
 type InviteProfessionalBody = {
   full_name?: unknown
   email?: unknown
+  professional_title?: unknown
+  professional_phone?: unknown
+  professional_license_number?: unknown
 }
 
 function jsonResponse(body: object, status: number) {
@@ -17,6 +20,12 @@ function normalizeEmail(value: unknown) {
 
 function normalizeName(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
+}
+
+function normalizeOptionalText(value: unknown) {
+  const normalizedValue = typeof value === 'string' ? value.trim() : ''
+
+  return normalizedValue || null
 }
 
 function isValidEmail(email: string) {
@@ -112,6 +121,11 @@ export async function POST(request: NextRequest) {
 
   const fullName = normalizeName(body.full_name)
   const email = normalizeEmail(body.email)
+  const professionalTitle = normalizeOptionalText(body.professional_title)
+  const professionalPhone = normalizeOptionalText(body.professional_phone)
+  const professionalLicenseNumber = normalizeOptionalText(
+    body.professional_license_number
+  )
 
   if (!fullName) {
     return jsonResponse({ error: 'Le nom complet est requis.' }, 400)
@@ -171,6 +185,9 @@ export async function POST(request: NextRequest) {
         full_name: fullName,
         email,
         role: 'professionnel',
+        professional_title: professionalTitle,
+        professional_phone: professionalPhone,
+        professional_license_number: professionalLicenseNumber,
       },
       { onConflict: 'id' }
     )
