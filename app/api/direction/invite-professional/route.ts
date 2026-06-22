@@ -8,6 +8,7 @@ type InviteProfessionalBody = {
   professional_title?: unknown
   professional_phone?: unknown
   professional_license_number?: unknown
+  platform_access_enabled?: unknown
 }
 
 function jsonResponse(body: object, status: number) {
@@ -26,6 +27,10 @@ function normalizeOptionalText(value: unknown) {
   const normalizedValue = typeof value === 'string' ? value.trim() : ''
 
   return normalizedValue || null
+}
+
+function normalizeBoolean(value: unknown, fallback: boolean) {
+  return typeof value === 'boolean' ? value : fallback
 }
 
 function isValidEmail(email: string) {
@@ -126,6 +131,10 @@ export async function POST(request: NextRequest) {
   const professionalLicenseNumber = normalizeOptionalText(
     body.professional_license_number
   )
+  const platformAccessEnabled = normalizeBoolean(
+    body.platform_access_enabled,
+    true
+  )
 
   if (!fullName) {
     return jsonResponse({ error: 'Le nom complet est requis.' }, 400)
@@ -151,28 +160,53 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const redirectTo = `${appUrl.replace(/\/$/, '')}/auth/invitation`
-  const invitationOptions = {
-    data: {
-      full_name: fullName,
-      role: 'professionnel',
-    },
-    redirectTo,
+  let professionalUserId: string | undefined
+  let invitationSent = false
+
+  if (platformAccessEnabled) {
+    const redirectTo = `${appUrl.replace(/\/$/, '')}/auth/invitation`
+    const invitationOptions = {
+      data: {
+        full_name: fullName,
+        role: 'professionnel',
+      },
+      redirectTo,
+    }
+
+    const { data: invitationData, error: invitationError } =
+      await supabaseAdmin.auth.admin.inviteUserByEmail(email, invitationOptions)
+
+    if (invitationError) {
+      return jsonResponse(
+        { error: invitationError.message },
+        isAlreadyExistingUserError(invitationError.message) ? 409 : 500
+      )
+    }
+
+    professionalUserId = invitationData.user?.id
+    invitationSent = true
+  } else {
+    const { data: createdUserData, error: createUserError } =
+      await supabaseAdmin.auth.admin.createUser({
+        email,
+        email_confirm: true,
+        user_metadata: {
+          full_name: fullName,
+          role: 'professionnel',
+        },
+      })
+
+    if (createUserError) {
+      return jsonResponse(
+        { error: createUserError.message },
+        isAlreadyExistingUserError(createUserError.message) ? 409 : 500
+      )
+    }
+
+    professionalUserId = createdUserData.user?.id
   }
 
-  const { data: invitationData, error: invitationError } =
-    await supabaseAdmin.auth.admin.inviteUserByEmail(email, invitationOptions)
-
-  if (invitationError) {
-    return jsonResponse(
-      { error: invitationError.message },
-      isAlreadyExistingUserError(invitationError.message) ? 409 : 500
-    )
-  }
-
-  const invitedUserId = invitationData.user?.id
-
-  if (!invitedUserId) {
+  if (!professionalUserId) {
     return jsonResponse(
       { error: "Supabase n'a pas retourné l'identifiant du professionnel invité." },
       500
@@ -183,13 +217,14 @@ export async function POST(request: NextRequest) {
     .from('profiles')
     .upsert(
       {
-        id: invitedUserId,
+        id: professionalUserId,
         full_name: fullName,
         email,
         role: 'professionnel',
         professional_title: professionalTitle,
         professional_phone: professionalPhone,
         professional_license_number: professionalLicenseNumber,
+        platform_access_enabled: platformAccessEnabled,
       },
       { onConflict: 'id' }
     )
@@ -201,8 +236,10 @@ export async function POST(request: NextRequest) {
   return jsonResponse(
     {
       success: true,
-      user_id: invitedUserId,
+      user_id: professionalUserId,
       email,
+      invitation_sent: invitationSent,
+      platform_access_enabled: platformAccessEnabled,
     },
     201
   )

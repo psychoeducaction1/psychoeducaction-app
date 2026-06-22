@@ -46,13 +46,16 @@ export default function HomePage() {
           sessionData = retrySessionResponse.data
         }
 
-        let profile: { role: string | null } | null = null
+        let profile: {
+          role: string | null
+          platform_access_enabled: boolean | null
+        } | null = null
         let profileError: Error | null = null
 
         for (let attempt = 0; attempt < 2; attempt += 1) {
           const { data, error } = await supabase
             .from('profiles')
-            .select('role')
+            .select('role, platform_access_enabled')
             .eq('id', user.id)
             .maybeSingle()
 
@@ -84,6 +87,13 @@ export default function HomePage() {
         if (profile.role === 'direction') {
           router.replace('/direction')
         } else if (profile.role === 'professionnel') {
+          if (profile.platform_access_enabled === false) {
+            setErrorMessage(
+              "Votre accès à la plateforme est désactivé. Veuillez communiquer avec la direction."
+            )
+            return
+          }
+
           router.replace('/professionnel')
         } else {
           setErrorMessage("Le role de ce profil n'est pas reconnu.")

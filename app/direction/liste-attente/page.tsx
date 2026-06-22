@@ -233,6 +233,30 @@ function sortWaitingClients(clientsToSort: WaitingListClient[]): WaitingListClie
   })
 }
 
+function normalizeSearchValue(value: string | null | undefined): string {
+  return value?.trim().toLowerCase() ?? ''
+}
+
+function clientMatchesSearch(
+  client: WaitingListClient,
+  normalizedSearchQuery: string
+): boolean {
+  if (!normalizedSearchQuery) return true
+
+  return [
+    client.client_name,
+    client.first_requester_name,
+    client.second_requester_name,
+    client.contact_email,
+    client.contact_phone,
+    client.city,
+    client.service_requested,
+    client.meeting_modality,
+  ]
+    .map(normalizeSearchValue)
+    .some((value) => value.includes(normalizedSearchQuery))
+}
+
 function getTodayDate(): string {
   return new Date().toISOString().slice(0, 10)
 }
@@ -334,6 +358,7 @@ export default function DirectionListeAttentePage() {
   const [waitingPage, setWaitingPage] = useState(0)
   const [assignedPage, setAssignedPage] = useState(0)
   const [historyPage, setHistoryPage] = useState(0)
+  const [searchQuery, setSearchQuery] = useState('')
   const [expandedMotifIds, setExpandedMotifIds] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
@@ -929,11 +954,19 @@ export default function DirectionListeAttentePage() {
   const inputClass =
     'w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] shadow-sm outline-none transition duration-200 placeholder:text-[#b09c8a] focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]'
 
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase()
+  const filteredClients = normalizedSearchQuery
+    ? clients.filter((client) => clientMatchesSearch(client, normalizedSearchQuery))
+    : clients
+  const hasSearchQuery = normalizedSearchQuery.length > 0
+  const emptySearchMessage = 'Aucun client ne correspond à cette recherche.'
   const waitingClients = sortWaitingClients(
-    clients.filter((client) => client.status === 'waiting')
+    filteredClients.filter((client) => client.status === 'waiting')
   )
-  const assignedClients = clients.filter((client) => client.status === 'assigned')
-  const historyClients = clients.filter((client) =>
+  const assignedClients = filteredClients.filter(
+    (client) => client.status === 'assigned'
+  )
+  const historyClients = filteredClients.filter((client) =>
     ['active', 'closed', 'blacklisted'].includes(client.status ?? '')
   )
   const getPageCount = (totalCount: number, pageSize = CLIENTS_PER_PAGE) =>
@@ -1439,6 +1472,29 @@ export default function DirectionListeAttentePage() {
           {!loading && !error && (
             <div className="space-y-6">
               <section className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.05)]">
+                <label className="block text-sm font-medium text-[#5d4a3d]">
+                  Recherche
+                  <input
+                    type="search"
+                    value={searchQuery}
+                    onChange={(event) => {
+                      setSearchQuery(event.target.value)
+                      setWaitingPage(0)
+                      setAssignedPage(0)
+                      setHistoryPage(0)
+                    }}
+                    placeholder="Rechercher un client, requérant, courriel ou téléphone..."
+                    className={`${inputClass} mt-2`}
+                  />
+                </label>
+                {hasSearchQuery && filteredClients.length === 0 && (
+                  <p className="mt-3 rounded-xl border border-[#eadfd2] bg-[#f7efe7] px-4 py-3 text-sm text-[#7a6859]">
+                    {emptySearchMessage}
+                  </p>
+                )}
+              </section>
+
+              <section className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.05)]">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <h2 className="text-base font-semibold text-[#332820]">
@@ -1585,7 +1641,7 @@ export default function DirectionListeAttentePage() {
                 </div>
                 {renderClientsTable(
                   paginatedWaitingClients,
-                  'Aucun client en attente.',
+                  hasSearchQuery ? emptySearchMessage : 'Aucun client en attente.',
                   true
                 )}
                 {renderPagination({
@@ -1608,7 +1664,7 @@ export default function DirectionListeAttentePage() {
                 </div>
                 {renderClientsTable(
                   paginatedAssignedClients,
-                  'Aucun client assigné.',
+                  hasSearchQuery ? emptySearchMessage : 'Aucun client assigné.',
                   false
                 )}
                 {renderPagination({
@@ -1631,7 +1687,7 @@ export default function DirectionListeAttentePage() {
                 </div>
                 {renderClientsTable(
                   paginatedHistoryClients,
-                  'Aucun client dans l’historique.',
+                  hasSearchQuery ? emptySearchMessage : 'Aucun client dans l’historique.',
                   false
                 )}
                 {renderPagination({

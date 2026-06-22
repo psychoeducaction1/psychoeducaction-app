@@ -27,6 +27,7 @@ type Profile = {
   professional_phone: string | null
   professional_license_number: string | null
   is_active: boolean | null
+  platform_access_enabled: boolean | null
 }
 
 type AssignedClient = {
@@ -61,6 +62,7 @@ type ProfessionalRow = {
   professionalPhone: string
   professionalLicenseNumber: string
   isActive: boolean | null
+  platformAccessEnabled: boolean
   requestActive: boolean
   requestedCount: number
   assignedCount: number
@@ -83,6 +85,8 @@ export default function DirectionProfessionnelsPage() {
   const [inviteProfessionalPhone, setInviteProfessionalPhone] = useState('')
   const [inviteProfessionalLicenseNumber, setInviteProfessionalLicenseNumber] =
     useState('')
+  const [invitePlatformAccessEnabled, setInvitePlatformAccessEnabled] =
+    useState(true)
   const [inviteLoading, setInviteLoading] = useState(false)
   const [inviteSuccess, setInviteSuccess] = useState('')
   const [inviteError, setInviteError] = useState('')
@@ -98,6 +102,12 @@ export default function DirectionProfessionnelsPage() {
     useState<string | null>(null)
   const [resendAccessSuccess, setResendAccessSuccess] = useState('')
   const [resendAccessError, setResendAccessError] = useState('')
+  const [
+    updatingPlatformAccessProfessionalId,
+    setUpdatingPlatformAccessProfessionalId,
+  ] = useState<string | null>(null)
+  const [platformAccessSuccess, setPlatformAccessSuccess] = useState('')
+  const [platformAccessError, setPlatformAccessError] = useState('')
 
   useEffect(() => {
     const loadProfessionals = async () => {
@@ -129,7 +139,7 @@ export default function DirectionProfessionnelsPage() {
       const { data: profilesData, error: profilesError } = await supabase
         .from('profiles')
         .select(
-          'id, full_name, email, professional_title, professional_phone, professional_license_number, is_active'
+          'id, full_name, email, professional_title, professional_phone, professional_license_number, is_active, platform_access_enabled'
         )
         .eq('role', 'professionnel')
         .order('full_name', { ascending: true })
@@ -242,6 +252,7 @@ export default function DirectionProfessionnelsPage() {
           professionalPhone: profile.professional_phone ?? '-',
           professionalLicenseNumber: profile.professional_license_number ?? '-',
           isActive: profile.is_active,
+          platformAccessEnabled: profile.platform_access_enabled !== false,
           requestActive: requestMetrics.isActive,
           requestedCount: requestMetrics.requestedCount,
           assignedCount: requestMetrics.acceptedCount,
@@ -333,10 +344,14 @@ export default function DirectionProfessionnelsPage() {
           professional_title: inviteProfessionalTitle.trim(),
           professional_phone: inviteProfessionalPhone.trim(),
           professional_license_number: inviteProfessionalLicenseNumber.trim(),
+          platform_access_enabled: invitePlatformAccessEnabled,
         }),
       })
 
-      const result = (await response.json()) as { error?: string }
+      const result = (await response.json()) as {
+        error?: string
+        invitation_sent?: boolean
+      }
 
       if (!response.ok) {
         setInviteError(result.error ?? "Impossible d'envoyer l'invitation.")
@@ -348,7 +363,12 @@ export default function DirectionProfessionnelsPage() {
       setInviteProfessionalTitle('')
       setInviteProfessionalPhone('')
       setInviteProfessionalLicenseNumber('')
-      setInviteSuccess('Invitation envoyée avec succès.')
+      setInvitePlatformAccessEnabled(true)
+      setInviteSuccess(
+        result.invitation_sent
+          ? 'Invitation envoyée avec succès.'
+          : 'Profil créé sans invitation. Le suivi sera géré par la direction.'
+      )
     } catch {
       setInviteError("Erreur réseau pendant l'envoi de l'invitation.")
     } finally {
@@ -418,6 +438,124 @@ export default function DirectionProfessionnelsPage() {
       { ...professional, isActive: true },
     ].sort((a, b) => a.fullName.localeCompare(b.fullName, 'fr')))
     setReactivatingProfessionalId(null)
+  }
+
+  const handleEnablePlatformAccess = async (professional: ProfessionalRow) => {
+    const confirmed = window.confirm(
+      `Activer l'accès plateforme pour "${professional.fullName}" et envoyer un lien d'accès ?`
+    )
+
+    if (!confirmed) return
+
+    setPlatformAccessSuccess('')
+    setPlatformAccessError('')
+    setUpdatingPlatformAccessProfessionalId(professional.id)
+
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({ platform_access_enabled: true })
+      .eq('id', professional.id)
+
+    if (updateError) {
+      setPlatformAccessError(updateError.message)
+      setUpdatingPlatformAccessProfessionalId(null)
+      return
+    }
+
+    const updateRows = (currentRows: ProfessionalRow[]) =>
+      currentRows.map((row) =>
+        row.id === professional.id
+          ? { ...row, platformAccessEnabled: true }
+          : row
+      )
+
+    setRows(updateRows)
+    setArchivedRows(updateRows)
+
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession()
+
+    if (sessionError || !session?.access_token) {
+      setPlatformAccessError(
+        "Accès activé, mais session introuvable pour envoyer le lien."
+      )
+      setUpdatingPlatformAccessProfessionalId(null)
+      return
+    }
+
+    try {
+      const response = await fetch('/api/direction/resend-professional-access', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          professionalId: professional.id,
+        }),
+      })
+
+      const result = (await response.json()) as { error?: string; email?: string }
+
+      if (!response.ok) {
+        setPlatformAccessError(
+          result.error ??
+            "Accès activé, mais impossible d'envoyer le lien d'accès."
+        )
+        return
+      }
+
+      setPlatformAccessSuccess(
+        `Accès plateforme activé. Lien envoyé à ${
+          result.email ?? professional.email
+        }.`
+      )
+    } catch {
+      setPlatformAccessError(
+        "Accès activé, mais erreur réseau pendant l'envoi du lien."
+      )
+    } finally {
+      setUpdatingPlatformAccessProfessionalId(null)
+    }
+  }
+
+  const handleDisablePlatformAccess = async (professional: ProfessionalRow) => {
+    const confirmed = window.confirm(
+      `Désactiver l'accès plateforme pour "${professional.fullName}" ? Les assignations et statistiques seront conservées.`
+    )
+
+    if (!confirmed) return
+
+    setPlatformAccessSuccess('')
+    setPlatformAccessError('')
+    setUpdatingPlatformAccessProfessionalId(professional.id)
+
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({ platform_access_enabled: false })
+      .eq('id', professional.id)
+
+    if (updateError) {
+      setPlatformAccessError(updateError.message)
+      setUpdatingPlatformAccessProfessionalId(null)
+      return
+    }
+
+    const updateRows = (currentRows: ProfessionalRow[]) =>
+      currentRows.map((row) =>
+        row.id === professional.id
+          ? { ...row, platformAccessEnabled: false }
+          : row
+      )
+
+    setRows(updateRows)
+    setArchivedRows(updateRows)
+    setPlatformAccessSuccess(
+      `Accès plateforme désactivé pour ${professional.fullName}.`
+    )
+    setUpdatingPlatformAccessProfessionalId(null)
   }
 
   const handleResendAccess = async (professional: ProfessionalRow) => {
@@ -584,13 +722,30 @@ export default function DirectionProfessionnelsPage() {
                     />
                   </label>
 
+                  <label className="flex items-center gap-2 self-end text-sm font-medium text-[#5d4a3d]">
+                    <input
+                      type="checkbox"
+                      checked={invitePlatformAccessEnabled}
+                      onChange={(event) =>
+                        setInvitePlatformAccessEnabled(event.target.checked)
+                      }
+                      disabled={inviteLoading}
+                      className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633] disabled:cursor-not-allowed"
+                    />
+                    Accès plateforme activé
+                  </label>
+
                   <div className="flex items-end xl:col-start-3 xl:row-start-1">
                     <button
                       type="submit"
                       disabled={inviteLoading}
                       className="inline-flex min-h-10 w-full items-center justify-center rounded-xl bg-[#8a5633] px-4 py-2 text-sm font-medium text-white transition-all duration-200 hover:bg-[#6d3f1f] disabled:cursor-not-allowed disabled:bg-[#c8b8a8] lg:w-auto"
                     >
-                      {inviteLoading ? 'Envoi...' : "Envoyer l'invitation"}
+                      {inviteLoading
+                        ? 'Envoi...'
+                        : invitePlatformAccessEnabled
+                          ? "Envoyer l'invitation"
+                          : 'Créer sans invitation'}
                     </button>
                   </div>
                 </form>
@@ -645,6 +800,18 @@ export default function DirectionProfessionnelsPage() {
                 </div>
               )}
 
+              {platformAccessSuccess && (
+                <div className="mt-4 rounded-xl border border-[#d6c7aa] bg-[#f1ead9] p-3 text-sm text-[#5f5932]">
+                  {platformAccessSuccess}
+                </div>
+              )}
+
+              {platformAccessError && (
+                <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  {platformAccessError}
+                </div>
+              )}
+
               <div className="mt-6">
                 <h2 className="text-lg font-semibold text-[#332820]">
                   Professionnels actifs
@@ -661,6 +828,7 @@ export default function DirectionProfessionnelsPage() {
                     <tr>
                       <th className={tableHeadCellClass}>Nom</th>
                       <th className={tableHeadCellClass}>Email</th>
+                      <th className={tableHeadCellClass}>Accès plateforme</th>
                       <th className={tableHeadCellClass}>Statut demande</th>
                       <th className={tableHeadCellClass}>Clients demandes</th>
                       <th className={tableHeadCellClass}>Services pris</th>
@@ -673,7 +841,7 @@ export default function DirectionProfessionnelsPage() {
                   <tbody className={tableBodyClass}>
                     {visibleRows.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="px-4 py-8">
+                        <td colSpan={10} className="px-4 py-8">
                           <EmptyState
                             title="Aucun professionnel trouvé"
                             description="Ajustez la recherche pour élargir la liste."
@@ -700,6 +868,15 @@ export default function DirectionProfessionnelsPage() {
                             </td>
                             <td className={tableCellClass}>{row.email}</td>
                             <td className={tableCellClass}>
+                              <Badge
+                                tone={row.platformAccessEnabled ? 'success' : 'muted'}
+                              >
+                                {row.platformAccessEnabled
+                                  ? 'Accès plateforme activé'
+                                  : 'Suivi direction seulement'}
+                              </Badge>
+                            </td>
+                            <td className={tableCellClass}>
                               <Badge tone={requestStatus.tone}>
                                 {requestStatus.label}
                               </Badge>
@@ -723,10 +900,40 @@ export default function DirectionProfessionnelsPage() {
                             <td className={tableCellClass}>{row.requestComment}</td>
                             <td className={tableCellClass}>
                               <div className="flex flex-wrap gap-2">
+                                {row.platformAccessEnabled ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDisablePlatformAccess(row)}
+                                    disabled={
+                                      updatingPlatformAccessProfessionalId === row.id
+                                    }
+                                    className="inline-flex min-h-9 items-center justify-center rounded-xl border border-[#d6c7aa] bg-white px-3 py-2 text-xs font-medium text-[#6d3f1f] transition hover:bg-[#f7efe7] disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {updatingPlatformAccessProfessionalId === row.id
+                                      ? 'Mise à jour...'
+                                      : 'Désactiver accès'}
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEnablePlatformAccess(row)}
+                                    disabled={
+                                      updatingPlatformAccessProfessionalId === row.id
+                                    }
+                                    className="inline-flex min-h-9 items-center justify-center rounded-xl border border-[#d6c7aa] bg-[#f1ead9] px-3 py-2 text-xs font-medium text-[#6d3f1f] transition hover:bg-[#eadfc8] disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {updatingPlatformAccessProfessionalId === row.id
+                                      ? 'Activation...'
+                                      : 'Activer accès plateforme'}
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   onClick={() => handleResendAccess(row)}
-                                  disabled={resendingAccessProfessionalId === row.id}
+                                  disabled={
+                                    !row.platformAccessEnabled ||
+                                    resendingAccessProfessionalId === row.id
+                                  }
                                   className="inline-flex min-h-9 items-center justify-center rounded-xl border border-[#d6c7aa] bg-[#f1ead9] px-3 py-2 text-xs font-medium text-[#6d3f1f] transition hover:bg-[#eadfc8] disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   {resendingAccessProfessionalId === row.id
@@ -770,6 +977,7 @@ export default function DirectionProfessionnelsPage() {
                       <tr>
                         <th className={tableHeadCellClass}>Nom</th>
                         <th className={tableHeadCellClass}>Email</th>
+                        <th className={tableHeadCellClass}>Accès plateforme</th>
                         <th className={tableHeadCellClass}>Statut</th>
                         <th className={tableHeadCellClass}>Commentaire demande</th>
                         <th className={tableHeadCellClass}>Actions</th>
@@ -778,7 +986,7 @@ export default function DirectionProfessionnelsPage() {
                     <tbody className={tableBodyClass}>
                       {visibleArchivedRows.length === 0 ? (
                         <tr>
-                          <td colSpan={5} className="px-4 py-8">
+                          <td colSpan={6} className="px-4 py-8">
                             <EmptyState
                               title="Aucun professionnel archivé"
                               description="Les professionnels désactivés apparaîtront ici."
@@ -798,15 +1006,54 @@ export default function DirectionProfessionnelsPage() {
                             </td>
                             <td className={tableCellClass}>{row.email}</td>
                             <td className={tableCellClass}>
+                              <Badge
+                                tone={row.platformAccessEnabled ? 'success' : 'muted'}
+                              >
+                                {row.platformAccessEnabled
+                                  ? 'Accès plateforme activé'
+                                  : 'Suivi direction seulement'}
+                              </Badge>
+                            </td>
+                            <td className={tableCellClass}>
                               <Badge tone="muted">Inactif</Badge>
                             </td>
                             <td className={tableCellClass}>{row.requestComment}</td>
                             <td className={tableCellClass}>
                               <div className="flex flex-wrap gap-2">
+                                {row.platformAccessEnabled ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDisablePlatformAccess(row)}
+                                    disabled={
+                                      updatingPlatformAccessProfessionalId === row.id
+                                    }
+                                    className="inline-flex min-h-9 items-center justify-center rounded-xl border border-[#d6c7aa] bg-white px-3 py-2 text-xs font-medium text-[#6d3f1f] transition hover:bg-[#f7efe7] disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {updatingPlatformAccessProfessionalId === row.id
+                                      ? 'Mise à jour...'
+                                      : 'Désactiver accès'}
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEnablePlatformAccess(row)}
+                                    disabled={
+                                      updatingPlatformAccessProfessionalId === row.id
+                                    }
+                                    className="inline-flex min-h-9 items-center justify-center rounded-xl border border-[#d6c7aa] bg-[#f1ead9] px-3 py-2 text-xs font-medium text-[#6d3f1f] transition hover:bg-[#eadfc8] disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {updatingPlatformAccessProfessionalId === row.id
+                                      ? 'Activation...'
+                                      : 'Activer accès plateforme'}
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   onClick={() => handleResendAccess(row)}
-                                  disabled={resendingAccessProfessionalId === row.id}
+                                  disabled={
+                                    !row.platformAccessEnabled ||
+                                    resendingAccessProfessionalId === row.id
+                                  }
                                   className="inline-flex min-h-9 items-center justify-center rounded-xl border border-[#d6c7aa] bg-[#f1ead9] px-3 py-2 text-xs font-medium text-[#6d3f1f] transition hover:bg-[#eadfc8] disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   {resendingAccessProfessionalId === row.id

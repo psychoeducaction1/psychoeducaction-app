@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
 
   let profileQuery = supabaseServer
     .from('profiles')
-    .select('id, email, role, is_active')
+    .select('id, email, role, is_active, platform_access_enabled')
     .eq('role', 'professionnel')
 
   if (professionalId) {
@@ -127,6 +127,13 @@ export async function POST(request: NextRequest) {
 
   if (!professionalProfile?.email) {
     return jsonResponse({ error: 'Profil professionnel introuvable.' }, 404)
+  }
+
+  if (professionalProfile.platform_access_enabled === false) {
+    return jsonResponse(
+      { error: "L'accès plateforme est désactivé pour ce professionnel." },
+      400
+    )
   }
 
   let supabaseAdmin

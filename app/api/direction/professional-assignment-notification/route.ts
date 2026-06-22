@@ -10,6 +10,7 @@ type ProfileRow = {
   full_name: string | null
   email: string | null
   role: string | null
+  platform_access_enabled: boolean | null
 }
 
 function jsonResponse(body: object, status: number) {
@@ -200,7 +201,7 @@ export async function POST(request: NextRequest) {
   const { data: professionalProfile, error: professionalProfileError } =
     await supabaseServer
       .from('profiles')
-      .select('full_name, email, role')
+      .select('full_name, email, role, platform_access_enabled')
       .eq('id', professionalId)
       .limit(1)
       .maybeSingle()
@@ -214,11 +215,24 @@ export async function POST(request: NextRequest) {
   console.log('[professional-assignment-notification] Profil professionnel:', {
     professionalId,
     role: profile?.role ?? null,
+    platformAccessEnabled: profile?.platform_access_enabled ?? null,
     hasEmail: Boolean(profile?.email?.trim()),
   })
 
   if (profile?.role !== 'professionnel' || !profile.email?.trim()) {
     return jsonResponse({ error: 'Profil professionnel introuvable.' }, 404)
+  }
+
+  if (profile.platform_access_enabled === false) {
+    return jsonResponse(
+      {
+        skipped: true,
+        reason: 'platform_access_disabled',
+        pendingBefore: previousPendingCount,
+        pendingAfter,
+      },
+      200
+    )
   }
 
   const professionalName =
