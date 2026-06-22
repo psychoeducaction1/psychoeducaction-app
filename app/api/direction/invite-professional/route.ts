@@ -152,16 +152,37 @@ export async function POST(request: NextRequest) {
   }
 
   const redirectTo = `${appUrl.replace(/\/$/, '')}/auth/invitation`
+  const invitationOptions = {
+    data: {
+      full_name: fullName,
+      role: 'professionnel',
+    },
+    redirectTo,
+  }
+
+  console.log('[invite-professional] inviteUserByEmail params', {
+    email,
+    options: invitationOptions,
+  })
+
   const { data: invitationData, error: invitationError } =
-    await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
-      data: {
-        full_name: fullName,
-        role: 'professionnel',
-      },
-      redirectTo,
-    })
+    await supabaseAdmin.auth.admin.inviteUserByEmail(email, invitationOptions)
+
+  console.log('[invite-professional] inviteUserByEmail data', invitationData)
 
   if (invitationError) {
+    const invitationErrorDetails = invitationError as {
+      status?: unknown
+      code?: unknown
+    }
+
+    console.error('[invite-professional] inviteUserByEmail error', {
+      error: invitationError,
+      message: invitationError.message,
+      status: invitationErrorDetails.status,
+      code: invitationErrorDetails.code,
+    })
+
     return jsonResponse(
       { error: invitationError.message },
       isAlreadyExistingUserError(invitationError.message) ? 409 : 500
