@@ -52,7 +52,10 @@ type RequestCardData = {
   pendingCount: number
   durationLabel: string
   status: RequestStatus
+  isUnlinkedAssignmentCard?: boolean
 }
+
+const UNLINKED_ASSIGNMENTS_CARD_ID = 'assignations-sans-demande-liee'
 
 function parseDate(value: string | null | undefined): Date | null {
   if (!value) return null
@@ -293,16 +296,20 @@ export default function ProfessionnelHistoriquePage() {
 
   const requestCards = useMemo<RequestCardData[]>(() => {
     const clientsByRequestId = new Map<string, AssignedClientHistoryRow[]>()
+    const unlinkedClients: AssignedClientHistoryRow[] = []
 
     clients.forEach((client) => {
-      if (!client.assignment_request_id) return
+      if (!client.assignment_request_id) {
+        unlinkedClients.push(client)
+        return
+      }
 
       const requestClients = clientsByRequestId.get(client.assignment_request_id) ?? []
       requestClients.push(client)
       clientsByRequestId.set(client.assignment_request_id, requestClients)
     })
 
-    return [...requests]
+    const cards: RequestCardData[] = [...requests]
       .map((request) => {
         const requestClients = clientsByRequestId.get(request.id) ?? []
         const activeAssignmentCount = getUsedAssignmentCount(requestClients)
@@ -354,7 +361,55 @@ export default function ProfessionnelHistoriquePage() {
         const secondDate = secondCard.createdDate?.getTime() ?? 0
         return secondDate - firstDate
       })
-  }, [clients, requests])
+
+    if (unlinkedClients.length > 0) {
+      const serviceTakenCount = unlinkedClients.filter(
+        (client) => client.is_active === true
+      ).length
+      const serviceNotTakenCount = unlinkedClients.filter(
+        (client) => client.is_active === false
+      ).length
+      const pendingCount = unlinkedClients.filter(
+        (client) => client.is_active === null
+      ).length
+      const latestAssignedDate =
+        unlinkedClients
+          .map(getClientDate)
+          .filter((date): date is Date => Boolean(date))
+          .sort((firstDate, secondDate) => secondDate.getTime() - firstDate.getTime())[0] ??
+        null
+      const status: RequestStatus = pendingCount > 0 ? 'Active' : 'Completee'
+
+      cards.unshift({
+        request: {
+          id: UNLINKED_ASSIGNMENTS_CARD_ID,
+          professional_id: currentUserId,
+          is_active: pendingCount > 0,
+          requested_count: unlinkedClients.length,
+          assigned_count: serviceTakenCount,
+          remaining_count: pendingCount,
+          request_comment: 'Assignations créées sans demande initiale.',
+          created_at: latestAssignedDate?.toISOString() ?? null,
+        },
+        clients: unlinkedClients,
+        createdDate: latestAssignedDate,
+        completionDate: null,
+        activeAssignmentCount: serviceTakenCount,
+        remainingCount: pendingCount,
+        serviceTakenCount,
+        serviceNotTakenCount,
+        pendingCount,
+        durationLabel:
+          status === 'Active'
+            ? `${pendingCount} assignation${pendingCount > 1 ? 's' : ''} en attente`
+            : 'Toutes les assignations sont traitées',
+        status,
+        isUnlinkedAssignmentCard: true,
+      })
+    }
+
+    return cards
+  }, [clients, currentUserId, requests])
 
   const toggleRequest = (requestId: string) => {
     setExpandedRequestIds((currentIds) => ({
@@ -488,6 +543,8 @@ export default function ProfessionnelHistoriquePage() {
                   const requestedCount = card.request.requested_count ?? 0
                   const isCompleted = card.status === 'Completee'
                   const isExpanded = expandedRequestIds[card.request.id] === true
+                  const isUnlinkedAssignmentCard =
+                    card.isUnlinkedAssignmentCard === true
 
                   return (
                     <article
@@ -508,10 +565,18 @@ export default function ProfessionnelHistoriquePage() {
                             </span>
                           </div>
                           <h2 className="mt-3 text-base font-semibold text-[#332820]">
-                            Demande du {formatDate(card.createdDate)}
+                            {isUnlinkedAssignmentCard
+                              ? 'Assignations sans demande liée'
+                              : `Demande du ${formatDate(card.createdDate)}`}
                           </h2>
                           <p className="mt-1 text-sm text-[#7a6859]">
-                            Complétion estimée : {formatDate(card.completionDate)}
+                            {isUnlinkedAssignmentCard
+                              ? `Dernière assignation : ${formatDate(
+                                  card.createdDate
+                                )}`
+                              : `Complétion estimée : ${formatDate(
+                                  card.completionDate
+                                )}`}
                           </p>
                         </div>
                         <button
@@ -528,7 +593,7 @@ export default function ProfessionnelHistoriquePage() {
                       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                         <div className="rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-3">
                           <p className="text-xs font-medium uppercase text-[#8a6f5d]">
-                            Demande
+                            {isUnlinkedAssignmentCard ? 'Assignations' : 'Demande'}
                           </p>
                           <p className="mt-1 text-xl font-semibold text-[#332820]">
                             {requestedCount}

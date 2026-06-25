@@ -151,8 +151,18 @@ export default function ProfessionnelClientsPage() {
           }).isActive
         ) ?? null
 
+      const activeRequestClients = activeRequest
+        ? clientsByRequestId.get(activeRequest.id) ?? []
+        : []
+      const unlinkedClientsToProcess = loadedClients.filter(
+        (client) =>
+          !client.assignment_request_id &&
+          (client.is_active === null ||
+            (client.is_active === false && !client.closure_reason?.trim()))
+      )
+
       setCurrentRequestId(activeRequest?.id ?? null)
-      setClients(activeRequest ? clientsByRequestId.get(activeRequest.id) ?? [] : [])
+      setClients([...unlinkedClientsToProcess, ...activeRequestClients])
       setLoading(false)
     }
 
@@ -253,7 +263,7 @@ export default function ProfessionnelClientsPage() {
         : currentClient
     )
 
-    if (!currentRequestId) {
+    if (!client.assignment_request_id || !currentRequestId) {
       setClients(updatedClients)
       if (waitingListSyncError) {
         setClientErrors((currentErrors) => ({
@@ -285,7 +295,10 @@ export default function ProfessionnelClientsPage() {
     }
 
     if (request) {
-      const nextAssignedCount = getUsedAssignmentCount(updatedClients)
+      const requestClients = updatedClients.filter(
+        (currentClient) => currentClient.assignment_request_id === currentRequestId
+      )
+      const nextAssignedCount = getUsedAssignmentCount(requestClients)
       const nextRemainingCount = getRemainingAssignmentCount(
         request.requested_count ?? 0,
         nextAssignedCount

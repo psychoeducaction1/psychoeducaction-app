@@ -51,6 +51,7 @@ type ClientStats = {
   total: number
   active: number
   noResponse: number
+  pending: number
   usedAssignments: number
 }
 
@@ -67,6 +68,7 @@ type ProfessionalRow = {
   requestedCount: number
   assignedCount: number
   remainingCount: number
+  pendingClients: number
   activeClients: number
   noResponseClients: number
   requestComment: string
@@ -190,30 +192,64 @@ export default function DirectionProfessionnelsPage() {
       const assignmentRequests = (assignmentRequestsResponse.data ?? []) as AssignmentRequest[]
 
       const clientStatsByRequestId = new Map<string, ClientStats>()
+      const clientStatsByProfessionalId = new Map<string, ClientStats>()
 
       assignedClients.forEach((client) => {
-        if (!client.assignment_request_id) return
+        if (!client.professional_id) return
 
-        const currentStats = clientStatsByRequestId.get(client.assignment_request_id) ?? {
+        const currentProfessionalStats = clientStatsByProfessionalId.get(
+          client.professional_id
+        ) ?? {
           total: 0,
           active: 0,
           noResponse: 0,
+          pending: 0,
           usedAssignments: 0,
         }
 
-        currentStats.total += 1
+        currentProfessionalStats.total += 1
 
         if (client.is_active === true) {
-          currentStats.usedAssignments += 1
+          currentProfessionalStats.usedAssignments += 1
         }
 
         if (client.is_active === true) {
-          currentStats.active += 1
+          currentProfessionalStats.active += 1
         } else if (client.is_active === false) {
-          currentStats.noResponse += 1
+          currentProfessionalStats.noResponse += 1
+        } else {
+          currentProfessionalStats.pending += 1
         }
 
-        clientStatsByRequestId.set(client.assignment_request_id, currentStats)
+        clientStatsByProfessionalId.set(
+          client.professional_id,
+          currentProfessionalStats
+        )
+
+        if (!client.assignment_request_id) return
+
+        const currentRequestStats = clientStatsByRequestId.get(
+          client.assignment_request_id
+        ) ?? {
+          total: 0,
+          active: 0,
+          noResponse: 0,
+          pending: 0,
+          usedAssignments: 0,
+        }
+
+        currentRequestStats.total += 1
+
+        if (client.is_active === true) {
+          currentRequestStats.usedAssignments += 1
+          currentRequestStats.active += 1
+        } else if (client.is_active === false) {
+          currentRequestStats.noResponse += 1
+        } else {
+          currentRequestStats.pending += 1
+        }
+
+        clientStatsByRequestId.set(client.assignment_request_id, currentRequestStats)
       })
 
       const requestsByProfessionalId = new Map<string, AssignmentRequest[]>()
@@ -226,23 +262,33 @@ export default function DirectionProfessionnelsPage() {
 
       const nextRows = professionals.map((profile) => {
         const professionalRequests = requestsByProfessionalId.get(profile.id) ?? []
+        const getRequestMetrics = (currentRequest: AssignmentRequest) => {
+          const requestStats = clientStatsByRequestId.get(currentRequest.id)
+
+          return getAssignmentRequestMetrics({
+            isActive: currentRequest.is_active,
+            requestedCount: currentRequest.requested_count,
+            acceptedCount: requestStats?.usedAssignments ?? 0,
+            remainingCount: currentRequest.remaining_count,
+          })
+        }
         const request =
           professionalRequests.find((currentRequest) =>
-            getAssignmentRequestMetrics({
-              isActive: currentRequest.is_active,
-              requestedCount: currentRequest.requested_count,
-              acceptedCount: currentRequest.assigned_count,
-              remainingCount: currentRequest.remaining_count,
-            }).isActive
+            getRequestMetrics(currentRequest).isActive
           ) ?? professionalRequests[0]
-        const clientStats = request ? clientStatsByRequestId.get(request.id) : undefined
+        const requestClientStats = request
+          ? clientStatsByRequestId.get(request.id)
+          : undefined
+        const professionalClientStats = clientStatsByProfessionalId.get(profile.id)
 
-        const requestMetrics = getAssignmentRequestMetrics({
-          isActive: request?.is_active,
-          requestedCount: request?.requested_count,
-          acceptedCount: request?.assigned_count,
-          remainingCount: request?.remaining_count,
-        })
+        const requestMetrics = request
+          ? getRequestMetrics(request)
+          : getAssignmentRequestMetrics({
+              isActive: null,
+              requestedCount: null,
+              acceptedCount: null,
+              remainingCount: null,
+            })
 
         return {
           id: profile.id,
@@ -255,10 +301,18 @@ export default function DirectionProfessionnelsPage() {
           platformAccessEnabled: profile.platform_access_enabled !== false,
           requestActive: requestMetrics.isActive,
           requestedCount: requestMetrics.requestedCount,
-          assignedCount: requestMetrics.acceptedCount,
-          remainingCount: requestMetrics.isActive ? requestMetrics.remainingCount : 0,
-          activeClients: clientStats?.active ?? 0,
-          noResponseClients: clientStats?.noResponse ?? 0,
+          assignedCount: requestClientStats?.usedAssignments ?? 0,
+          remainingCount: requestMetrics.isActive
+            ? Math.max(
+                requestMetrics.requestedCount -
+                  (requestClientStats?.usedAssignments ?? 0) -
+                  (requestClientStats?.pending ?? 0),
+                0
+              )
+            : 0,
+          pendingClients: professionalClientStats?.pending ?? 0,
+          activeClients: professionalClientStats?.active ?? 0,
+          noResponseClients: professionalClientStats?.noResponse ?? 0,
           requestComment: request?.request_comment?.trim() || '-',
         }
       })
@@ -831,6 +885,7 @@ export default function DirectionProfessionnelsPage() {
                       <th className={tableHeadCellClass}>Accès plateforme</th>
                       <th className={tableHeadCellClass}>Statut demande</th>
                       <th className={tableHeadCellClass}>Clients demandes</th>
+                      <th className={tableHeadCellClass}>En attente</th>
                       <th className={tableHeadCellClass}>Services pris</th>
                       <th className={tableHeadCellClass}>Places restantes</th>
                       <th className={tableHeadCellClass}>Services non pris</th>
@@ -841,7 +896,7 @@ export default function DirectionProfessionnelsPage() {
                   <tbody className={tableBodyClass}>
                     {visibleRows.length === 0 ? (
                       <tr>
-                        <td colSpan={10} className="px-4 py-8">
+                        <td colSpan={11} className="px-4 py-8">
                           <EmptyState
                             title="Aucun professionnel trouvé"
                             description="Ajustez la recherche pour élargir la liste."
@@ -882,7 +937,14 @@ export default function DirectionProfessionnelsPage() {
                               </Badge>
                             </td>
                             <td className={tableCellClass}>{row.requestedCount}</td>
-                            <td className={tableCellClass}>{row.assignedCount}</td>
+                            <td className={tableCellClass}>
+                              <Badge
+                                tone={row.pendingClients > 0 ? 'warning' : 'muted'}
+                              >
+                                {row.pendingClients} à confirmer
+                              </Badge>
+                            </td>
+                            <td className={tableCellClass}>{row.activeClients}</td>
                             <td className={tableCellClass}>
                               <Badge
                                 tone={row.remainingCount > 0 ? 'warning' : 'success'}

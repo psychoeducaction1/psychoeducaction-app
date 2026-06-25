@@ -169,26 +169,28 @@ export default function ProfessionnelPage() {
 
       const activeRequest =
         requests.find(
-          (currentRequest) =>
-            getAssignmentRequestMetrics({
+          (currentRequest) => {
+            const requestClients = clientsByRequestId.get(currentRequest.id) ?? []
+
+            return getAssignmentRequestMetrics({
               isActive: currentRequest.is_active,
               requestedCount: currentRequest.requested_count,
-              acceptedCount: currentRequest.assigned_count,
+              acceptedCount: requestClients.filter(
+                (client) => client.is_active === true
+              ).length,
               remainingCount: currentRequest.remaining_count,
             }).isActive
+          }
         ) ?? null
-      const activeClients = activeRequest
-        ? clientsByRequestId.get(activeRequest.id) ?? []
-        : []
 
       if (!activeRequest) {
-        setClients([])
+        setClients(loadedClients)
         setRequest(null)
         setLoading(false)
         return
       }
 
-      setClients(activeClients)
+      setClients(loadedClients)
       setRequest(activeRequest)
       setLoading(false)
     }
@@ -197,6 +199,16 @@ export default function ProfessionnelPage() {
   }, [router])
 
   const clientsToProcess = clients.filter((client) => client.is_active === null)
+  const serviceTakenClients = clients.filter((client) => client.is_active === true)
+  const serviceNotTakenClients = clients.filter(
+    (client) => client.is_active === false
+  )
+  const requestClients = request
+    ? clients.filter((client) => client.assignment_request_id === request.id)
+    : []
+  const requestServicesTakenCount = requestClients.filter(
+    (client) => client.is_active === true
+  ).length
   const requestMetrics = getAssignmentRequestMetrics({
     isActive: request?.is_active,
     requestedCount: request?.requested_count,
@@ -204,8 +216,10 @@ export default function ProfessionnelPage() {
     remainingCount: request?.remaining_count,
   })
   const requestedCount = requestMetrics.requestedCount
-  const assignedCount = requestMetrics.acceptedCount
-  const remainingCount = requestMetrics.isActive ? requestMetrics.remainingCount : 0
+  const assignedCount = requestServicesTakenCount
+  const remainingCount = requestMetrics.isActive
+    ? Math.max(requestMetrics.requestedCount - requestServicesTakenCount, 0)
+    : 0
   const requestStatus = getAssignmentRequestStatus({
     isActive: requestMetrics.isActive,
     remainingCount,
@@ -262,6 +276,22 @@ export default function ProfessionnelPage() {
       priority: remainingCount > 0 ? 'high' : 'default',
       icon: ClipboardList,
     },
+    {
+      label: 'Services pris',
+      value: serviceTakenClients.length,
+      helper: 'Tous les services confirmés',
+      tone: 'success',
+      priority: 'subtle',
+      icon: ClipboardList,
+    },
+    {
+      label: 'Services non pris',
+      value: serviceNotTakenClients.length,
+      helper: 'Tous les services refusés',
+      tone: 'neutral',
+      priority: 'subtle',
+      icon: ClipboardList,
+    },
   ]
 
   return (
@@ -310,7 +340,7 @@ export default function ProfessionnelPage() {
                 <EmptyState title="Aucune alerte pour le moment." />
               )}
 
-              <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
                 {stats.map((stat) =>
                   stat.href ? (
                     <Link

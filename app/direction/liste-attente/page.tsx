@@ -59,6 +59,7 @@ type ActiveAssignmentRequest = {
   remaining_count: number | null
 }
 
+
 type WaitingListForm = {
   status: string
   priority_level: string
@@ -360,6 +361,8 @@ export default function DirectionListeAttentePage() {
   const [historyPage, setHistoryPage] = useState(0)
   const [searchQuery, setSearchQuery] = useState('')
   const [expandedMotifIds, setExpandedMotifIds] = useState<Record<string, boolean>>({})
+  const [notifyProfessional, setNotifyProfessional] = useState(false)
+  const [notifyClient, setNotifyClient] = useState(false)
 
   useEffect(() => {
     const loadWaitingList = async () => {
@@ -400,7 +403,8 @@ export default function DirectionListeAttentePage() {
         return
       }
 
-      setClients(sortClientsByContactDate((data ?? []) as WaitingListClient[]))
+      const loadedClients = (data ?? []) as WaitingListClient[]
+      setClients(sortClientsByContactDate(loadedClients))
 
       const { data: professionalsData, error: professionalsError } = await supabase
         .from('profiles')
@@ -515,6 +519,8 @@ export default function DirectionListeAttentePage() {
     setShowForm(false)
     setFormError('')
     setFormMessage('')
+    setNotifyProfessional(false)
+    setNotifyClient(false)
     setSelectedProfessionalId(
       client.assigned_professional_id ||
         selectedProfessionalId ||
@@ -660,7 +666,7 @@ export default function DirectionListeAttentePage() {
           }
         | null
 
-      console.log('[client-assignment-notification] RÃ©ponse route:', {
+      console.log('[client-assignment-notification] Réponse route:', {
         assignedClientId,
         status: response.status,
         ok: response.ok,
@@ -670,13 +676,13 @@ export default function DirectionListeAttentePage() {
 
       if (!response.ok) {
         console.error(
-          "[client-assignment-notification] Ã‰chec de l'envoi:",
+          "[client-assignment-notification] Échec de l'envoi:",
           result?.error ?? response.statusText
         )
       }
     } catch (notificationError) {
       console.error(
-        "[client-assignment-notification] Erreur rÃ©seau pendant l'envoi:",
+        "[client-assignment-notification] Erreur réseau pendant l'envoi:",
         notificationError
       )
     }
@@ -840,13 +846,6 @@ export default function DirectionListeAttentePage() {
         }).isActive
     )
 
-    if (!assignmentRequest) {
-      setFormError(
-        'Ce professionnel n’a aucune demande active avec place restante.'
-      )
-      return
-    }
-
     const { firstName, lastName } = splitClientName(client.client_name)
     const requesterName = nullableText(
       [client.first_requester_name, client.second_requester_name]
@@ -863,7 +862,7 @@ export default function DirectionListeAttentePage() {
     const { data: insertedAssignment, error: insertError } = await supabase
       .from('assigned_clients')
       .insert({
-        assignment_request_id: assignmentRequest.id,
+        assignment_request_id: assignmentRequest?.id ?? null,
         waiting_list_client_id: client.id,
         professional_id: selectedProfessionalId,
         first_name: firstName,
@@ -893,7 +892,7 @@ export default function DirectionListeAttentePage() {
 
     if (!insertedAssignment?.id) {
       setSavingAssignment(false)
-      setFormError("L'assignation a Ã©tÃ© crÃ©Ã©e, mais son identifiant est introuvable.")
+      setFormError("L'assignation a été créée, mais son identifiant est introuvable.")
       return
     }
 
@@ -929,22 +928,20 @@ export default function DirectionListeAttentePage() {
     }
 
     setAssigningClientId(null)
+    setNotifyProfessional(false)
+    setNotifyClient(false)
     setFormMessage('Client assigné au professionnel avec succès.')
 
-    void sendProfessionalAssignmentNotification({
-      professionalId: selectedProfessionalId,
-      previousPendingCount,
-    })
+    if (notifyProfessional) {
+      void sendProfessionalAssignmentNotification({
+        professionalId: selectedProfessionalId,
+        previousPendingCount,
+      })
+    }
 
-    if (client.contact_email?.trim()) {
-      const shouldNotifyClient = window.confirm(
-        "Voulez-vous envoyer un courriel au client pour l'informer de l'assignation à ce professionnel ?"
-      )
-
-      if (shouldNotifyClient) {
-        void sendClientAssignmentNotification(insertedAssignment.id)
-      }
-    } else {
+    if (notifyClient && client.contact_email?.trim()) {
+      void sendClientAssignmentNotification(insertedAssignment.id)
+    } else if (notifyClient) {
       console.log('[client-assignment-notification] Courriel client absent.', {
         assignedClientId: insertedAssignment.id,
       })
@@ -968,6 +965,24 @@ export default function DirectionListeAttentePage() {
   )
   const historyClients = filteredClients.filter((client) =>
     ['active', 'closed', 'blacklisted'].includes(client.status ?? '')
+  )
+  const selectedProfessionalHasActiveRequest = activeRequests.some(
+    (request) =>
+      request.professional_id === selectedProfessionalId &&
+      getAssignmentRequestMetrics({
+        isActive: request.is_active,
+        requestedCount: request.requested_count,
+        acceptedCount: request.assigned_count,
+        remainingCount: request.remaining_count,
+      }).isActive
+  )
+  const selectedProfessionalHasNoActiveRequest =
+    Boolean(selectedProfessionalId) && !selectedProfessionalHasActiveRequest
+  const selectedAssignmentClient = assigningClientId
+    ? clients.find((client) => client.id === assigningClientId) ?? null
+    : null
+  const selectedAssignmentClientHasEmail = Boolean(
+    selectedAssignmentClient?.contact_email?.trim()
   )
   const getPageCount = (totalCount: number, pageSize = CLIENTS_PER_PAGE) =>
     Math.max(Math.ceil(totalCount / pageSize), 1)
@@ -1582,7 +1597,8 @@ export default function DirectionListeAttentePage() {
                       Assigner le client
                     </h2>
                     <p className="mt-1 text-sm text-[#7a6859]">
-                      Choisissez un professionnel actif avec une demande ouverte.
+                      Choisissez un professionnel actif. Sans demande ouverte,
+                      l’assignation sera créée sans demande liée.
                     </p>
                   </div>
                   <form onSubmit={handleAssignClient} className="mt-5 space-y-4">
@@ -1606,6 +1622,46 @@ export default function DirectionListeAttentePage() {
                         )}
                       </select>
                     </label>
+                    {selectedProfessionalHasNoActiveRequest && (
+                      <p className="rounded-xl border border-[#eadfd2] bg-[#fffaf4] px-4 py-3 text-sm text-[#7a6859]">
+                        Ce professionnel n’a pas de demande active. L’assignation
+                        sera créée sans demande liée.
+                      </p>
+                    )}
+                    <div className="rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-4">
+                      <p className="text-sm font-semibold text-[#332820]">
+                        Souhaitez-vous envoyer les notifications ?
+                      </p>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <label className="flex items-start gap-2 text-sm text-[#6c5a4d]">
+                          <input
+                            type="checkbox"
+                            checked={notifyProfessional}
+                            onChange={(event) =>
+                              setNotifyProfessional(event.target.checked)
+                            }
+                            className="mt-0.5 h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
+                          />
+                          Envoyer un courriel au professionnel
+                        </label>
+                        <label className="flex items-start gap-2 text-sm text-[#6c5a4d]">
+                          <input
+                            type="checkbox"
+                            checked={notifyClient}
+                            disabled={!selectedAssignmentClientHasEmail}
+                            onChange={(event) => setNotifyClient(event.target.checked)}
+                            className="mt-0.5 h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633] disabled:opacity-50"
+                          />
+                          Envoyer un courriel au client
+                        </label>
+                      </div>
+                      {!selectedAssignmentClientHasEmail && (
+                        <p className="mt-2 text-xs text-[#8a6f5d]">
+                          Courriel client absent : la notification client est
+                          désactivée.
+                        </p>
+                      )}
+                    </div>
                     <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
                       <button
                         type="button"
@@ -1623,7 +1679,7 @@ export default function DirectionListeAttentePage() {
                         className={buttonClass('primary')}
                         disabled={savingAssignment || professionals.length === 0}
                       >
-                        {savingAssignment ? 'Assignation...' : 'Confirmer l’assignation'}
+                        {savingAssignment ? 'Assignation...' : 'Créer l’assignation'}
                       </button>
                     </div>
                   </form>

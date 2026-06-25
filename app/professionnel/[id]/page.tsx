@@ -334,6 +334,8 @@ export default function ProfessionnelDetailPage() {
   const [savingClient, setSavingClient] = useState(false);
   const [clientMessage, setClientMessage] = useState<string | null>(null);
   const [clientError, setClientError] = useState<string | null>(null);
+  const [notifyProfessional, setNotifyProfessional] = useState(false);
+  const [notifyClient, setNotifyClient] = useState(false);
 
   const professionalName = useMemo(
     () => profile?.full_name?.trim() || "Professionnel",
@@ -421,16 +423,6 @@ export default function ProfessionnelDetailPage() {
         const loadedRequests =
           (requestsResponse.data ?? []) as AssignmentRequest[];
         const loadedClients = (clientsResponse.data ?? []) as AssignedClient[];
-        const clientsByRequestId = new Map<string, AssignedClient[]>();
-
-        loadedClients.forEach((client) => {
-          if (!client.assignment_request_id) return;
-
-          const requestClients =
-            clientsByRequestId.get(client.assignment_request_id) ?? [];
-          requestClients.push(client);
-          clientsByRequestId.set(client.assignment_request_id, requestClients);
-        });
 
         const activeRequest =
           loadedRequests.find((request) => {
@@ -441,9 +433,6 @@ export default function ProfessionnelDetailPage() {
               remainingCount: request.remaining_count,
             }).isActive;
           }) ?? null;
-        const activeRequestClients = activeRequest
-          ? clientsByRequestId.get(activeRequest.id) ?? []
-          : [];
 
         const loadedProfile = profileResponse.data as Profile;
 
@@ -463,7 +452,7 @@ export default function ProfessionnelDetailPage() {
           pref_notes: loadedProfile.pref_notes ?? "",
         });
         setAssignmentRequest(activeRequest);
-        setAssignedClients(activeRequestClients);
+        setAssignedClients(loadedClients);
         setHistoricalClients(loadedClients);
         setWaitingListClients(
           ((waitingListResponse.data ?? []) as WaitingListClient[]).sort(
@@ -749,27 +738,6 @@ export default function ProfessionnelDetailPage() {
     setClientMessage(null);
     setClientError(null);
 
-    if (!assignmentRequest) {
-      setClientError(
-        "Aucune demande active avec place restante pour ce professionnel.",
-      );
-      return;
-    }
-
-    const currentRequestMetrics = getAssignmentRequestMetrics({
-      isActive: assignmentRequest.is_active,
-      requestedCount: assignmentRequest.requested_count,
-      acceptedCount: assignmentRequest.assigned_count,
-      remainingCount: assignmentRequest.remaining_count,
-    });
-
-    if (!currentRequestMetrics.isActive) {
-      setClientError(
-        "La demande actuelle est complétée. Aucune place restante à assigner.",
-      );
-      return;
-    }
-
     setSavingClient(true);
 
     try {
@@ -781,7 +749,7 @@ export default function ProfessionnelDetailPage() {
       const { data: insertedAssignment, error: insertError } = await supabase
         .from("assigned_clients")
         .insert({
-          assignment_request_id: assignmentRequest.id,
+          assignment_request_id: assignmentRequest?.id ?? null,
           waiting_list_client_id: client.id,
           professional_id: professionalId,
           first_name: firstName,
@@ -825,21 +793,20 @@ export default function ProfessionnelDetailPage() {
         currentClients.filter((currentClient) => currentClient.id !== client.id),
       );
       setClientMessage("Client assigné avec succès.");
+      setNotifyProfessional(false);
+      setNotifyClient(false);
       await loadProfessionalProfile({ showLoading: false });
-      void sendProfessionalAssignmentNotification({
-        selectedProfessionalId: professionalId,
-        previousPendingCount,
-      });
 
-      if (client.contact_email?.trim()) {
-        const shouldNotifyClient = window.confirm(
-          "Voulez-vous envoyer un courriel au client pour l'informer de l'assignation à ce professionnel ?",
-        );
+      if (notifyProfessional) {
+        void sendProfessionalAssignmentNotification({
+          selectedProfessionalId: professionalId,
+          previousPendingCount,
+        });
+      }
 
-        if (shouldNotifyClient) {
-          void sendClientAssignmentNotification(insertedAssignment.id);
-        }
-      } else {
+      if (notifyClient && client.contact_email?.trim()) {
+        void sendClientAssignmentNotification(insertedAssignment.id);
+      } else if (notifyClient) {
         console.log("[client-assignment-notification] Courriel client absent.", {
           assignedClientId: insertedAssignment.id,
         });
@@ -851,7 +818,58 @@ export default function ProfessionnelDetailPage() {
     }
   };
 
-  const clientsWithService = assignedClients.filter(
+  const handleAssignmentStatusChange = async (
+    client: AssignedClient,
+    nextStatus: string,
+  ) => {
+    const nextIsActive =
+      nextStatus === "true" ? true : nextStatus === "false" ? false : null;
+    const nextWaitingListStatus =
+      nextIsActive === true
+        ? "active"
+        : nextIsActive === false
+          ? "closed"
+          : "assigned";
+
+    setClientMessage(null);
+    setClientError(null);
+
+    try {
+      const { error: updateAssignmentError } = await supabase
+        .from("assigned_clients")
+        .update({ is_active: nextIsActive })
+        .eq("id", client.id);
+
+      if (updateAssignmentError) throw updateAssignmentError;
+
+      if (client.waiting_list_client_id) {
+        const { error: updateWaitingListError } = await supabase
+          .from("waiting_list_clients")
+          .update({ status: nextWaitingListStatus })
+          .eq("id", client.waiting_list_client_id);
+
+        if (updateWaitingListError) throw updateWaitingListError;
+      }
+
+      const updateClient = (currentClient: AssignedClient) =>
+        currentClient.id === client.id
+          ? { ...currentClient, is_active: nextIsActive }
+          : currentClient;
+
+      setHistoricalClients((currentClients) => currentClients.map(updateClient));
+      setAssignedClients((currentClients) => currentClients.map(updateClient));
+      setClientMessage("Statut de l’assignation mis à jour.");
+    } catch (caughtError: unknown) {
+      setClientError(getErrorMessage(caughtError));
+    }
+  };
+
+  const activeRequestClients = assignmentRequest
+    ? assignedClients.filter(
+        (client) => client.assignment_request_id === assignmentRequest.id,
+      )
+    : [];
+  const clientsWithService = activeRequestClients.filter(
     (client) => client.is_active === true,
   );
   const clientsPendingService = assignedClients.filter(
@@ -934,7 +952,7 @@ export default function ProfessionnelDetailPage() {
     ): alert is { title: string; description: string; tone: BadgeTone } =>
       Boolean(alert),
   );
-  const waitingListAssignmentSection = displayAssignmentRequest ? (
+  const waitingListAssignmentSection = (
     <div className="rounded-2xl border border-[#eadfd2] bg-[#fbf6ef] p-5">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
@@ -955,6 +973,39 @@ export default function ProfessionnelDetailPage() {
             className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
           />
         </label>
+      </div>
+
+      {!displayAssignmentRequest && (
+        <p className="mt-4 rounded-xl border border-[#eadfd2] bg-[#fffaf4] px-4 py-3 text-sm text-[#7a6859]">
+          Ce professionnel n’a pas de demande active. L’assignation sera créée
+          sans demande liée.
+        </p>
+      )}
+
+      <div className="mt-4 rounded-xl border border-[#eadfd2] bg-[#fffdf9] p-4">
+        <p className="text-sm font-semibold text-[#332820]">
+          Souhaitez-vous envoyer les notifications ?
+        </p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <label className="flex items-start gap-2 text-sm text-[#6c5a4d]">
+            <input
+              type="checkbox"
+              checked={notifyProfessional}
+              onChange={(event) => setNotifyProfessional(event.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
+            />
+            Envoyer un courriel au professionnel
+          </label>
+          <label className="flex items-start gap-2 text-sm text-[#6c5a4d]">
+            <input
+              type="checkbox"
+              checked={notifyClient}
+              onChange={(event) => setNotifyClient(event.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
+            />
+            Envoyer un courriel au client
+          </label>
+        </div>
       </div>
 
       {canShowWaitingListResults && (
@@ -1032,7 +1083,7 @@ export default function ProfessionnelDetailPage() {
                 >
                   {savingClient
                     ? "Assignation..."
-                    : "Assigner à ce professionnel"}
+                    : "Créer l’assignation"}
                 </button>
               </div>
             </article>
@@ -1048,7 +1099,7 @@ export default function ProfessionnelDetailPage() {
         <p className="mt-4 text-sm font-medium text-red-700">{clientError}</p>
       )}
     </div>
-  ) : null;
+  );
 
   return (
     <>
@@ -1243,6 +1294,31 @@ export default function ProfessionnelDetailPage() {
                           </div>
 
                           <dl className="mt-5 grid gap-4 sm:grid-cols-2">
+                            <div className="sm:col-span-2">
+                              <label className="block text-sm font-medium text-[#8a6f5d]">
+                                Statut du service
+                                <select
+                                  value={
+                                    client.is_active === true
+                                      ? "true"
+                                      : client.is_active === false
+                                        ? "false"
+                                        : "pending"
+                                  }
+                                  onChange={(event) =>
+                                    void handleAssignmentStatusChange(
+                                      client,
+                                      event.target.value,
+                                    )
+                                  }
+                                  className="mt-1 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none transition focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                                >
+                                  <option value="pending">En attente</option>
+                                  <option value="true">Service pris</option>
+                                  <option value="false">Service non pris</option>
+                                </select>
+                              </label>
+                            </div>
                             <div>
                               <dt className="text-sm font-medium text-[#8a6f5d]">
                                 Courriel

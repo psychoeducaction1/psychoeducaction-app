@@ -87,7 +87,7 @@ async function sendEmail({
 }
 
 export async function POST(request: NextRequest) {
-  console.log('[professional-assignment-notification] Route appelee.')
+  console.log('[professional-assignment-notification] Route appelée.')
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -153,7 +153,7 @@ export async function POST(request: NextRequest) {
   const professionalId = normalizeId(body.professionalId)
   const previousPendingCount = normalizeCount(body.previousPendingCount)
 
-  console.log('[professional-assignment-notification] Payload recu:', {
+  console.log('[professional-assignment-notification] Payload reçu:', {
     professionalId,
     pendingBefore: previousPendingCount,
   })
@@ -173,9 +173,9 @@ export async function POST(request: NextRequest) {
   }
 
   const pendingAfter = currentPendingCount ?? 0
-  const shouldSendEmail = previousPendingCount === 0 && pendingAfter > 0
+  const shouldSendEmail = pendingAfter > 0
 
-  console.log('[professional-assignment-notification] Transition evaluee:', {
+  console.log('[professional-assignment-notification] Envoi explicite évalué:', {
     professionalId,
     pendingBefore: previousPendingCount,
     pendingAfter,
@@ -186,7 +186,7 @@ export async function POST(request: NextRequest) {
     return jsonResponse(
       {
         skipped: true,
-        reason: 'transition_absente',
+        reason: 'aucune_assignation',
         pendingBefore: previousPendingCount,
         pendingAfter,
       },

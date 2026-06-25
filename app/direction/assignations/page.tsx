@@ -38,6 +38,16 @@ type AssignmentRequest = {
   created_at?: string | null
 }
 
+type AssignedClient = {
+  assignment_request_id: string | null
+  is_active: boolean | null
+}
+
+type ClientStats = {
+  pending: number
+  usedAssignments: number
+}
+
 type AssignmentRow = {
   id: string
   fullName: string
@@ -122,13 +132,20 @@ export default function DirectionAssignationsPage() {
         return
       }
 
-      const assignmentRequestsResponse = await supabase
-        .from('assignment_requests')
-        .select(
-          'id, professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment, created_at'
-        )
-        .in('professional_id', professionalIds)
-        .order('created_at', { ascending: false })
+      const [assignmentRequestsResponse, assignedClientsResponse] =
+        await Promise.all([
+          supabase
+            .from('assignment_requests')
+            .select(
+              'id, professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment, created_at'
+            )
+            .in('professional_id', professionalIds)
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('assigned_clients')
+            .select('assignment_request_id, is_active')
+            .in('professional_id', professionalIds),
+        ])
 
       if (assignmentRequestsResponse.error) {
         setError(assignmentRequestsResponse.error.message)
@@ -136,8 +153,37 @@ export default function DirectionAssignationsPage() {
         return
       }
 
+      if (assignedClientsResponse.error) {
+        setError(assignedClientsResponse.error.message)
+        setLoading(false)
+        return
+      }
+
       const assignmentRequests =
         (assignmentRequestsResponse.data ?? []) as AssignmentRequest[]
+      const assignedClients =
+        (assignedClientsResponse.data ?? []) as AssignedClient[]
+
+      const clientStatsByRequestId = new Map<string, ClientStats>()
+
+      assignedClients.forEach((client) => {
+        if (!client.assignment_request_id) return
+
+        const currentStats = clientStatsByRequestId.get(
+          client.assignment_request_id
+        ) ?? {
+          pending: 0,
+          usedAssignments: 0,
+        }
+
+        if (client.is_active === true) {
+          currentStats.usedAssignments += 1
+        } else if (client.is_active === null) {
+          currentStats.pending += 1
+        }
+
+        clientStatsByRequestId.set(client.assignment_request_id, currentStats)
+      })
 
       const requestsByProfessionalId = new Map<string, AssignmentRequest[]>()
 
@@ -149,31 +195,34 @@ export default function DirectionAssignationsPage() {
 
       const nextRows = professionals.map((profile) => {
         const professionalRequests = requestsByProfessionalId.get(profile.id) ?? []
+        const getRequestMetrics = (currentRequest: AssignmentRequest) => {
+          const requestStats = clientStatsByRequestId.get(currentRequest.id)
+
+          return getAssignmentRequestMetrics({
+            isActive: currentRequest.is_active,
+            requestedCount: currentRequest.requested_count,
+            acceptedCount: requestStats?.usedAssignments ?? 0,
+            remainingCount: currentRequest.remaining_count,
+          })
+        }
         const activeRequest =
           professionalRequests.find((currentRequest) =>
-            getAssignmentRequestMetrics({
-              isActive: currentRequest.is_active,
-              requestedCount: currentRequest.requested_count,
-              acceptedCount: currentRequest.assigned_count,
-              remainingCount: currentRequest.remaining_count,
-            }).isActive
+            getRequestMetrics(currentRequest).isActive
           ) ?? null
         const completedRequest =
           professionalRequests.find((currentRequest) =>
-            getAssignmentRequestMetrics({
-              isActive: currentRequest.is_active,
-              requestedCount: currentRequest.requested_count,
-              acceptedCount: currentRequest.assigned_count,
-              remainingCount: currentRequest.remaining_count,
-            }).isCompleted
+            getRequestMetrics(currentRequest).isCompleted
           ) ?? null
         const request = activeRequest ?? completedRequest ?? professionalRequests[0]
-        const requestMetrics = getAssignmentRequestMetrics({
-          isActive: request?.is_active,
-          requestedCount: request?.requested_count,
-          acceptedCount: request?.assigned_count,
-          remainingCount: request?.remaining_count,
-        })
+        const clientStats = request ? clientStatsByRequestId.get(request.id) : null
+        const requestMetrics = request
+          ? getRequestMetrics(request)
+          : getAssignmentRequestMetrics({
+              isActive: null,
+              requestedCount: null,
+              acceptedCount: null,
+              remainingCount: null,
+            })
 
         return {
           id: profile.id,
@@ -181,8 +230,15 @@ export default function DirectionAssignationsPage() {
           email: profile.email ?? '-',
           requestActive: requestMetrics.isActive,
           requestedCount: requestMetrics.requestedCount,
-          assignedCount: requestMetrics.acceptedCount,
-          remainingCount: requestMetrics.isActive ? requestMetrics.remainingCount : 0,
+          assignedCount: clientStats?.usedAssignments ?? 0,
+          remainingCount: requestMetrics.isActive
+            ? Math.max(
+                requestMetrics.requestedCount -
+                  (clientStats?.usedAssignments ?? 0) -
+                  (clientStats?.pending ?? 0),
+                0
+              )
+            : 0,
           requestComment: request?.request_comment?.trim() || '-',
           requestCompleted: requestMetrics.isCompleted,
         }
