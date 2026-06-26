@@ -19,6 +19,7 @@ import {
 import { supabase } from '@/lib/supabaseClient'
 import {
   getAssignmentRequestMetrics,
+  logAudit,
 } from '@/app/professionnel/shared'
 
 type WaitingListClient = {
@@ -48,6 +49,12 @@ type Professional = {
   id: string
   full_name: string | null
   email: string | null
+}
+
+type AuditActor = {
+  id: string
+  role: string | null
+  name: string | null
 }
 
 type ActiveAssignmentRequest = {
@@ -341,6 +348,7 @@ export default function DirectionListeAttentePage() {
   const assignedSectionRef = useRef<HTMLElement | null>(null)
   const historySectionRef = useRef<HTMLElement | null>(null)
   const [clients, setClients] = useState<WaitingListClient[]>([])
+  const [auditActor, setAuditActor] = useState<AuditActor | null>(null)
   const [professionals, setProfessionals] = useState<Professional[]>([])
   const [activeRequests, setActiveRequests] = useState<ActiveAssignmentRequest[]>([])
   const [loading, setLoading] = useState(true)
@@ -381,7 +389,7 @@ export default function DirectionListeAttentePage() {
 
       const { data: currentProfile, error: currentProfileError } = await supabase
         .from('profiles')
-        .select('role')
+        .select('role, full_name, email')
         .eq('id', user.id)
         .limit(1)
         .maybeSingle()
@@ -390,6 +398,12 @@ export default function DirectionListeAttentePage() {
         router.push('/')
         return
       }
+
+      setAuditActor({
+        id: user.id,
+        role: currentProfile.role,
+        name: currentProfile.full_name ?? currentProfile.email ?? null,
+      })
 
       const { data, error: waitingListError } = await supabase
         .from('waiting_list_clients')
@@ -561,7 +575,7 @@ export default function DirectionListeAttentePage() {
   }: {
     professionalId: string
     previousPendingCount: number | null
-  }) => {
+  }): Promise<boolean> => {
     const {
       data: { session },
       error: sessionError,
@@ -572,7 +586,7 @@ export default function DirectionListeAttentePage() {
         "[professional-assignment-notification] Session introuvable pour l'envoi.",
         sessionError
       )
-      return
+      return false
     }
 
     try {
@@ -618,16 +632,22 @@ export default function DirectionListeAttentePage() {
           "[professional-assignment-notification] Échec de l'envoi:",
           result?.error ?? response.statusText
         )
+        return false
       }
+
+      return true;
     } catch (notificationError) {
       console.error(
         "[professional-assignment-notification] Erreur réseau pendant l'envoi:",
         notificationError
       )
+      return false
     }
   }
 
-  const sendClientAssignmentNotification = async (assignedClientId: string) => {
+  const sendClientAssignmentNotification = async (
+    assignedClientId: string
+  ): Promise<boolean> => {
     const {
       data: { session },
       error: sessionError,
@@ -638,7 +658,7 @@ export default function DirectionListeAttentePage() {
         "[client-assignment-notification] Session introuvable pour l'envoi.",
         sessionError
       )
-      return
+      return false
     }
 
     try {
@@ -679,12 +699,16 @@ export default function DirectionListeAttentePage() {
           "[client-assignment-notification] Échec de l'envoi:",
           result?.error ?? response.statusText
         )
+        return false
       }
+
+      return true
     } catch (notificationError) {
       console.error(
         "[client-assignment-notification] Erreur réseau pendant l'envoi:",
         notificationError
       )
+      return false
     }
   }
 
@@ -724,6 +748,20 @@ export default function DirectionListeAttentePage() {
           ...currentClients,
         ]),
       ])
+      if (auditActor) {
+        void logAudit({
+          supabase,
+          actor: auditActor,
+          action: 'waiting_list_client_created',
+          entityType: 'waiting_list_client',
+          entityId: (data as WaitingListClient).id,
+          description: `Client ${form.client_name.trim()} ajouté à la liste d’attente.`,
+          metadata: {
+            priority_level: form.priority_level,
+            service_requested: form.service_requested,
+          },
+        })
+      }
     }
 
     setForm(emptyWaitingListForm)
@@ -799,6 +837,21 @@ export default function DirectionListeAttentePage() {
     setClients((currentClients) =>
       currentClients.filter((currentClient) => currentClient.id !== client.id)
     )
+
+    if (auditActor) {
+      void logAudit({
+        supabase,
+        actor: auditActor,
+        action: 'waiting_list_client_deleted',
+        entityType: 'waiting_list_client',
+        entityId: client.id,
+        description: `Client ${client.client_name ?? 'sans nom'} supprimé de la liste d’attente.`,
+        metadata: {
+          status: client.status,
+          priority_level: client.priority_level,
+        },
+      })
+    }
 
     if (editingClientId === client.id) {
       setEditingClientId(null)
@@ -931,19 +984,126 @@ export default function DirectionListeAttentePage() {
     setNotifyProfessional(false)
     setNotifyClient(false)
     setFormMessage('Client assigné au professionnel avec succès.')
+    const selectedProfessional = professionals.find(
+      (professional) => professional.id === selectedProfessionalId
+    )
+
+    if (auditActor) {
+      void logAudit({
+        supabase,
+        actor: auditActor,
+        action: 'assignment_created',
+        entityType: 'assigned_client',
+        entityId: insertedAssignment.id,
+        description: `Client ${client.client_name ?? 'sans nom'} assigné à ${
+          selectedProfessional?.full_name ?? 'professionnel inconnu'
+        }.`,
+        metadata: {
+          professional_id: selectedProfessionalId,
+          waiting_list_client_id: client.id,
+          assignment_request_id: assignmentRequest?.id ?? null,
+          has_assignment_request: Boolean(assignmentRequest?.id),
+        },
+      })
+    }
 
     if (notifyProfessional) {
-      void sendProfessionalAssignmentNotification({
+      const notificationSent = await sendProfessionalAssignmentNotification({
         professionalId: selectedProfessionalId,
         previousPendingCount,
+      })
+
+      if (auditActor) {
+        void logAudit({
+          supabase,
+          actor: auditActor,
+          action: notificationSent
+            ? 'professional_notification_sent'
+            : 'professional_notification_failed',
+          entityType: 'assigned_client',
+          entityId: insertedAssignment.id,
+          description: notificationSent
+            ? `Courriel professionnel envoyé à ${
+                selectedProfessional?.full_name ?? 'professionnel inconnu'
+              }.`
+            : `Courriel professionnel non envoyé à ${
+                selectedProfessional?.full_name ?? 'professionnel inconnu'
+              }.`,
+          metadata: {
+            professional_id: selectedProfessionalId,
+            notification_type: 'professional_assignment',
+          },
+        })
+      }
+    } else if (auditActor) {
+      void logAudit({
+        supabase,
+        actor: auditActor,
+        action: 'professional_notification_not_sent',
+        entityType: 'assigned_client',
+        entityId: insertedAssignment.id,
+        description: 'Courriel professionnel non envoyé (case décochée).',
+        metadata: {
+          professional_id: selectedProfessionalId,
+          notification_type: 'professional_assignment',
+        },
       })
     }
 
     if (notifyClient && client.contact_email?.trim()) {
-      void sendClientAssignmentNotification(insertedAssignment.id)
+      const notificationSent = await sendClientAssignmentNotification(
+        insertedAssignment.id
+      )
+
+      if (auditActor) {
+        void logAudit({
+          supabase,
+          actor: auditActor,
+          action: notificationSent
+            ? 'client_notification_sent'
+            : 'client_notification_failed',
+          entityType: 'assigned_client',
+          entityId: insertedAssignment.id,
+          description: notificationSent
+            ? `Courriel client envoyé pour ${client.client_name ?? 'client sans nom'}.`
+            : `Courriel client non envoyé pour ${client.client_name ?? 'client sans nom'}.`,
+          metadata: {
+            waiting_list_client_id: client.id,
+            notification_type: 'client_assignment',
+          },
+        })
+      }
     } else if (notifyClient) {
       console.log('[client-assignment-notification] Courriel client absent.', {
         assignedClientId: insertedAssignment.id,
+      })
+      if (auditActor) {
+        void logAudit({
+          supabase,
+          actor: auditActor,
+          action: 'client_notification_not_sent',
+          entityType: 'assigned_client',
+          entityId: insertedAssignment.id,
+          description: 'Courriel client non envoyé (courriel absent).',
+          metadata: {
+            waiting_list_client_id: client.id,
+            notification_type: 'client_assignment',
+            reason: 'missing_email',
+          },
+        })
+      }
+    } else if (auditActor) {
+      void logAudit({
+        supabase,
+        actor: auditActor,
+        action: 'client_notification_not_sent',
+        entityType: 'assigned_client',
+        entityId: insertedAssignment.id,
+        description: 'Courriel client non envoyé (case décochée).',
+        metadata: {
+          waiting_list_client_id: client.id,
+          notification_type: 'client_assignment',
+        },
       })
     }
   }

@@ -17,6 +17,8 @@ import {
   getAssignmentRequestMetrics,
   getRemainingAssignmentCount,
   getUsedAssignmentCount,
+  logAudit,
+  logAssignedClientStatusChange,
   nullableText,
   type AssignedClient,
   type AssignmentRequest,
@@ -37,10 +39,18 @@ function serviceStatusToIsActive(status: ServiceStatus): boolean | null {
   return status === 'yes'
 }
 
+function getAuditStatusLabel(isActive: boolean | null): string {
+  if (isActive === true) return 'Service pris'
+  if (isActive === false) return 'Service non pris'
+  return 'En attente'
+}
+
 export default function ProfessionnelClientsPage() {
   const router = useRouter()
   const [clients, setClients] = useState<AssignedClient[]>([])
   const [currentUserId, setCurrentUserId] = useState('')
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null)
+  const [currentUserName, setCurrentUserName] = useState<string | null>(null)
   const [currentRequestId, setCurrentRequestId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -49,6 +59,7 @@ export default function ProfessionnelClientsPage() {
   const [clientErrors, setClientErrors] = useState<Record<string, string>>({})
   const autoSaveTimersRef = useRef<Record<string, number>>({})
   const latestClientsRef = useRef<AssignedClient[]>([])
+  const persistedStatusByClientIdRef = useRef<Record<string, boolean | null>>({})
 
   useEffect(() => {
     const loadClients = async () => {
@@ -69,7 +80,7 @@ export default function ProfessionnelClientsPage() {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('role')
+        .select('role, full_name, email')
         .eq('id', user.id)
         .limit(1)
         .maybeSingle()
@@ -84,6 +95,9 @@ export default function ProfessionnelClientsPage() {
         router.push('/')
         return
       }
+
+      setCurrentUserRole(profile.role)
+      setCurrentUserName(profile.full_name ?? profile.email ?? null)
 
       const [requestsResponse, clientsResponse] = await Promise.all([
         supabase
@@ -163,6 +177,9 @@ export default function ProfessionnelClientsPage() {
 
       setCurrentRequestId(activeRequest?.id ?? null)
       setClients([...unlinkedClientsToProcess, ...activeRequestClients])
+      persistedStatusByClientIdRef.current = Object.fromEntries(
+        loadedClients.map((client) => [client.id, client.is_active])
+      )
       setLoading(false)
     }
 
@@ -252,6 +269,41 @@ export default function ProfessionnelClientsPage() {
     }
 
     const waitingListSyncError = await syncWaitingListStatus(client)
+
+    const previousPersistedStatus =
+      persistedStatusByClientIdRef.current[client.id] ?? null
+
+    if (previousPersistedStatus !== client.is_active) {
+      void logAssignedClientStatusChange({
+        supabase,
+        assignedClientId: client.id,
+        previousStatus: previousPersistedStatus,
+        newStatus: client.is_active,
+        actor: {
+          id: currentUserId,
+          role: currentUserRole,
+          name: currentUserName,
+        },
+      })
+      void logAudit({
+        supabase,
+        actor: {
+          id: currentUserId,
+          role: currentUserRole,
+          name: currentUserName,
+        },
+        action: 'assignment_status_changed',
+        entityType: 'assigned_client',
+        entityId: client.id,
+        description: `${getAuditStatusLabel(previousPersistedStatus)} → ${getAuditStatusLabel(client.is_active)}`,
+        metadata: {
+          assignment_request_id: client.assignment_request_id,
+          previous_status: previousPersistedStatus,
+          new_status: client.is_active,
+        },
+      })
+    }
+    persistedStatusByClientIdRef.current[client.id] = client.is_active
 
     const updatedClients = latestClientsRef.current.map((currentClient) =>
       currentClient.id === client.id

@@ -17,7 +17,7 @@ import {
   tableShellClass,
 } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
-import { getAssignmentRequestMetrics } from '@/app/professionnel/shared'
+import { getAssignmentRequestMetrics, logAudit } from '@/app/professionnel/shared'
 
 type Profile = {
   id: string
@@ -74,8 +74,15 @@ type ProfessionalRow = {
   requestComment: string
 }
 
+type AuditActor = {
+  id: string
+  role: string | null
+  name: string | null
+}
+
 export default function DirectionProfessionnelsPage() {
   const router = useRouter()
+  const [auditActor, setAuditActor] = useState<AuditActor | null>(null)
   const [rows, setRows] = useState<ProfessionalRow[]>([])
   const [archivedRows, setArchivedRows] = useState<ProfessionalRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -128,7 +135,7 @@ export default function DirectionProfessionnelsPage() {
 
       const { data: currentProfile, error: currentProfileError } = await supabase
         .from('profiles')
-        .select('role')
+        .select('role, full_name, email')
         .eq('id', user.id)
         .limit(1)
         .maybeSingle()
@@ -137,6 +144,12 @@ export default function DirectionProfessionnelsPage() {
         router.push('/')
         return
       }
+
+      setAuditActor({
+        id: user.id,
+        role: currentProfile.role,
+        name: currentProfile.full_name ?? currentProfile.email ?? null,
+      })
 
       const { data: profilesData, error: profilesError } = await supabase
         .from('profiles')
@@ -405,6 +418,7 @@ export default function DirectionProfessionnelsPage() {
       const result = (await response.json()) as {
         error?: string
         invitation_sent?: boolean
+        user_id?: string
       }
 
       if (!response.ok) {
@@ -423,6 +437,21 @@ export default function DirectionProfessionnelsPage() {
           ? 'Invitation envoyée avec succès.'
           : 'Profil créé sans invitation. Le suivi sera géré par la direction.'
       )
+      if (auditActor) {
+        void logAudit({
+          supabase,
+          actor: auditActor,
+          action: 'professional_created',
+          entityType: 'profile',
+          entityId: result.user_id ?? null,
+          description: `Profil professionnel créé pour ${fullName}.`,
+          metadata: {
+            email,
+            invitation_sent: result.invitation_sent === true,
+            platform_access_enabled: invitePlatformAccessEnabled,
+          },
+        })
+      }
     } catch {
       setInviteError("Erreur réseau pendant l'envoi de l'invitation.")
     } finally {
@@ -566,6 +595,20 @@ export default function DirectionProfessionnelsPage() {
           result.email ?? professional.email
         }.`
       )
+      if (auditActor) {
+        void logAudit({
+          supabase,
+          actor: auditActor,
+          action: 'platform_access_enabled',
+          entityType: 'profile',
+          entityId: professional.id,
+          description: `Accès plateforme activé pour ${professional.fullName}.`,
+          metadata: {
+            professional_email: professional.email,
+            access_link_sent: true,
+          },
+        })
+      }
     } catch {
       setPlatformAccessError(
         "Accès activé, mais erreur réseau pendant l'envoi du lien."
@@ -609,6 +652,19 @@ export default function DirectionProfessionnelsPage() {
     setPlatformAccessSuccess(
       `Accès plateforme désactivé pour ${professional.fullName}.`
     )
+    if (auditActor) {
+      void logAudit({
+        supabase,
+        actor: auditActor,
+        action: 'platform_access_disabled',
+        entityType: 'profile',
+        entityId: professional.id,
+        description: `Accès plateforme désactivé pour ${professional.fullName}.`,
+        metadata: {
+          professional_email: professional.email,
+        },
+      })
+    }
     setUpdatingPlatformAccessProfessionalId(null)
   }
 
@@ -658,6 +714,19 @@ export default function DirectionProfessionnelsPage() {
       setResendAccessSuccess(
         `Lien d'accès envoyé à ${result.email ?? professional.email}.`
       )
+      if (auditActor) {
+        void logAudit({
+          supabase,
+          actor: auditActor,
+          action: 'professional_access_resent',
+          entityType: 'profile',
+          entityId: professional.id,
+          description: `Lien d'accès renvoyé à ${professional.fullName}.`,
+          metadata: {
+            professional_email: result.email ?? professional.email,
+          },
+        })
+      }
     } catch {
       setResendAccessError("Erreur réseau pendant l'envoi du lien d'accès.")
     } finally {

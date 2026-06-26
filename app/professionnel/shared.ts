@@ -1,3 +1,5 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
+
 export type AssignedClient = {
   id: string
   assignment_request_id: string | null
@@ -62,10 +64,113 @@ export function nullableText(value: string | null): string | null {
   return trimmedValue.length > 0 ? trimmedValue : null
 }
 
+export type StatusAuditActor = {
+  id: string
+  role: string | null
+  name: string | null
+}
+
+export type AuditLogActor = StatusAuditActor
+
+export type AuditLogInput = {
+  actor: AuditLogActor
+  action: string
+  entityType: string
+  entityId?: string | null
+  description: string
+  metadata?: Record<string, unknown>
+}
+
 export function getUsedAssignmentCount(
   clients: Array<{ is_active: boolean | null }>
 ): number {
   return clients.filter((client) => client.is_active === true).length
+}
+
+export async function logAssignedClientStatusChange({
+  supabase,
+  assignedClientId,
+  previousStatus,
+  newStatus,
+  actor,
+}: {
+  supabase: SupabaseClient
+  assignedClientId: string
+  previousStatus: boolean | null
+  newStatus: boolean | null
+  actor: StatusAuditActor
+}): Promise<void> {
+  if (previousStatus === newStatus) return
+
+  try {
+    const { error } = await supabase
+      .from('assigned_client_status_history')
+      .insert({
+        assigned_client_id: assignedClientId,
+        previous_status: previousStatus,
+        new_status: newStatus,
+        changed_by_profile_id: actor.id,
+        changed_by_role: actor.role,
+        changed_by_name: actor.name,
+      })
+
+    if (!error) return
+
+    console.error('[assigned-client-status-history] Audit insert failed:', {
+      assignedClientId,
+      message: error.message,
+    })
+  } catch (caughtError) {
+    console.error('[assigned-client-status-history] Audit insert failed:', {
+      assignedClientId,
+      message:
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Erreur inconnue pendant l’écriture de l’audit.',
+    })
+  }
+}
+
+export async function logAudit({
+  supabase,
+  actor,
+  action,
+  entityType,
+  entityId,
+  description,
+  metadata,
+}: AuditLogInput & { supabase: SupabaseClient }): Promise<void> {
+  try {
+    const { error } = await supabase.from('audit_logs').insert({
+      actor_profile_id: actor.id,
+      actor_name: actor.name,
+      actor_role: actor.role,
+      action,
+      entity_type: entityType,
+      entity_id: entityId ?? null,
+      description,
+      metadata: metadata ?? {},
+    })
+
+    if (!error) return
+
+    console.error('[audit-log] Audit insert failed:', {
+      action,
+      entityType,
+      entityId,
+      message: error.message,
+    })
+  } catch (caughtError) {
+    console.error('[audit-log] Audit insert failed:', {
+      action,
+      entityType,
+      entityId,
+      message:
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Erreur inconnue pendant l’écriture de l’audit.',
+    })
+  }
 }
 
 export function getRemainingAssignmentCount(

@@ -8,6 +8,8 @@ import { supabase } from '@/lib/supabaseClient'
 import {
   getRemainingAssignmentCount,
   getUsedAssignmentCount,
+  logAudit,
+  logAssignedClientStatusChange,
 } from '../shared'
 
 type AssignmentRequestHistoryRow = {
@@ -181,6 +183,8 @@ function getEstimatedCompletionDate(
 export default function ProfessionnelHistoriquePage() {
   const router = useRouter()
   const [currentUserId, setCurrentUserId] = useState('')
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null)
+  const [currentUserName, setCurrentUserName] = useState<string | null>(null)
   const [requests, setRequests] = useState<AssignmentRequestHistoryRow[]>([])
   const [clients, setClients] = useState<AssignedClientHistoryRow[]>([])
   const [expandedRequestIds, setExpandedRequestIds] = useState<Record<string, boolean>>(
@@ -219,7 +223,7 @@ export default function ProfessionnelHistoriquePage() {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('role')
+        .select('role, full_name, email')
         .eq('id', user.id)
         .limit(1)
         .maybeSingle()
@@ -234,6 +238,9 @@ export default function ProfessionnelHistoriquePage() {
         router.push('/')
         return
       }
+
+      setCurrentUserRole(profile.role)
+      setCurrentUserName(profile.full_name ?? profile.email ?? null)
 
       const baseSelect =
         'id, professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment'
@@ -493,6 +500,41 @@ export default function ProfessionnelHistoriquePage() {
         }))
         return
       }
+    }
+
+    if (client.is_active !== nextIsActive) {
+      void logAssignedClientStatusChange({
+        supabase,
+        assignedClientId: client.id,
+        previousStatus: client.is_active,
+        newStatus: nextIsActive,
+        actor: {
+          id: currentUserId,
+          role: currentUserRole,
+          name: currentUserName,
+        },
+      })
+      void logAudit({
+        supabase,
+        actor: {
+          id: currentUserId,
+          role: currentUserRole,
+          name: currentUserName,
+        },
+        action: 'assignment_status_changed',
+        entityType: 'assigned_client',
+        entityId: client.id,
+        description: `${getServiceStatus(client).label} → ${getServiceStatus({
+          ...client,
+          is_active: nextIsActive,
+        }).label}`,
+        metadata: {
+          assignment_request_id: client.assignment_request_id,
+          previous_status: client.is_active,
+          new_status: nextIsActive,
+          source: 'historique',
+        },
+      })
     }
 
     const nextClients = clients.map((currentClient) =>

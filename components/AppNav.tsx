@@ -72,6 +72,7 @@ export function AppNav() {
           { href: '/direction/assignations', label: 'Assignations', icon: ClipboardList },
           { href: '/direction/liste-attente', label: "Liste d'attente", icon: ListChecks },
           { href: '/direction/professionnels', label: 'Professionnels', icon: Users },
+          { href: '/direction/journal-audit', label: "Journal d'audit", icon: History },
           { href: '/direction/parametres', label: 'Paramètres', icon: Settings },
         ]
       : role === 'professionnel'
@@ -106,6 +107,8 @@ export function AppNav() {
               : link.href === '/direction/professionnels'
                 ? pathname?.startsWith('/direction/professionnels') ||
                   pathname?.startsWith('/professionnel/')
+                : link.href === '/direction/journal-audit'
+                  ? pathname?.startsWith('/direction/journal-audit')
                 : pathname?.startsWith('/direction/parametres')
           : link.href === '/professionnel'
             ? pathname === '/professionnel'

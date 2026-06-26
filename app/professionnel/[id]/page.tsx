@@ -22,6 +22,8 @@ import {
 import { supabase } from "@/lib/supabaseClient";
 import {
   getAssignmentRequestMetrics,
+  logAudit,
+  logAssignedClientStatusChange,
 } from "../shared";
 
 type Profile = {
@@ -68,6 +70,23 @@ type AssignedClient = {
   service_address: string | null;
 };
 
+type AssignedClientStatusHistory = {
+  id: string;
+  assigned_client_id: string;
+  previous_status: boolean | null;
+  new_status: boolean | null;
+  changed_by_profile_id: string | null;
+  changed_by_role: string | null;
+  changed_by_name: string | null;
+  changed_at: string | null;
+};
+
+type AuditActor = {
+  id: string;
+  role: string | null;
+  name: string | null;
+};
+
 type WaitingListClient = {
   id: string;
   created_at: string | null;
@@ -99,6 +118,7 @@ type ProfessionalProfileForm = {
 };
 
 const HISTORY_PAGE_SIZE = 5;
+const ASSIGNED_CLIENTS_PAGE_SIZE = 4;
 const WAITING_LIST_RESULT_LIMIT = 5;
 const waitingListPriorityOrder: Record<string, number> = {
   urgent: 0,
@@ -236,6 +256,18 @@ function getServiceStatus(client: AssignedClient): {
   return { label: "En attente", tone: "warning" };
 }
 
+function getAuditStatusLabel(value: boolean | null): string {
+  if (value === true) return "Service pris";
+  if (value === false) return "Service non pris";
+  return "En attente";
+}
+
+function getAuditRoleLabel(value: string | null): string {
+  if (value === "direction") return "Direction";
+  if (value === "professionnel") return "Professionnel";
+  return "Utilisateur";
+}
+
 function shouldShowServiceAddress(client: AssignedClient): boolean {
   return (
     client.meeting_modality?.toLowerCase().includes("domicile") === true &&
@@ -271,7 +303,7 @@ function getTodayDate(): string {
 function formatDate(value: string | null): string {
   if (!value) return "-";
 
-  const date = new Date(`${value}T00:00:00`);
+  const date = new Date(value.includes("T") ? value : `${value}T00:00:00`);
 
   if (Number.isNaN(date.getTime())) {
     return value;
@@ -309,9 +341,13 @@ export default function ProfessionnelDetailPage() {
         : "";
 
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [auditActor, setAuditActor] = useState<AuditActor | null>(null);
   const [assignmentRequest, setAssignmentRequest] =
     useState<AssignmentRequest | null>(null);
   const [assignedClients, setAssignedClients] = useState<AssignedClient[]>([]);
+  const [statusHistoryByClientId, setStatusHistoryByClientId] = useState<
+    Record<string, AssignedClientStatusHistory[]>
+  >({});
   const [waitingListClients, setWaitingListClients] = useState<WaitingListClient[]>(
     [],
   );
@@ -320,6 +356,7 @@ export default function ProfessionnelDetailPage() {
   );
   const [waitingListSearch, setWaitingListSearch] = useState("");
   const [showClientHistory, setShowClientHistory] = useState(false);
+  const [assignedClientsPage, setAssignedClientsPage] = useState(0);
   const [clientHistoryPage, setClientHistoryPage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -366,7 +403,7 @@ export default function ProfessionnelDetailPage() {
         const { data: currentProfile, error: currentProfileError } =
           await supabase
             .from("profiles")
-            .select("role")
+            .select("role, full_name, email")
             .eq("id", user.id)
             .limit(1)
             .maybeSingle();
@@ -376,6 +413,12 @@ export default function ProfessionnelDetailPage() {
           router.push("/");
           return;
         }
+
+        setAuditActor({
+          id: user.id,
+          role: currentProfile.role,
+          name: currentProfile.full_name ?? currentProfile.email ?? null,
+        });
 
         const profileResponse = await supabase
           .from("profiles")
@@ -423,6 +466,40 @@ export default function ProfessionnelDetailPage() {
         const loadedRequests =
           (requestsResponse.data ?? []) as AssignmentRequest[];
         const loadedClients = (clientsResponse.data ?? []) as AssignedClient[];
+        const loadedClientIds = loadedClients.map((client) => client.id);
+        const statusHistoryByClient = new Map<
+          string,
+          AssignedClientStatusHistory[]
+        >();
+
+        if (loadedClientIds.length > 0) {
+          const { data: statusHistoryData, error: statusHistoryError } =
+            await supabase
+              .from("assigned_client_status_history")
+              .select(
+                "id, assigned_client_id, previous_status, new_status, changed_by_profile_id, changed_by_role, changed_by_name, changed_at",
+              )
+              .in("assigned_client_id", loadedClientIds)
+              .order("changed_at", { ascending: false });
+
+          if (statusHistoryError) {
+            console.error(
+              "[assigned-client-status-history] Impossible de charger l'historique:",
+              statusHistoryError.message,
+            );
+          } else {
+            ((statusHistoryData ?? []) as AssignedClientStatusHistory[]).forEach(
+              (historyRow) => {
+                const rows =
+                  statusHistoryByClient.get(historyRow.assigned_client_id) ?? [];
+                if (rows.length < 10) {
+                  rows.push(historyRow);
+                  statusHistoryByClient.set(historyRow.assigned_client_id, rows);
+                }
+              },
+            );
+          }
+        }
 
         const activeRequest =
           loadedRequests.find((request) => {
@@ -454,6 +531,7 @@ export default function ProfessionnelDetailPage() {
         setAssignmentRequest(activeRequest);
         setAssignedClients(loadedClients);
         setHistoricalClients(loadedClients);
+        setStatusHistoryByClientId(Object.fromEntries(statusHistoryByClient));
         setWaitingListClients(
           ((waitingListResponse.data ?? []) as WaitingListClient[]).sort(
             sortWaitingClientsByPriority,
@@ -497,6 +575,10 @@ export default function ProfessionnelDetailPage() {
   useEffect(() => {
     setClientHistoryPage(0);
   }, [historicalClients.length, showClientHistory]);
+
+  useEffect(() => {
+    setAssignedClientsPage(0);
+  }, [assignedClients.length]);
 
   const handleProfessionalProfileFormChange = (
     field: keyof ProfessionalProfileForm,
@@ -604,7 +686,7 @@ export default function ProfessionnelDetailPage() {
   }: {
     selectedProfessionalId: string;
     previousPendingCount: number | null;
-  }) => {
+  }): Promise<boolean> => {
     const {
       data: { session },
       error: sessionError,
@@ -615,7 +697,7 @@ export default function ProfessionnelDetailPage() {
         "[professional-assignment-notification] Session introuvable pour l'envoi.",
         sessionError,
       );
-      return;
+      return false;
     }
 
     try {
@@ -664,16 +746,22 @@ export default function ProfessionnelDetailPage() {
           "[professional-assignment-notification] Échec de l'envoi:",
           result?.error ?? response.statusText,
         );
+        return false;
       }
+
+      return true;
     } catch (notificationError) {
       console.error(
         "[professional-assignment-notification] Erreur réseau pendant l'envoi:",
         notificationError,
       );
+      return false;
     }
   };
 
-  const sendClientAssignmentNotification = async (assignedClientId: string) => {
+  const sendClientAssignmentNotification = async (
+    assignedClientId: string,
+  ): Promise<boolean> => {
     const {
       data: { session },
       error: sessionError,
@@ -684,7 +772,7 @@ export default function ProfessionnelDetailPage() {
         "[client-assignment-notification] Session introuvable pour l'envoi.",
         sessionError,
       );
-      return;
+      return false;
     }
 
     try {
@@ -725,12 +813,16 @@ export default function ProfessionnelDetailPage() {
           "[client-assignment-notification] Echec de l'envoi:",
           result?.error ?? response.statusText,
         );
+        return false;
       }
+
+      return true;
     } catch (notificationError) {
       console.error(
         "[client-assignment-notification] Erreur reseau pendant l'envoi:",
         notificationError,
       );
+      return false;
     }
   };
 
@@ -797,18 +889,116 @@ export default function ProfessionnelDetailPage() {
       setNotifyClient(false);
       await loadProfessionalProfile({ showLoading: false });
 
+      if (auditActor) {
+        void logAudit({
+          supabase,
+          actor: auditActor,
+          action: "assignment_created",
+          entityType: "assigned_client",
+          entityId: insertedAssignment.id,
+          description: `Client ${client.client_name ?? "sans nom"} assigné à ${professionalName}.`,
+          metadata: {
+            professional_id: professionalId,
+            waiting_list_client_id: client.id,
+            assignment_request_id: assignmentRequest?.id ?? null,
+            has_assignment_request: Boolean(assignmentRequest?.id),
+          },
+        });
+      }
+
       if (notifyProfessional) {
-        void sendProfessionalAssignmentNotification({
+        const notificationSent = await sendProfessionalAssignmentNotification({
           selectedProfessionalId: professionalId,
           previousPendingCount,
+        });
+
+        if (auditActor) {
+          void logAudit({
+            supabase,
+            actor: auditActor,
+            action: notificationSent
+              ? "professional_notification_sent"
+              : "professional_notification_failed",
+            entityType: "assigned_client",
+            entityId: insertedAssignment.id,
+            description: notificationSent
+              ? `Courriel professionnel envoyé à ${professionalName}.`
+              : `Courriel professionnel non envoyé à ${professionalName}.`,
+            metadata: {
+              professional_id: professionalId,
+              notification_type: "professional_assignment",
+            },
+          });
+        }
+      } else if (auditActor) {
+        void logAudit({
+          supabase,
+          actor: auditActor,
+          action: "professional_notification_not_sent",
+          entityType: "assigned_client",
+          entityId: insertedAssignment.id,
+          description: "Courriel professionnel non envoyé (case décochée).",
+          metadata: {
+            professional_id: professionalId,
+            notification_type: "professional_assignment",
+          },
         });
       }
 
       if (notifyClient && client.contact_email?.trim()) {
-        void sendClientAssignmentNotification(insertedAssignment.id);
+        const notificationSent = await sendClientAssignmentNotification(
+          insertedAssignment.id,
+        );
+
+        if (auditActor) {
+          void logAudit({
+            supabase,
+            actor: auditActor,
+            action: notificationSent
+              ? "client_notification_sent"
+              : "client_notification_failed",
+            entityType: "assigned_client",
+            entityId: insertedAssignment.id,
+            description: notificationSent
+              ? `Courriel client envoyé pour ${client.client_name ?? "client sans nom"}.`
+              : `Courriel client non envoyé pour ${client.client_name ?? "client sans nom"}.`,
+            metadata: {
+              waiting_list_client_id: client.id,
+              notification_type: "client_assignment",
+            },
+          });
+        }
       } else if (notifyClient) {
         console.log("[client-assignment-notification] Courriel client absent.", {
           assignedClientId: insertedAssignment.id,
+        });
+        if (auditActor) {
+          void logAudit({
+            supabase,
+            actor: auditActor,
+            action: "client_notification_not_sent",
+            entityType: "assigned_client",
+            entityId: insertedAssignment.id,
+            description: "Courriel client non envoyé (courriel absent).",
+            metadata: {
+              waiting_list_client_id: client.id,
+              notification_type: "client_assignment",
+              reason: "missing_email",
+            },
+          });
+        }
+      } else if (auditActor) {
+        void logAudit({
+          supabase,
+          actor: auditActor,
+          action: "client_notification_not_sent",
+          entityType: "assigned_client",
+          entityId: insertedAssignment.id,
+          description: "Courriel client non envoyé (case décochée).",
+          metadata: {
+            waiting_list_client_id: client.id,
+            notification_type: "client_assignment",
+          },
         });
       }
     } catch (caughtError: unknown) {
@@ -855,6 +1045,51 @@ export default function ProfessionnelDetailPage() {
         currentClient.id === client.id
           ? { ...currentClient, is_active: nextIsActive }
           : currentClient;
+
+      if (auditActor) {
+        void logAssignedClientStatusChange({
+          supabase,
+          assignedClientId: client.id,
+          previousStatus: client.is_active,
+          newStatus: nextIsActive,
+          actor: auditActor,
+        });
+
+        if (client.is_active !== nextIsActive) {
+          void logAudit({
+            supabase,
+            actor: auditActor,
+            action: "assignment_status_changed",
+            entityType: "assigned_client",
+            entityId: client.id,
+            description: `${getAuditStatusLabel(client.is_active)} → ${getAuditStatusLabel(nextIsActive)}`,
+            metadata: {
+              professional_id: professionalId,
+              previous_status: client.is_active,
+              new_status: nextIsActive,
+            },
+          });
+
+          const nextHistoryRow: AssignedClientStatusHistory = {
+            id: `local-${client.id}-${Date.now()}`,
+            assigned_client_id: client.id,
+            previous_status: client.is_active,
+            new_status: nextIsActive,
+            changed_by_profile_id: auditActor.id,
+            changed_by_role: auditActor.role,
+            changed_by_name: auditActor.name,
+            changed_at: new Date().toISOString(),
+          };
+
+          setStatusHistoryByClientId((currentHistory) => ({
+            ...currentHistory,
+            [client.id]: [
+              nextHistoryRow,
+              ...(currentHistory[client.id] ?? []),
+            ].slice(0, 10),
+          }));
+        }
+      }
 
       setHistoricalClients((currentClients) => currentClients.map(updateClient));
       setAssignedClients((currentClients) => currentClients.map(updateClient));
@@ -914,6 +1149,13 @@ export default function ProfessionnelDetailPage() {
   const filteredWaitingListClients = matchingWaitingListClients.slice(
     0,
     WAITING_LIST_RESULT_LIMIT,
+  );
+  const assignedClientsPageCount = Math.ceil(
+    assignedClients.length / ASSIGNED_CLIENTS_PAGE_SIZE,
+  );
+  const paginatedAssignedClients = assignedClients.slice(
+    assignedClientsPage * ASSIGNED_CLIENTS_PAGE_SIZE,
+    assignedClientsPage * ASSIGNED_CLIENTS_PAGE_SIZE + ASSIGNED_CLIENTS_PAGE_SIZE,
   );
   const clientHistoryPageCount = Math.ceil(
     historicalClients.length / HISTORY_PAGE_SIZE,
@@ -1261,8 +1503,9 @@ export default function ProfessionnelDetailPage() {
                   <EmptyState title="Aucun client assigné pour ce professionnel." />
                 ) : (
                   <div className="grid gap-4 xl:grid-cols-2">
-                    {assignedClients.map((client) => {
+                    {paginatedAssignedClients.map((client) => {
                       const serviceStatus = getServiceStatus(client);
+                      const statusHistory = statusHistoryByClientId[client.id] ?? [];
 
                       return (
                         <article
@@ -1362,9 +1605,77 @@ export default function ProfessionnelDetailPage() {
                               </div>
                             )}
                           </dl>
+
+                          <div className="mt-5 rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-4">
+                            <h4 className="text-sm font-semibold text-[#5d4a3d]">
+                              Historique des statuts
+                            </h4>
+                            {statusHistory.length === 0 ? (
+                              <p className="mt-2 text-sm text-[#8a6f5d]">
+                                Aucun changement de statut enregistré.
+                              </p>
+                            ) : (
+                              <ul className="mt-3 space-y-3">
+                                {statusHistory.map((historyRow) => (
+                                  <li
+                                    key={historyRow.id}
+                                    className="border-l-2 border-[#d8b992] pl-3 text-sm"
+                                  >
+                                    <p className="font-medium text-[#332820]">
+                                      {formatDate(historyRow.changed_at)} —{" "}
+                                      {formatText(historyRow.changed_by_name)} (
+                                      {getAuditRoleLabel(
+                                        historyRow.changed_by_role,
+                                      )}
+                                      )
+                                    </p>
+                                    <p className="mt-1 text-[#7a6859]">
+                                      {getAuditStatusLabel(
+                                        historyRow.previous_status,
+                                      )}{" "}
+                                      →{" "}
+                                      {getAuditStatusLabel(historyRow.new_status)}
+                                    </p>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
                         </article>
                       );
                     })}
+                  </div>
+                )}
+
+                {assignedClients.length > ASSIGNED_CLIENTS_PAGE_SIZE && (
+                  <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-[#eadfd2] bg-[#fbf6ef] p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <button
+                      type="button"
+                      className={buttonClass("secondary")}
+                      onClick={() =>
+                        setAssignedClientsPage((currentPage) =>
+                          Math.max(currentPage - 1, 0),
+                        )
+                      }
+                      disabled={assignedClientsPage === 0}
+                    >
+                      Précédent
+                    </button>
+                    <p className="text-center text-sm font-medium text-[#7a6859]">
+                      Page {assignedClientsPage + 1} sur {assignedClientsPageCount}
+                    </p>
+                    <button
+                      type="button"
+                      className={buttonClass("secondary")}
+                      onClick={() =>
+                        setAssignedClientsPage((currentPage) =>
+                          Math.min(currentPage + 1, assignedClientsPageCount - 1),
+                        )
+                      }
+                      disabled={assignedClientsPage >= assignedClientsPageCount - 1}
+                    >
+                      Suivant
+                    </button>
                   </div>
                 )}
 
