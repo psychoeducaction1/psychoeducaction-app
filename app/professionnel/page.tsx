@@ -212,8 +212,10 @@ export default function ProfessionnelPage() {
   const requestMetrics = getAssignmentRequestMetrics({
     isActive: request?.is_active,
     requestedCount: request?.requested_count,
-    acceptedCount: request?.assigned_count,
-    remainingCount: request?.remaining_count,
+    acceptedCount: requestServicesTakenCount,
+    remainingCount: request
+      ? Math.max((request.requested_count ?? 0) - requestServicesTakenCount, 0)
+      : null,
   })
   const requestedCount = requestMetrics.requestedCount
   const assignedCount = requestServicesTakenCount

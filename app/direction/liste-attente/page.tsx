@@ -17,6 +17,7 @@ import {
   tableShellClass,
 } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
+import { isSuperAdmin } from '@/lib/superAdmin'
 import {
   getAssignmentRequestMetrics,
   logAudit,
@@ -39,6 +40,8 @@ type WaitingListClient = {
   availability: string | null
   contact_email: string | null
   contact_phone: string | null
+  contact_emails: string[] | null
+  contact_phones: string[] | null
   consultation_reason: string | null
   internal_notes: string | null
   assigned_professional_id: string | null
@@ -81,12 +84,14 @@ type WaitingListForm = {
   availability: string
   contact_email: string
   contact_phone: string
+  contact_emails: string[]
+  contact_phones: string[]
   consultation_reason: string
   internal_notes: string
 }
 
 const waitingListSelect =
-  'id, created_at, contact_date, status, priority_level, service_requested, client_name, first_requester_name, second_requester_name, birth_date, city, meeting_modality, meeting_type, availability, contact_email, contact_phone, consultation_reason, internal_notes, assigned_professional_id, assigned_at'
+  'id, created_at, contact_date, status, priority_level, service_requested, client_name, first_requester_name, second_requester_name, birth_date, city, meeting_modality, meeting_type, availability, contact_email, contact_phone, contact_emails, contact_phones, consultation_reason, internal_notes, assigned_professional_id, assigned_at'
 
 const CLIENTS_PER_PAGE = 10
 const HISTORY_CLIENTS_PER_PAGE = 5
@@ -158,6 +163,8 @@ const emptyWaitingListForm: WaitingListForm = {
   availability: '',
   contact_email: '',
   contact_phone: '',
+  contact_emails: [''],
+  contact_phones: [''],
   consultation_reason: '',
   internal_notes: '',
 }
@@ -169,6 +176,34 @@ function formatText(value: string | null | undefined): string {
 function nullableText(value: string): string | null {
   const trimmedValue = value.trim()
   return trimmedValue || null
+}
+
+function normalizeTextList(values: Array<string | null | undefined>): string[] {
+  const uniqueValues = new Set<string>()
+
+  values.forEach((value) => {
+    const trimmedValue = value?.trim()
+
+    if (trimmedValue) {
+      uniqueValues.add(trimmedValue)
+    }
+  })
+
+  return Array.from(uniqueValues)
+}
+
+function getContactEmails(client: WaitingListClient): string[] {
+  return normalizeTextList([
+    client.contact_email,
+    ...(client.contact_emails ?? []),
+  ])
+}
+
+function getContactPhones(client: WaitingListClient): string[] {
+  return normalizeTextList([
+    client.contact_phone,
+    ...(client.contact_phones ?? []),
+  ])
 }
 
 function formatDate(value: string | null | undefined): string {
@@ -190,15 +225,6 @@ function formatDate(value: string | null | undefined): string {
 function formatRequester(client: WaitingListClient): string {
   return (
     [client.first_requester_name, client.second_requester_name]
-      .map((value) => value?.trim())
-      .filter(Boolean)
-      .join(' / ') || '-'
-  )
-}
-
-function formatContact(client: WaitingListClient): string {
-  return (
-    [client.contact_email, client.contact_phone]
       .map((value) => value?.trim())
       .filter(Boolean)
       .join(' / ') || '-'
@@ -255,8 +281,8 @@ function clientMatchesSearch(
     client.client_name,
     client.first_requester_name,
     client.second_requester_name,
-    client.contact_email,
-    client.contact_phone,
+    ...getContactEmails(client),
+    ...getContactPhones(client),
     client.city,
     client.service_requested,
     client.meeting_modality,
@@ -313,14 +339,21 @@ function clientToForm(client: WaitingListClient): WaitingListForm {
       meetingModalityOptions
     ),
     availability: client.availability ?? '',
-    contact_email: client.contact_email ?? '',
-    contact_phone: client.contact_phone ?? '',
+    contact_email: getContactEmails(client)[0] ?? '',
+    contact_phone: getContactPhones(client)[0] ?? '',
+    contact_emails:
+      getContactEmails(client).length > 0 ? getContactEmails(client) : [''],
+    contact_phones:
+      getContactPhones(client).length > 0 ? getContactPhones(client) : [''],
     consultation_reason: client.consultation_reason ?? '',
     internal_notes: client.internal_notes ?? '',
   }
 }
 
 function buildPayload(form: WaitingListForm) {
+  const contactEmails = normalizeTextList(form.contact_emails)
+  const contactPhones = normalizeTextList(form.contact_phones)
+
   return {
     status: form.status,
     priority_level: form.priority_level,
@@ -333,8 +366,10 @@ function buildPayload(form: WaitingListForm) {
     city: nullableText(form.address),
     meeting_modality: form.meeting_modality,
     availability: nullableText(form.availability),
-    contact_email: nullableText(form.contact_email),
-    contact_phone: nullableText(form.contact_phone),
+    contact_email: contactEmails[0] ?? null,
+    contact_phone: contactPhones[0] ?? null,
+    contact_emails: contactEmails.length > 0 ? contactEmails : null,
+    contact_phones: contactPhones.length > 0 ? contactPhones : null,
     consultation_reason: nullableText(form.consultation_reason),
     internal_notes: nullableText(form.internal_notes),
   }
@@ -349,6 +384,7 @@ export default function DirectionListeAttentePage() {
   const historySectionRef = useRef<HTMLElement | null>(null)
   const [clients, setClients] = useState<WaitingListClient[]>([])
   const [auditActor, setAuditActor] = useState<AuditActor | null>(null)
+  const [canUseSuperAdminActions, setCanUseSuperAdminActions] = useState(false)
   const [professionals, setProfessionals] = useState<Professional[]>([])
   const [activeRequests, setActiveRequests] = useState<ActiveAssignmentRequest[]>([])
   const [loading, setLoading] = useState(true)
@@ -362,6 +398,8 @@ export default function DirectionListeAttentePage() {
   const [savingClient, setSavingClient] = useState(false)
   const [savingEdit, setSavingEdit] = useState(false)
   const [savingAssignment, setSavingAssignment] = useState(false)
+  const [permanentlyDeletingClientId, setPermanentlyDeletingClientId] =
+    useState('')
   const [formMessage, setFormMessage] = useState('')
   const [formError, setFormError] = useState('')
   const [waitingPage, setWaitingPage] = useState(0)
@@ -404,6 +442,7 @@ export default function DirectionListeAttentePage() {
         role: currentProfile.role,
         name: currentProfile.full_name ?? currentProfile.email ?? null,
       })
+      setCanUseSuperAdminActions(isSuperAdmin(user, currentProfile))
 
       const { data, error: waitingListError } = await supabase
         .from('waiting_list_clients')
@@ -461,16 +500,59 @@ export default function DirectionListeAttentePage() {
 
         const requests =
           (requestsResponse.data ?? []) as ActiveAssignmentRequest[]
+        const requestIds = requests.map((request) => request.id)
+
+        const assignedClientsResponse =
+          requestIds.length > 0
+            ? await supabase
+                .from('assigned_clients')
+                .select('assignment_request_id, is_active')
+                .in('assignment_request_id', requestIds)
+            : { data: [], error: null }
+
+        if (assignedClientsResponse.error) {
+          setError(assignedClientsResponse.error.message)
+          setLoading(false)
+          return
+        }
+
+        const serviceTakenCountByRequestId = new Map<string, number>()
+
+        ;(
+          (assignedClientsResponse.data ?? []) as Array<{
+            assignment_request_id: string | null
+            is_active: boolean | null
+          }>
+        ).forEach((client) => {
+          if (!client.assignment_request_id || client.is_active !== true) return
+
+          serviceTakenCountByRequestId.set(
+            client.assignment_request_id,
+            (serviceTakenCountByRequestId.get(client.assignment_request_id) ?? 0) + 1
+          )
+        })
 
         setActiveRequests(
-          requests.filter((request) =>
-            getAssignmentRequestMetrics({
-              isActive: request.is_active,
-              requestedCount: request.requested_count,
-              acceptedCount: request.assigned_count,
-              remainingCount: request.remaining_count,
-            }).isActive
-          )
+          requests
+            .map((request) => {
+              const acceptedCount = serviceTakenCountByRequestId.get(request.id) ?? 0
+              const requestedCount = Math.max(request.requested_count ?? 0, 0)
+              const remainingCount = Math.max(requestedCount - acceptedCount, 0)
+
+              return {
+                ...request,
+                assigned_count: acceptedCount,
+                remaining_count: remainingCount,
+              }
+            })
+            .filter((request) =>
+              getAssignmentRequestMetrics({
+                isActive: request.is_active,
+                requestedCount: request.requested_count,
+                acceptedCount: request.assigned_count,
+                remainingCount: request.remaining_count,
+              }).isActive
+            )
         )
       } else {
         setActiveRequests([])
@@ -504,11 +586,17 @@ export default function DirectionListeAttentePage() {
     }, 0)
   }, [editingClientId])
 
-  const updateFormField = (field: keyof WaitingListForm, value: string) => {
+  const updateFormField = (
+    field: keyof WaitingListForm,
+    value: string | string[]
+  ) => {
     setForm((currentForm) => ({ ...currentForm, [field]: value }))
   }
 
-  const updateEditFormField = (field: keyof WaitingListForm, value: string) => {
+  const updateEditFormField = (
+    field: keyof WaitingListForm,
+    value: string | string[]
+  ) => {
     setEditForm((currentForm) => ({ ...currentForm, [field]: value }))
   }
 
@@ -757,6 +845,14 @@ export default function DirectionListeAttentePage() {
           entityId: (data as WaitingListClient).id,
           description: `Client ${form.client_name.trim()} ajouté à la liste d’attente.`,
           metadata: {
+            client_name: form.client_name.trim(),
+            requester_name: nullableText(
+              [form.first_requester_name, form.second_requester_name]
+                .map((value) => value.trim())
+                .filter(Boolean)
+                .join(' / ')
+            ),
+            contact_email: normalizeTextList(form.contact_emails)[0] ?? null,
             priority_level: form.priority_level,
             service_requested: form.service_requested,
           },
@@ -814,23 +910,41 @@ export default function DirectionListeAttentePage() {
     setFormMessage('Client modifié avec succès.')
   }
 
-  const handleDeleteClient = async (client: WaitingListClient) => {
+  const handlePermanentDeleteClient = async (client: WaitingListClient) => {
     const confirmed = window.confirm(
-      'Êtes-vous sûr de vouloir supprimer ce client de la liste d’attente ? Cette action ne touchera pas aux autres données.'
+      'Cette action supprimera définitivement le client ainsi que toutes les données associées.\n\nCette action est irréversible.'
     )
 
     if (!confirmed) return
 
     setFormMessage('')
     setFormError('')
+    setPermanentlyDeletingClientId(client.id)
 
-    const { error: deleteError } = await supabase
-      .from('waiting_list_clients')
-      .delete()
-      .eq('id', client.id)
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
 
-    if (deleteError) {
-      setFormError(deleteError.message)
+    if (!session?.access_token) {
+      setFormError('Session introuvable.')
+      setPermanentlyDeletingClientId('')
+      return
+    }
+
+    const response = await fetch(`/api/direction/waiting-list-clients/${client.id}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
+    })
+
+    setPermanentlyDeletingClientId('')
+
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as
+        | { error?: string }
+        | null
+      setFormError(body?.error ?? 'La suppression définitive a échoué.')
       return
     }
 
@@ -838,27 +952,12 @@ export default function DirectionListeAttentePage() {
       currentClients.filter((currentClient) => currentClient.id !== client.id)
     )
 
-    if (auditActor) {
-      void logAudit({
-        supabase,
-        actor: auditActor,
-        action: 'waiting_list_client_deleted',
-        entityType: 'waiting_list_client',
-        entityId: client.id,
-        description: `Client ${client.client_name ?? 'sans nom'} supprimé de la liste d’attente.`,
-        metadata: {
-          status: client.status,
-          priority_level: client.priority_level,
-        },
-      })
-    }
-
     if (editingClientId === client.id) {
       setEditingClientId(null)
       setEditForm(emptyWaitingListForm)
     }
 
-    setFormMessage('Client supprimé de la liste d’attente.')
+    setFormMessage('Client supprimé définitivement.')
   }
 
   const handleAssignClient = async (event: FormEvent<HTMLFormElement>) => {
@@ -920,8 +1019,8 @@ export default function DirectionListeAttentePage() {
         professional_id: selectedProfessionalId,
         first_name: firstName,
         last_name: lastName,
-        email: nullableText(client.contact_email ?? ''),
-        phone: nullableText(client.contact_phone ?? ''),
+        email: getContactEmails(client)[0] ?? null,
+        phone: getContactPhones(client)[0] ?? null,
         requester_name: requesterName,
         short_comment: nullableText(client.consultation_reason ?? ''),
         meeting_modality: nullableText(client.meeting_modality ?? ''),
@@ -999,6 +1098,10 @@ export default function DirectionListeAttentePage() {
           selectedProfessional?.full_name ?? 'professionnel inconnu'
         }.`,
         metadata: {
+          client_name: client.client_name,
+          professional_name: selectedProfessional?.full_name ?? null,
+          requester_name: requesterName,
+          client_email: getContactEmails(client)[0] ?? null,
           professional_id: selectedProfessionalId,
           waiting_list_client_id: client.id,
           assignment_request_id: assignmentRequest?.id ?? null,
@@ -1030,6 +1133,8 @@ export default function DirectionListeAttentePage() {
                 selectedProfessional?.full_name ?? 'professionnel inconnu'
               }.`,
           metadata: {
+            client_name: client.client_name,
+            professional_name: selectedProfessional?.full_name ?? null,
             professional_id: selectedProfessionalId,
             notification_type: 'professional_assignment',
           },
@@ -1044,13 +1149,15 @@ export default function DirectionListeAttentePage() {
         entityId: insertedAssignment.id,
         description: 'Courriel professionnel non envoyé (case décochée).',
         metadata: {
+          client_name: client.client_name,
+          professional_name: selectedProfessional?.full_name ?? null,
           professional_id: selectedProfessionalId,
           notification_type: 'professional_assignment',
         },
       })
     }
 
-    if (notifyClient && client.contact_email?.trim()) {
+    if (notifyClient && getContactEmails(client).length > 0) {
       const notificationSent = await sendClientAssignmentNotification(
         insertedAssignment.id
       )
@@ -1068,6 +1175,9 @@ export default function DirectionListeAttentePage() {
             ? `Courriel client envoyé pour ${client.client_name ?? 'client sans nom'}.`
             : `Courriel client non envoyé pour ${client.client_name ?? 'client sans nom'}.`,
           metadata: {
+            client_name: client.client_name,
+            client_email: getContactEmails(client)[0] ?? null,
+            professional_name: selectedProfessional?.full_name ?? null,
             waiting_list_client_id: client.id,
             notification_type: 'client_assignment',
           },
@@ -1086,6 +1196,8 @@ export default function DirectionListeAttentePage() {
           entityId: insertedAssignment.id,
           description: 'Courriel client non envoyé (courriel absent).',
           metadata: {
+            client_name: client.client_name,
+            professional_name: selectedProfessional?.full_name ?? null,
             waiting_list_client_id: client.id,
             notification_type: 'client_assignment',
             reason: 'missing_email',
@@ -1101,6 +1213,9 @@ export default function DirectionListeAttentePage() {
         entityId: insertedAssignment.id,
         description: 'Courriel client non envoyé (case décochée).',
         metadata: {
+          client_name: client.client_name,
+          client_email: getContactEmails(client)[0] ?? null,
+          professional_name: selectedProfessional?.full_name ?? null,
           waiting_list_client_id: client.id,
           notification_type: 'client_assignment',
         },
@@ -1142,7 +1257,7 @@ export default function DirectionListeAttentePage() {
     ? clients.find((client) => client.id === assigningClientId) ?? null
     : null
   const selectedAssignmentClientHasEmail = Boolean(
-    selectedAssignmentClient?.contact_email?.trim()
+    selectedAssignmentClient && getContactEmails(selectedAssignmentClient).length > 0
   )
   const getPageCount = (totalCount: number, pageSize = CLIENTS_PER_PAGE) =>
     Math.max(Math.ceil(totalCount / pageSize), 1)
@@ -1206,6 +1321,65 @@ export default function DirectionListeAttentePage() {
             {isExpanded ? 'Masquer le motif' : 'Voir le motif'}
           </button>
         )}
+      </div>
+    )
+  }
+
+  const renderContactInfo = (client: WaitingListClient) => {
+    const emails = getContactEmails(client)
+    const phones = getContactPhones(client)
+
+    if (emails.length === 0 && phones.length === 0) return '-'
+
+    return (
+      <div className="space-y-3 text-sm text-[#6c5a4d]">
+        {emails.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold uppercase text-[#8a6f5d]">
+              Courriels
+            </p>
+            <div className="mt-1 space-y-1">
+              {emails.map((email) => (
+                <a
+                  key={email}
+                  href={`mailto:${email}`}
+                  className="block break-words text-[#6d3f1f] underline decoration-[#d9b591] underline-offset-2 hover:decoration-[#9b6a3d]"
+                >
+                  {email}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+        {phones.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold uppercase text-[#8a6f5d]">
+              Téléphones
+            </p>
+            <div className="mt-1 space-y-1">
+              {phones.map((phone) => (
+                <p key={phone} className="break-words">
+                  {phone}
+                </p>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const renderInternalNotes = (client: WaitingListClient) => {
+    if (!client.internal_notes?.trim()) return null
+
+    return (
+      <div className="mt-3 rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-3">
+        <p className="text-xs font-semibold uppercase text-[#8a6f5d]">
+          Notes internes
+        </p>
+        <p className="mt-1 whitespace-pre-wrap break-words text-sm text-[#6c5a4d]">
+          {client.internal_notes.trim()}
+        </p>
       </div>
     )
   }
@@ -1316,10 +1490,11 @@ export default function DirectionListeAttentePage() {
                     {formatText(client.availability)}
                   </td>
                   <td className="px-3 py-2 align-top text-[#6c5a4d]">
-                    {formatContact(client)}
+                    {renderContactInfo(client)}
                   </td>
                   <td className="min-w-[24rem] px-3 py-2 align-top">
                     {renderConsultationReason(client)}
+                    {renderInternalNotes(client)}
                   </td>
                   <td className="w-28 px-3 py-2 align-top text-[#6c5a4d]">
                     <div className="flex w-24 flex-col gap-2">
@@ -1330,13 +1505,18 @@ export default function DirectionListeAttentePage() {
                       >
                         Modifier
                       </button>
-                      <button
-                        type="button"
-                        className={`${buttonClass('danger')} !min-h-8 !w-full justify-center whitespace-nowrap px-2 py-1 text-xs`}
-                        onClick={() => handleDeleteClient(client)}
-                      >
-                        Supprimer
-                      </button>
+                      {canUseSuperAdminActions && (
+                        <button
+                          type="button"
+                          className={`${buttonClass('danger')} !min-h-8 !w-full justify-center whitespace-normal px-2 py-1 text-xs`}
+                          disabled={permanentlyDeletingClientId === client.id}
+                          onClick={() => handlePermanentDeleteClient(client)}
+                        >
+                          {permanentlyDeletingClientId === client.id
+                            ? 'Suppression...'
+                            : 'Supprimer définitivement'}
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -1426,13 +1606,42 @@ export default function DirectionListeAttentePage() {
     onCancel,
   }: {
     currentForm: WaitingListForm
-    onChange: (field: keyof WaitingListForm, value: string) => void
+    onChange: (field: keyof WaitingListForm, value: string | string[]) => void
     onSubmit: (event: FormEvent<HTMLFormElement>) => void
     submitLabel: string
     saving: boolean
     showStatus: boolean
     onCancel: () => void
-  }) => (
+  }) => {
+    const updateListValue = (
+      field: 'contact_emails' | 'contact_phones',
+      index: number,
+      value: string
+    ) => {
+      onChange(
+        field,
+        currentForm[field].map((currentValue, currentIndex) =>
+          currentIndex === index ? value : currentValue
+        )
+      )
+    }
+
+    const addListValue = (field: 'contact_emails' | 'contact_phones') => {
+      onChange(field, [...currentForm[field], ''])
+    }
+
+    const removeListValue = (
+      field: 'contact_emails' | 'contact_phones',
+      index: number
+    ) => {
+      const nextValues = currentForm[field].filter(
+        (_currentValue, currentIndex) => currentIndex !== index
+      )
+
+      onChange(field, nextValues.length > 0 ? nextValues : [''])
+    }
+
+    return (
     <form onSubmit={onSubmit} className="mt-5 space-y-5">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {showStatus && (
@@ -1549,23 +1758,67 @@ export default function DirectionListeAttentePage() {
             ))}
           </select>
         </label>
-        <label className="text-sm font-medium text-[#5d4a3d]">
-          Courriel
-          <input
-            type="email"
-            value={currentForm.contact_email}
-            onChange={(event) => onChange('contact_email', event.target.value)}
-            className={`${inputClass} mt-1`}
-          />
-        </label>
-        <label className="text-sm font-medium text-[#5d4a3d]">
-          Téléphone
-          <input
-            value={currentForm.contact_phone}
-            onChange={(event) => onChange('contact_phone', event.target.value)}
-            className={`${inputClass} mt-1`}
-          />
-        </label>
+        <div className="space-y-2 text-sm font-medium text-[#5d4a3d]">
+          <p>Courriel</p>
+          {currentForm.contact_emails.map((email, index) => (
+            <div key={`email-${index}`} className="flex gap-2">
+              <input
+                type="email"
+                value={email}
+                onChange={(event) =>
+                  updateListValue('contact_emails', index, event.target.value)
+                }
+                className={inputClass}
+              />
+              {currentForm.contact_emails.length > 1 && (
+                <button
+                  type="button"
+                  className={buttonClass('secondary')}
+                  onClick={() => removeListValue('contact_emails', index)}
+                >
+                  Supprimer
+                </button>
+              )}
+            </div>
+          ))}
+          <button
+            type="button"
+            className="text-sm font-medium text-[#6d3f1f] underline decoration-[#d9b591] underline-offset-2 hover:decoration-[#9b6a3d]"
+            onClick={() => addListValue('contact_emails')}
+          >
+            Ajouter un autre courriel
+          </button>
+        </div>
+        <div className="space-y-2 text-sm font-medium text-[#5d4a3d]">
+          <p>Téléphone</p>
+          {currentForm.contact_phones.map((phone, index) => (
+            <div key={`phone-${index}`} className="flex gap-2">
+              <input
+                value={phone}
+                onChange={(event) =>
+                  updateListValue('contact_phones', index, event.target.value)
+                }
+                className={inputClass}
+              />
+              {currentForm.contact_phones.length > 1 && (
+                <button
+                  type="button"
+                  className={buttonClass('secondary')}
+                  onClick={() => removeListValue('contact_phones', index)}
+                >
+                  Supprimer
+                </button>
+              )}
+            </div>
+          ))}
+          <button
+            type="button"
+            className="text-sm font-medium text-[#6d3f1f] underline decoration-[#d9b591] underline-offset-2 hover:decoration-[#9b6a3d]"
+            onClick={() => addListValue('contact_phones')}
+          >
+            Ajouter un autre téléphone
+          </button>
+        </div>
         <label className="text-sm font-medium text-[#5d4a3d] md:col-span-2 xl:col-span-1">
           Préférence horaire
           <input
@@ -1615,7 +1868,8 @@ export default function DirectionListeAttentePage() {
         </button>
       </div>
     </form>
-  )
+    )
+  }
 
   return (
     <>
@@ -1988,9 +2242,10 @@ export default function DirectionListeAttentePage() {
                           <td className={tableCellClass}>
                             {formatText(client.availability)}
                           </td>
-                          <td className={tableCellClass}>{formatContact(client)}</td>
+                          <td className={tableCellClass}>{renderContactInfo(client)}</td>
                           <td className="max-w-xs whitespace-pre-wrap break-words px-4 py-3 align-top text-[#6c5a4d]">
                             {formatText(client.consultation_reason)}
+                            {renderInternalNotes(client)}
                           </td>
                           <td className={tableCellClass}>
                             <div className="flex flex-col gap-2 sm:flex-row">
@@ -2009,13 +2264,18 @@ export default function DirectionListeAttentePage() {
                               >
                                 Modifier
                               </button>
-                              <button
-                                type="button"
-                                className={buttonClass('danger')}
-                                onClick={() => handleDeleteClient(client)}
-                              >
-                                Supprimer
-                              </button>
+                              {canUseSuperAdminActions && (
+                                <button
+                                  type="button"
+                                  className={buttonClass('danger')}
+                                  disabled={permanentlyDeletingClientId === client.id}
+                                  onClick={() => handlePermanentDeleteClient(client)}
+                                >
+                                  {permanentlyDeletingClientId === client.id
+                                    ? 'Suppression...'
+                                    : 'Supprimer définitivement'}
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>

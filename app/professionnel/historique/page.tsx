@@ -529,6 +529,9 @@ export default function ProfessionnelHistoriquePage() {
           is_active: nextIsActive,
         }).label}`,
         metadata: {
+          client_name: `${client.first_name} ${client.last_name}`.trim(),
+          requester_name: client.requester_name,
+          client_email: client.email,
           assignment_request_id: client.assignment_request_id,
           previous_status: client.is_active,
           new_status: nextIsActive,

@@ -156,14 +156,22 @@ export default function ProfessionnelClientsPage() {
       })
 
       const activeRequest =
-        requests.find((currentRequest) =>
-          getAssignmentRequestMetrics({
+        requests.find((currentRequest) => {
+          const requestClients = clientsByRequestId.get(currentRequest.id) ?? []
+          const acceptedCount = requestClients.filter(
+            (client) => client.is_active === true
+          ).length
+
+          return getAssignmentRequestMetrics({
             isActive: currentRequest.is_active,
             requestedCount: currentRequest.requested_count,
-            acceptedCount: currentRequest.assigned_count,
-            remainingCount: currentRequest.remaining_count,
+            acceptedCount,
+            remainingCount: Math.max(
+              (currentRequest.requested_count ?? 0) - acceptedCount,
+              0
+            ),
           }).isActive
-        ) ?? null
+        }) ?? null
 
       const activeRequestClients = activeRequest
         ? clientsByRequestId.get(activeRequest.id) ?? []
@@ -297,6 +305,9 @@ export default function ProfessionnelClientsPage() {
         entityId: client.id,
         description: `${getAuditStatusLabel(previousPersistedStatus)} → ${getAuditStatusLabel(client.is_active)}`,
         metadata: {
+          client_name: `${client.first_name} ${client.last_name}`.trim(),
+          requester_name: client.requester_name,
+          client_email: client.email,
           assignment_request_id: client.assignment_request_id,
           previous_status: previousPersistedStatus,
           new_status: client.is_active,

@@ -20,6 +20,7 @@ import {
   StatCard,
 } from "@/components/ui/index";
 import { supabase } from "@/lib/supabaseClient";
+import { isSuperAdmin } from "@/lib/superAdmin";
 import {
   getAssignmentRequestMetrics,
   logAudit,
@@ -342,6 +343,8 @@ export default function ProfessionnelDetailPage() {
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [auditActor, setAuditActor] = useState<AuditActor | null>(null);
+  const [canUseSuperAdminActions, setCanUseSuperAdminActions] =
+    useState(false);
   const [assignmentRequest, setAssignmentRequest] =
     useState<AssignmentRequest | null>(null);
   const [assignedClients, setAssignedClients] = useState<AssignedClient[]>([]);
@@ -357,6 +360,9 @@ export default function ProfessionnelDetailPage() {
   const [waitingListSearch, setWaitingListSearch] = useState("");
   const [showClientHistory, setShowClientHistory] = useState(false);
   const [assignedClientsPage, setAssignedClientsPage] = useState(0);
+  const [deletingAssignmentRequest, setDeletingAssignmentRequest] =
+    useState(false);
+  const [deletingAssignedClientId, setDeletingAssignedClientId] = useState("");
   const [clientHistoryPage, setClientHistoryPage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -419,6 +425,7 @@ export default function ProfessionnelDetailPage() {
           role: currentProfile.role,
           name: currentProfile.full_name ?? currentProfile.email ?? null,
         });
+        setCanUseSuperAdminActions(isSuperAdmin(user, currentProfile));
 
         const profileResponse = await supabase
           .from("profiles")
@@ -501,13 +508,32 @@ export default function ProfessionnelDetailPage() {
           }
         }
 
+        const clientsByRequestId = new Map<string, AssignedClient[]>();
+
+        loadedClients.forEach((client) => {
+          if (!client.assignment_request_id) return;
+
+          const requestClients =
+            clientsByRequestId.get(client.assignment_request_id) ?? [];
+          requestClients.push(client);
+          clientsByRequestId.set(client.assignment_request_id, requestClients);
+        });
+
         const activeRequest =
           loadedRequests.find((request) => {
+            const requestClients = clientsByRequestId.get(request.id) ?? [];
+            const acceptedCount = requestClients.filter(
+              (client) => client.is_active === true,
+            ).length;
+
             return getAssignmentRequestMetrics({
               isActive: request.is_active,
               requestedCount: request.requested_count,
-              acceptedCount: request.assigned_count,
-              remainingCount: request.remaining_count,
+              acceptedCount,
+              remainingCount: Math.max(
+                (request.requested_count ?? 0) - acceptedCount,
+                0,
+              ),
             }).isActive;
           }) ?? null;
 
@@ -826,6 +852,150 @@ export default function ProfessionnelDetailPage() {
     }
   };
 
+  const handleDeleteAssignmentRequest = async () => {
+    if (!assignmentRequest) return;
+
+    setClientMessage(null);
+    setClientError(null);
+    setDeletingAssignmentRequest(true);
+
+    try {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError || !session?.access_token) {
+        throw new Error("Session introuvable. Veuillez vous reconnecter.");
+      }
+
+      const summaryResponse = await fetch(
+        `/api/direction/assignment-requests/${assignmentRequest.id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        },
+      );
+      const summaryResult = (await summaryResponse.json().catch(() => null)) as
+        | {
+            error?: string;
+            summary?: {
+              linkedClients: number;
+              serviceTaken: number;
+              serviceNotTaken: number;
+              pending: number;
+            };
+          }
+        | null;
+
+      if (!summaryResponse.ok) {
+        throw new Error(
+          summaryResult?.error ?? "Impossible de charger le résumé de la demande.",
+        );
+      }
+
+      const summary = summaryResult?.summary ?? {
+        linkedClients: 0,
+        serviceTaken: 0,
+        serviceNotTaken: 0,
+        pending: 0,
+      };
+      const confirmed = window.confirm(
+        [
+          "Supprimer définitivement cette demande ?",
+          "",
+          `Nombre de clients liés : ${summary.linkedClients}`,
+          `Services pris : ${summary.serviceTaken}`,
+          `Services non pris : ${summary.serviceNotTaken}`,
+          `Services en attente : ${summary.pending}`,
+          "",
+          "Les assignations liées seront conservées, mais ne seront plus associées à cette demande.",
+        ].join("\n"),
+      );
+
+      if (!confirmed) return;
+
+      const deleteResponse = await fetch(
+        `/api/direction/assignment-requests/${assignmentRequest.id}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        },
+      );
+      const deleteResult = (await deleteResponse.json().catch(() => null)) as
+        | { error?: string }
+        | null;
+
+      if (!deleteResponse.ok) {
+        throw new Error(
+          deleteResult?.error ?? "Impossible de supprimer la demande.",
+        );
+      }
+
+      setClientMessage("Demande supprimée.");
+      await loadProfessionalProfile({ showLoading: false });
+    } catch (caughtError: unknown) {
+      setClientError(getErrorMessage(caughtError));
+    } finally {
+      setDeletingAssignmentRequest(false);
+    }
+  };
+
+  const handleDeleteAssignedClient = async (client: AssignedClient) => {
+    const confirmed = window.confirm(
+      [
+        "Supprimer définitivement cette assignation ?",
+        "",
+        `Client : ${getClientName(client)}`,
+        "",
+        "Cette action supprimera l'assignation et remettra le client dans la liste d'attente si un lien existe.",
+      ].join("\n"),
+    );
+
+    if (!confirmed) return;
+
+    setClientMessage(null);
+    setClientError(null);
+    setDeletingAssignedClientId(client.id);
+
+    try {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError || !session?.access_token) {
+        throw new Error("Session introuvable. Veuillez vous reconnecter.");
+      }
+
+      const response = await fetch(`/api/direction/assigned-clients/${client.id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+      const result = (await response.json().catch(() => null)) as
+        | { error?: string }
+        | null;
+
+      if (!response.ok) {
+        throw new Error(
+          result?.error ?? "Impossible de supprimer l'assignation.",
+        );
+      }
+
+      setClientMessage("Assignation supprimée.");
+      await loadProfessionalProfile({ showLoading: false });
+    } catch (caughtError: unknown) {
+      setClientError(getErrorMessage(caughtError));
+    } finally {
+      setDeletingAssignedClientId("");
+    }
+  };
+
   const handleAssignWaitingClient = async (client: WaitingListClient) => {
     setClientMessage(null);
     setClientError(null);
@@ -898,6 +1068,10 @@ export default function ProfessionnelDetailPage() {
           entityId: insertedAssignment.id,
           description: `Client ${client.client_name ?? "sans nom"} assigné à ${professionalName}.`,
           metadata: {
+            client_name: client.client_name,
+            professional_name: professionalName,
+            requester_name: requesterName,
+            client_email: client.contact_email,
             professional_id: professionalId,
             waiting_list_client_id: client.id,
             assignment_request_id: assignmentRequest?.id ?? null,
@@ -925,6 +1099,8 @@ export default function ProfessionnelDetailPage() {
               ? `Courriel professionnel envoyé à ${professionalName}.`
               : `Courriel professionnel non envoyé à ${professionalName}.`,
             metadata: {
+              client_name: client.client_name,
+              professional_name: professionalName,
               professional_id: professionalId,
               notification_type: "professional_assignment",
             },
@@ -939,6 +1115,8 @@ export default function ProfessionnelDetailPage() {
           entityId: insertedAssignment.id,
           description: "Courriel professionnel non envoyé (case décochée).",
           metadata: {
+            client_name: client.client_name,
+            professional_name: professionalName,
             professional_id: professionalId,
             notification_type: "professional_assignment",
           },
@@ -963,6 +1141,9 @@ export default function ProfessionnelDetailPage() {
               ? `Courriel client envoyé pour ${client.client_name ?? "client sans nom"}.`
               : `Courriel client non envoyé pour ${client.client_name ?? "client sans nom"}.`,
             metadata: {
+              client_name: client.client_name,
+              professional_name: professionalName,
+              client_email: client.contact_email,
               waiting_list_client_id: client.id,
               notification_type: "client_assignment",
             },
@@ -981,6 +1162,8 @@ export default function ProfessionnelDetailPage() {
             entityId: insertedAssignment.id,
             description: "Courriel client non envoyé (courriel absent).",
             metadata: {
+              client_name: client.client_name,
+              professional_name: professionalName,
               waiting_list_client_id: client.id,
               notification_type: "client_assignment",
               reason: "missing_email",
@@ -996,6 +1179,9 @@ export default function ProfessionnelDetailPage() {
           entityId: insertedAssignment.id,
           description: "Courriel client non envoyé (case décochée).",
           metadata: {
+            client_name: client.client_name,
+            professional_name: professionalName,
+            client_email: client.contact_email,
             waiting_list_client_id: client.id,
             notification_type: "client_assignment",
           },
@@ -1046,6 +1232,51 @@ export default function ProfessionnelDetailPage() {
           ? { ...currentClient, is_active: nextIsActive }
           : currentClient;
 
+      if (client.assignment_request_id) {
+        const nextAssignedClients = assignedClients.map(updateClient);
+        const requestClients = nextAssignedClients.filter(
+          (currentClient) =>
+            currentClient.assignment_request_id === client.assignment_request_id,
+        );
+        const nextAssignedCount = requestClients.filter(
+          (currentClient) => currentClient.is_active === true,
+        ).length;
+
+        const { data: requestData, error: requestLoadError } = await supabase
+          .from("assignment_requests")
+          .select("requested_count")
+          .eq("id", client.assignment_request_id)
+          .limit(1)
+          .maybeSingle();
+
+        if (requestLoadError) throw requestLoadError;
+
+        const nextRemainingCount = Math.max(
+          (requestData?.requested_count ?? 0) - nextAssignedCount,
+          0,
+        );
+
+        const { error: requestUpdateError } = await supabase
+          .from("assignment_requests")
+          .update({
+            assigned_count: nextAssignedCount,
+            remaining_count: nextRemainingCount,
+          })
+          .eq("id", client.assignment_request_id);
+
+        if (requestUpdateError) throw requestUpdateError;
+
+        setAssignmentRequest((currentRequest) =>
+          currentRequest?.id === client.assignment_request_id
+            ? {
+                ...currentRequest,
+                assigned_count: nextAssignedCount,
+                remaining_count: nextRemainingCount,
+              }
+            : currentRequest,
+        );
+      }
+
       if (auditActor) {
         void logAssignedClientStatusChange({
           supabase,
@@ -1064,6 +1295,8 @@ export default function ProfessionnelDetailPage() {
             entityId: client.id,
             description: `${getAuditStatusLabel(client.is_active)} → ${getAuditStatusLabel(nextIsActive)}`,
             metadata: {
+              client_name: `${client.first_name} ${client.last_name}`.trim(),
+              professional_name: professionalName,
               professional_id: professionalId,
               previous_status: client.is_active,
               new_status: nextIsActive,
@@ -1113,8 +1346,14 @@ export default function ProfessionnelDetailPage() {
   const requestMetrics = getAssignmentRequestMetrics({
     isActive: assignmentRequest?.is_active,
     requestedCount: assignmentRequest?.requested_count,
-    acceptedCount: assignmentRequest?.assigned_count,
-    remainingCount: assignmentRequest?.remaining_count,
+    acceptedCount: clientsWithService.length,
+    remainingCount:
+      assignmentRequest && assignmentRequest.requested_count !== null
+        ? Math.max(
+            (assignmentRequest.requested_count ?? 0) - clientsWithService.length,
+            0,
+          )
+        : assignmentRequest?.remaining_count,
   });
   const requestedCount = requestMetrics.requestedCount;
   const assignedCount = requestMetrics.acceptedCount;
@@ -1477,6 +1716,32 @@ export default function ProfessionnelDetailPage() {
                   )}
                 </div>
 
+                {canUseSuperAdminActions && displayAssignmentRequest && (
+                  <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-red-800">
+                          Action Super administrateur
+                        </p>
+                        <p className="mt-1 text-sm text-red-700">
+                          Supprimer cette demande sans supprimer les assignations
+                          existantes.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className="inline-flex min-h-10 items-center justify-center rounded-xl border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        onClick={() => void handleDeleteAssignmentRequest()}
+                        disabled={deletingAssignmentRequest}
+                      >
+                        {deletingAssignmentRequest
+                          ? "Suppression..."
+                          : "Supprimer la demande"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="mt-5 grid gap-3 lg:grid-cols-2">
                   {operationalAlerts.length === 0 ? (
                     <EmptyState title="Aucune alerte operationnelle." />
@@ -1641,6 +1906,21 @@ export default function ProfessionnelDetailPage() {
                               </ul>
                             )}
                           </div>
+
+                          {canUseSuperAdminActions && (
+                            <div className="mt-4 flex justify-end">
+                              <button
+                                type="button"
+                                className="inline-flex min-h-9 items-center justify-center rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                onClick={() => void handleDeleteAssignedClient(client)}
+                                disabled={deletingAssignedClientId === client.id}
+                              >
+                                {deletingAssignedClientId === client.id
+                                  ? "Suppression..."
+                                  : "Supprimer l'assignation"}
+                              </button>
+                            </div>
+                          )}
                         </article>
                       );
                     })}

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { AppNav } from '@/components/AppNav'
 import {
   Badge,
+  type BadgeTone,
   EmptyState,
   PageHeader,
   tableBodyClass,
@@ -17,6 +18,7 @@ import {
 } from '@/components/ui/index'
 import { buttonClass } from '@/components/Ui'
 import { supabase } from '@/lib/supabaseClient'
+import { isSuperAdmin } from '@/lib/superAdmin'
 
 type AuditLogRow = {
   id: string
@@ -28,10 +30,12 @@ type AuditLogRow = {
   entity_type: string | null
   entity_id: string | null
   description: string | null
+  metadata: AuditMetadata | null
 }
 
-const AUDIT_PAGE_SIZE = 20
+type AuditMetadata = Record<string, unknown>
 
+const AUDIT_PAGE_SIZE = 20
 function formatDateTime(value: string | null): string {
   if (!value) return '-'
 
@@ -74,9 +78,74 @@ function formatAction(value: string | null): string {
     professional_access_resent: 'Invitation renvoyée',
     waiting_list_client_created: 'Client créé',
     waiting_list_client_deleted: 'Client supprimé',
+    waiting_list_client_permanently_deleted: 'Client supprimé définitivement',
+    assigned_client_deleted: 'Assignation supprimée',
+    assignment_request_deleted: 'Demande supprimée',
+    professional_deleted: 'Professionnel supprimé',
   }
 
   return value ? labels[value] ?? value : '-'
+}
+
+function getActionTone(value: string | null): BadgeTone {
+  if (!value) return 'muted'
+  if (value.includes('failed') || value.includes('deleted')) return 'danger'
+  if (value.includes('not_sent') || value.includes('disabled')) return 'warning'
+  if (value.includes('sent') || value.includes('created') || value.includes('enabled')) {
+    return 'success'
+  }
+  return 'neutral'
+}
+
+function getMetadataString(metadata: AuditMetadata | null, keys: string[]) {
+  for (const key of keys) {
+    const value = metadata?.[key]
+
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim()
+    }
+  }
+
+  return null
+}
+
+function formatStatusValue(value: unknown) {
+  if (value === true) return 'Service pris'
+  if (value === false) return 'Service non pris'
+  if (value === null) return 'En attente'
+  if (typeof value === 'string' && value.trim()) return value.trim()
+  return null
+}
+
+function getAuditDetails(log: AuditLogRow) {
+  const metadata = log.metadata ?? null
+  const details: Array<{ label: string; value: string }> = []
+  const clientName = getMetadataString(metadata, [
+    'client_name',
+    'waiting_list_client_name',
+    'assigned_client_name',
+  ])
+  const professionalName = getMetadataString(metadata, ['professional_name'])
+  const requesterName = getMetadataString(metadata, ['requester_name'])
+  const email = getMetadataString(metadata, [
+    'client_email',
+    'contact_email',
+    'professional_email',
+    'email',
+  ])
+  const previousStatus = formatStatusValue(metadata?.previous_status)
+  const newStatus = formatStatusValue(metadata?.new_status)
+
+  if (clientName) details.push({ label: 'Client', value: clientName })
+  if (professionalName) {
+    details.push({ label: 'Professionnel', value: professionalName })
+  }
+  if (requesterName) details.push({ label: 'Requérant', value: requesterName })
+  if (email) details.push({ label: 'Courriel', value: email })
+  if (previousStatus) details.push({ label: 'Ancien statut', value: previousStatus })
+  if (newStatus) details.push({ label: 'Nouveau statut', value: newStatus })
+
+  return details
 }
 
 export default function DirectionJournalAuditPage() {
@@ -84,15 +153,20 @@ export default function DirectionJournalAuditPage() {
   const [logs, setLogs] = useState<AuditLogRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [deleteError, setDeleteError] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [actorFilter, setActorFilter] = useState('all')
   const [actionFilter, setActionFilter] = useState('all')
   const [currentPage, setCurrentPage] = useState(0)
+  const [canDeleteAuditLog, setCanDeleteAuditLog] = useState(false)
+  const [logToDelete, setLogToDelete] = useState<AuditLogRow | null>(null)
+  const [deletingLogId, setDeletingLogId] = useState('')
 
   useEffect(() => {
     const loadAuditLogs = async () => {
       setLoading(true)
       setError('')
+      setDeleteError('')
 
       const {
         data: { user },
@@ -106,7 +180,7 @@ export default function DirectionJournalAuditPage() {
 
       const { data: currentProfile, error: currentProfileError } = await supabase
         .from('profiles')
-        .select('role')
+        .select('role, email')
         .eq('id', user.id)
         .limit(1)
         .maybeSingle()
@@ -116,10 +190,12 @@ export default function DirectionJournalAuditPage() {
         return
       }
 
+      setCanDeleteAuditLog(isSuperAdmin(user, currentProfile))
+
       const { data, error: auditError } = await supabase
         .from('audit_logs')
         .select(
-          'id, created_at, actor_profile_id, actor_name, actor_role, action, entity_type, entity_id, description'
+          'id, created_at, actor_profile_id, actor_name, actor_role, action, entity_type, entity_id, description, metadata'
         )
         .order('created_at', { ascending: false })
         .limit(500)
@@ -177,6 +253,7 @@ export default function DirectionJournalAuditPage() {
           log.action,
           log.entity_type,
           log.description,
+          JSON.stringify(log.metadata ?? {}),
         ]
           .join(' ')
           .toLowerCase()
@@ -187,10 +264,50 @@ export default function DirectionJournalAuditPage() {
   }, [actionFilter, actorFilter, logs, searchQuery])
 
   const pageCount = Math.max(Math.ceil(filteredLogs.length / AUDIT_PAGE_SIZE), 1)
+  const safeCurrentPage = Math.min(currentPage, pageCount - 1)
   const paginatedLogs = filteredLogs.slice(
-    currentPage * AUDIT_PAGE_SIZE,
-    currentPage * AUDIT_PAGE_SIZE + AUDIT_PAGE_SIZE
+    safeCurrentPage * AUDIT_PAGE_SIZE,
+    safeCurrentPage * AUDIT_PAGE_SIZE + AUDIT_PAGE_SIZE
   )
+
+  const handleDeleteLog = async () => {
+    if (!logToDelete) return
+
+    setDeletingLogId(logToDelete.id)
+    setDeleteError('')
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+
+    if (!session?.access_token) {
+      setDeleteError('Session introuvable.')
+      setDeletingLogId('')
+      return
+    }
+
+    const response = await fetch(`/api/direction/audit-logs/${logToDelete.id}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
+    })
+
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as
+        | { error?: string }
+        | null
+      setDeleteError(body?.error ?? "La suppression de l'entrée a échoué.")
+      setDeletingLogId('')
+      return
+    }
+
+    setLogs((currentLogs) =>
+      currentLogs.filter((currentLog) => currentLog.id !== logToDelete.id)
+    )
+    setLogToDelete(null)
+    setDeletingLogId('')
+  }
 
   return (
     <>
@@ -269,8 +386,22 @@ export default function DirectionJournalAuditPage() {
                 </label>
               </section>
 
+              {deleteError && (
+                <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                  {deleteError}
+                </div>
+              )}
+
               <div className={tableShellClass}>
-                <table className={tableClass}>
+                <table className={`${tableClass} w-full min-w-[1120px] table-fixed`}>
+                  <colgroup>
+                    <col className="w-[15rem]" />
+                    <col className="w-[14rem]" />
+                    <col className="w-[9rem]" />
+                    <col className="w-[15rem]" />
+                    <col />
+                    {canDeleteAuditLog && <col className="w-[9rem]" />}
+                  </colgroup>
                   <thead className={tableHeaderClass}>
                     <tr>
                       <th className={tableHeadCellClass}>Date</th>
@@ -278,25 +409,37 @@ export default function DirectionJournalAuditPage() {
                       <th className={tableHeadCellClass}>Rôle</th>
                       <th className={tableHeadCellClass}>Action</th>
                       <th className={tableHeadCellClass}>Description</th>
+                      {canDeleteAuditLog && (
+                        <th className={`${tableHeadCellClass} text-right`}>
+                          Actions
+                        </th>
+                      )}
                     </tr>
                   </thead>
                   <tbody className={tableBodyClass}>
                     {paginatedLogs.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="px-4 py-8">
+                        <td
+                          colSpan={canDeleteAuditLog ? 6 : 5}
+                          className="px-4 py-8"
+                        >
                           <EmptyState title="Aucune action trouvée." />
                         </td>
                       </tr>
                     ) : (
                       paginatedLogs.map((log) => (
                         <tr key={log.id} className={tableRowClass}>
-                          <td className={tableCellClass}>
-                            {formatDateTime(log.created_at)}
+                          <td className={`${tableCellClass} align-top`}>
+                            <span className="font-medium text-[#332820]">
+                              {formatDateTime(log.created_at)}
+                            </span>
                           </td>
-                          <td className={tableCellClass}>
-                            {formatText(log.actor_name)}
+                          <td className={`${tableCellClass} align-top`}>
+                            <span className="font-medium text-[#332820]">
+                              {formatText(log.actor_name)}
+                            </span>
                           </td>
-                          <td className={tableCellClass}>
+                          <td className={`${tableCellClass} align-top`}>
                             <Badge
                               tone={
                                 log.actor_role === 'direction'
@@ -307,12 +450,41 @@ export default function DirectionJournalAuditPage() {
                               {formatRole(log.actor_role)}
                             </Badge>
                           </td>
-                          <td className={tableCellClass}>
-                            {formatAction(log.action)}
+                          <td className={`${tableCellClass} align-top`}>
+                            <Badge tone={getActionTone(log.action)}>
+                              {formatAction(log.action)}
+                            </Badge>
                           </td>
-                          <td className={tableCellClass}>
-                            {formatText(log.description)}
+                          <td className={`${tableCellClass} align-top`}>
+                            <p className="break-words leading-6 text-[#6c5a4d]">
+                              {formatText(log.description)}
+                            </p>
+                            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[#8a6f5d]">
+                              {getAuditDetails(log).length > 0 ? (
+                                getAuditDetails(log).map((detail) => (
+                                  <span key={`${detail.label}-${detail.value}`}>
+                                    <span className="font-semibold">
+                                      {detail.label} :
+                                    </span>{' '}
+                                    {detail.value}
+                                  </span>
+                                ))
+                              ) : (
+                                <span>Détail non disponible</span>
+                              )}
+                            </div>
                           </td>
+                          {canDeleteAuditLog && (
+                            <td className={`${tableCellClass} align-top text-right`}>
+                              <button
+                                type="button"
+                                className={`${buttonClass('secondary')} !w-auto justify-center text-sm text-red-700 hover:border-red-200 hover:bg-red-50`}
+                                onClick={() => setLogToDelete(log)}
+                              >
+                                Supprimer
+                              </button>
+                            </td>
+                          )}
                         </tr>
                       ))
                     )}
@@ -325,7 +497,7 @@ export default function DirectionJournalAuditPage() {
                   <button
                     type="button"
                     className={buttonClass('secondary')}
-                    disabled={currentPage === 0}
+                    disabled={safeCurrentPage === 0}
                     onClick={() =>
                       setCurrentPage((pageIndex) => Math.max(pageIndex - 1, 0))
                     }
@@ -333,12 +505,12 @@ export default function DirectionJournalAuditPage() {
                     Précédent
                   </button>
                   <p className="text-center text-sm font-medium text-[#7a6859]">
-                    Page {currentPage + 1} sur {pageCount}
+                    Page {safeCurrentPage + 1} sur {pageCount}
                   </p>
                   <button
                     type="button"
                     className={buttonClass('secondary')}
-                    disabled={currentPage >= pageCount - 1}
+                    disabled={safeCurrentPage >= pageCount - 1}
                     onClick={() =>
                       setCurrentPage((pageIndex) =>
                         Math.min(pageIndex + 1, pageCount - 1)
@@ -353,6 +525,37 @@ export default function DirectionJournalAuditPage() {
           )}
         </div>
       </main>
+
+      {logToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4">
+          <div className="w-full max-w-md rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-6 shadow-[0_18px_50px_rgba(72,49,30,0.22)]">
+            <h2 className="text-lg font-semibold text-[#332820]">
+              Supprimer cette entrée
+            </h2>
+            <p className="mt-3 text-sm leading-6 text-[#6c5a4d]">
+              Voulez-vous vraiment supprimer cette entrée du journal d&apos;audit ?
+            </p>
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                className={buttonClass('secondary')}
+                onClick={() => setLogToDelete(null)}
+                disabled={Boolean(deletingLogId)}
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                className={buttonClass('danger')}
+                onClick={handleDeleteLog}
+                disabled={deletingLogId === logToDelete.id}
+              >
+                {deletingLogId === logToDelete.id ? 'Suppression...' : 'Supprimer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }
