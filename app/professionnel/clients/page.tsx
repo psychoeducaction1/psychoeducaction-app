@@ -14,14 +14,12 @@ import {
 import { supabase } from '@/lib/supabaseClient'
 import {
   closureReasonOptions,
-  getAssignmentRequestMetrics,
   getRemainingAssignmentCount,
   getUsedAssignmentCount,
   logAudit,
   logAssignedClientStatusChange,
   nullableText,
   type AssignedClient,
-  type AssignmentRequest,
   type EditableClientField,
 } from '../shared'
 
@@ -51,7 +49,6 @@ export default function ProfessionnelClientsPage() {
   const [currentUserId, setCurrentUserId] = useState('')
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null)
   const [currentUserName, setCurrentUserName] = useState<string | null>(null)
-  const [currentRequestId, setCurrentRequestId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [savingClientIds, setSavingClientIds] = useState<Record<string, boolean>>({})
@@ -99,18 +96,9 @@ export default function ProfessionnelClientsPage() {
       setCurrentUserRole(profile.role)
       setCurrentUserName(profile.full_name ?? profile.email ?? null)
 
-      const [requestsResponse, clientsResponse] = await Promise.all([
-        supabase
-          .from('assignment_requests')
-          .select(
-            'id, professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment'
-          )
-          .eq('professional_id', user.id)
-          .eq('is_active', true)
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('assigned_clients')
-          .select(`
+      const { data: clientsData, error: clientsError } = await supabase
+        .from('assigned_clients')
+        .select(`
           id,
           assignment_request_id,
           waiting_list_client_id,
@@ -127,64 +115,22 @@ export default function ProfessionnelClientsPage() {
           service_address,
           closure_reason
         `)
-          .eq('professional_id', user.id)
-          .order('assigned_date', { ascending: false }),
-      ])
+        .eq('professional_id', user.id)
+        .order('assigned_date', { ascending: false })
 
-      if (requestsResponse.error) {
-        setError(requestsResponse.error.message)
+      if (clientsError) {
+        setError(clientsError.message)
         setLoading(false)
         return
       }
 
-      if (clientsResponse.error) {
-        setError(clientsResponse.error.message)
-        setLoading(false)
-        return
-      }
-
-      const requests = (requestsResponse.data ?? []) as AssignmentRequest[]
-      const loadedClients = (clientsResponse.data ?? []) as AssignedClient[]
-      const clientsByRequestId = new Map<string, AssignedClient[]>()
-
-      loadedClients.forEach((client) => {
-        if (!client.assignment_request_id) return
-
-        const requestClients = clientsByRequestId.get(client.assignment_request_id) ?? []
-        requestClients.push(client)
-        clientsByRequestId.set(client.assignment_request_id, requestClients)
-      })
-
-      const activeRequest =
-        requests.find((currentRequest) => {
-          const requestClients = clientsByRequestId.get(currentRequest.id) ?? []
-          const acceptedCount = requestClients.filter(
-            (client) => client.is_active === true
-          ).length
-
-          return getAssignmentRequestMetrics({
-            isActive: currentRequest.is_active,
-            requestedCount: currentRequest.requested_count,
-            acceptedCount,
-            remainingCount: Math.max(
-              (currentRequest.requested_count ?? 0) - acceptedCount,
-              0
-            ),
-          }).isActive
-        }) ?? null
-
-      const activeRequestClients = activeRequest
-        ? clientsByRequestId.get(activeRequest.id) ?? []
-        : []
-      const unlinkedClientsToProcess = loadedClients.filter(
-        (client) =>
-          !client.assignment_request_id &&
-          (client.is_active === null ||
-            (client.is_active === false && !client.closure_reason?.trim()))
+      const loadedClients = (clientsData ?? []) as AssignedClient[]
+      const pendingClients = loadedClients.filter(
+        (client) => client.assignment_request_id !== null && client.is_active === null
       )
 
-      setCurrentRequestId(activeRequest?.id ?? null)
-      setClients([...unlinkedClientsToProcess, ...activeRequestClients])
+      latestClientsRef.current = loadedClients
+      setClients(pendingClients)
       persistedStatusByClientIdRef.current = Object.fromEntries(
         loadedClients.map((client) => [client.id, client.is_active])
       )
@@ -203,9 +149,6 @@ export default function ProfessionnelClientsPage() {
     []
   )
 
-  useEffect(() => {
-    latestClientsRef.current = clients
-  }, [clients])
 
   const hasNonServiceReason = (client: AssignedClient) =>
     Boolean(client.closure_reason?.trim())
@@ -325,9 +268,10 @@ export default function ProfessionnelClientsPage() {
           }
         : currentClient
     )
+    latestClientsRef.current = updatedClients
 
-    if (!client.assignment_request_id || !currentRequestId) {
-      setClients(updatedClients)
+    if (!client.assignment_request_id) {
+      setClients(updatedClients.filter((currentClient) => currentClient.is_active === null))
       if (waitingListSyncError) {
         setClientErrors((currentErrors) => ({
           ...currentErrors,
@@ -345,7 +289,7 @@ export default function ProfessionnelClientsPage() {
     const { data: request, error: requestLoadError } = await supabase
       .from('assignment_requests')
       .select('requested_count')
-      .eq('id', currentRequestId)
+      .eq('id', client.assignment_request_id)
       .limit(1)
       .maybeSingle()
 
@@ -359,7 +303,7 @@ export default function ProfessionnelClientsPage() {
 
     if (request) {
       const requestClients = updatedClients.filter(
-        (currentClient) => currentClient.assignment_request_id === currentRequestId
+        (currentClient) => currentClient.assignment_request_id === client.assignment_request_id
       )
       const nextAssignedCount = getUsedAssignmentCount(requestClients)
       const nextRemainingCount = getRemainingAssignmentCount(
@@ -372,7 +316,7 @@ export default function ProfessionnelClientsPage() {
           assigned_count: nextAssignedCount,
           remaining_count: nextRemainingCount,
         })
-        .eq('id', currentRequestId)
+        .eq('id', client.assignment_request_id)
 
       if (requestUpdateError) {
         setClientErrors((currentErrors) => ({
@@ -383,7 +327,7 @@ export default function ProfessionnelClientsPage() {
       }
     }
 
-    setClients(updatedClients)
+    setClients(updatedClients.filter((currentClient) => currentClient.is_active === null))
     if (waitingListSyncError) {
       setClientErrors((currentErrors) => ({
         ...currentErrors,

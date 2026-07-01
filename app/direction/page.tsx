@@ -213,10 +213,7 @@ export default function DirectionPage() {
         }
 
         currentProfessionalStats.total += 1
-
-        if (client.is_active === true) {
-          currentProfessionalStats.usedAssignments += 1
-        }
+        currentProfessionalStats.usedAssignments += 1
 
         if (client.is_active === true) {
           currentProfessionalStats.active += 1
@@ -244,9 +241,9 @@ export default function DirectionPage() {
         }
 
         currentRequestStats.total += 1
+        currentRequestStats.usedAssignments += 1
 
         if (client.is_active === true) {
-          currentRequestStats.usedAssignments += 1
           currentRequestStats.active += 1
         } else if (client.is_active === false) {
           currentRequestStats.noResponse += 1
@@ -273,8 +270,11 @@ export default function DirectionPage() {
           return getAssignmentRequestMetrics({
             isActive: currentRequest.is_active,
             requestedCount: currentRequest.requested_count,
-            acceptedCount: requestStats?.usedAssignments ?? 0,
-            remainingCount: currentRequest.remaining_count,
+            acceptedCount: requestStats?.total ?? 0,
+            remainingCount: Math.max(
+              (currentRequest.requested_count ?? 0) - (requestStats?.total ?? 0),
+              0
+            ),
           })
         }
         const activeRequest =
@@ -301,9 +301,7 @@ export default function DirectionPage() {
             })
         const unassignedCount = requestMetrics.isActive
           ? Math.max(
-              requestMetrics.requestedCount -
-                (requestClientStats?.usedAssignments ?? 0) -
-                (requestClientStats?.pending ?? 0),
+              requestMetrics.requestedCount - (requestClientStats?.total ?? 0),
               0
             )
           : 0
@@ -318,7 +316,7 @@ export default function DirectionPage() {
           pendingClients: professionalClientStats?.pending ?? 0,
           requestActive: requestMetrics.isActive,
           requestedCount: requestMetrics.requestedCount,
-          assignedCount: requestClientStats?.usedAssignments ?? 0,
+          assignedCount: requestClientStats?.total ?? 0,
           remainingCount: requestMetrics.isActive ? requestMetrics.remainingCount : 0,
           unassignedCount,
           requestComment: request?.request_comment?.trim() || '-',
@@ -590,7 +588,7 @@ export default function DirectionPage() {
                               <Badge tone={status.tone}>{status.label}</Badge>
                             </div>
                             <p className="mt-2 text-sm text-[#7a6859]">
-                              {row.assignedCount} services pris sur {row.requestedCount}
+                              {row.assignedCount} assignation{row.assignedCount > 1 ? "s" : ""} sur {row.requestedCount}
                             </p>
                           </div>
                         )

@@ -46,6 +46,7 @@ type AssignedClient = {
 type ClientStats = {
   pending: number
   usedAssignments: number
+  total: number
 }
 
 type AssignmentRow = {
@@ -174,7 +175,10 @@ export default function DirectionAssignationsPage() {
         ) ?? {
           pending: 0,
           usedAssignments: 0,
+          total: 0,
         }
+
+        currentStats.total += 1
 
         if (client.is_active === true) {
           currentStats.usedAssignments += 1
@@ -201,8 +205,11 @@ export default function DirectionAssignationsPage() {
           return getAssignmentRequestMetrics({
             isActive: currentRequest.is_active,
             requestedCount: currentRequest.requested_count,
-            acceptedCount: requestStats?.usedAssignments ?? 0,
-            remainingCount: currentRequest.remaining_count,
+            acceptedCount: requestStats?.total ?? 0,
+            remainingCount: Math.max(
+              (currentRequest.requested_count ?? 0) - (requestStats?.total ?? 0),
+              0
+            ),
           })
         }
         const activeRequest =
@@ -230,12 +237,10 @@ export default function DirectionAssignationsPage() {
           email: profile.email ?? '-',
           requestActive: requestMetrics.isActive,
           requestedCount: requestMetrics.requestedCount,
-          assignedCount: clientStats?.usedAssignments ?? 0,
+          assignedCount: clientStats?.total ?? 0,
           remainingCount: requestMetrics.isActive
             ? Math.max(
-                requestMetrics.requestedCount -
-                  (clientStats?.usedAssignments ?? 0) -
-                  (clientStats?.pending ?? 0),
+                requestMetrics.requestedCount - (clientStats?.total ?? 0),
                 0
               )
             : 0,
@@ -315,7 +320,7 @@ export default function DirectionAssignationsPage() {
                       <th className={tableHeadCellClass}>Email</th>
                       <th className={tableHeadCellClass}>Statut de la demande</th>
                       <th className={tableHeadCellClass}>Clients demandés</th>
-                      <th className={tableHeadCellClass}>Services pris</th>
+                      <th className={tableHeadCellClass}>Assignations liées</th>
                       <th className={tableHeadCellClass}>Places restantes</th>
                       <th className={tableHeadCellClass}>Commentaire demande</th>
                     </tr>

@@ -288,8 +288,11 @@ export default function DirectionProfessionnelsPage() {
           return getAssignmentRequestMetrics({
             isActive: currentRequest.is_active,
             requestedCount: currentRequest.requested_count,
-            acceptedCount: requestStats?.usedAssignments ?? 0,
-            remainingCount: currentRequest.remaining_count,
+            acceptedCount: requestStats?.total ?? 0,
+            remainingCount: Math.max(
+              (currentRequest.requested_count ?? 0) - (requestStats?.total ?? 0),
+              0
+            ),
           })
         }
         const request =
@@ -321,12 +324,10 @@ export default function DirectionProfessionnelsPage() {
           platformAccessEnabled: profile.platform_access_enabled !== false,
           requestActive: requestMetrics.isActive,
           requestedCount: requestMetrics.requestedCount,
-          assignedCount: requestClientStats?.usedAssignments ?? 0,
+          assignedCount: requestClientStats?.total ?? 0,
           remainingCount: requestMetrics.isActive
             ? Math.max(
-                requestMetrics.requestedCount -
-                  (requestClientStats?.usedAssignments ?? 0) -
-                  (requestClientStats?.pending ?? 0),
+                requestMetrics.requestedCount - (requestClientStats?.total ?? 0),
                 0
               )
             : 0,

@@ -54,10 +54,7 @@ type RequestCardData = {
   pendingCount: number
   durationLabel: string
   status: RequestStatus
-  isUnlinkedAssignmentCard?: boolean
 }
-
-const UNLINKED_ASSIGNMENTS_CARD_ID = 'assignations-sans-demande-liee'
 
 function parseDate(value: string | null | undefined): Date | null {
   if (!value) return null
@@ -187,6 +184,7 @@ export default function ProfessionnelHistoriquePage() {
   const [currentUserName, setCurrentUserName] = useState<string | null>(null)
   const [requests, setRequests] = useState<AssignmentRequestHistoryRow[]>([])
   const [clients, setClients] = useState<AssignedClientHistoryRow[]>([])
+  const [internalClients, setInternalClients] = useState<AssignedClientHistoryRow[]>([])
   const [expandedRequestIds, setExpandedRequestIds] = useState<Record<string, boolean>>(
     {}
   )
@@ -266,10 +264,19 @@ export default function ProfessionnelHistoriquePage() {
       }
 
       if (!requestsResponseWithDate.error) {
+        const loadedClients = (clientsResponse.data ?? []) as AssignedClientHistoryRow[]
+        const linkedClients = loadedClients.filter(
+          (client) => client.assignment_request_id !== null
+        )
+        const unlinkedClients = loadedClients.filter(
+          (client) => client.assignment_request_id === null
+        )
+
         setRequests(
           (requestsResponseWithDate.data ?? []) as AssignmentRequestHistoryRow[]
         )
-        setClients((clientsResponse.data ?? []) as AssignedClientHistoryRow[])
+        setClients(linkedClients)
+        setInternalClients(unlinkedClients)
         setLoading(false)
         return
       }
@@ -291,10 +298,19 @@ export default function ProfessionnelHistoriquePage() {
         return
       }
 
+      const loadedClients = (clientsResponse.data ?? []) as AssignedClientHistoryRow[]
+      const linkedClients = loadedClients.filter(
+        (client) => client.assignment_request_id !== null
+      )
+      const unlinkedClients = loadedClients.filter(
+        (client) => client.assignment_request_id === null
+      )
+
       setRequests(
         (requestsResponseWithoutDate.data ?? []) as AssignmentRequestHistoryRow[]
       )
-      setClients((clientsResponse.data ?? []) as AssignedClientHistoryRow[])
+      setClients(linkedClients)
+      setInternalClients(unlinkedClients)
       setLoading(false)
     }
 
@@ -303,13 +319,9 @@ export default function ProfessionnelHistoriquePage() {
 
   const requestCards = useMemo<RequestCardData[]>(() => {
     const clientsByRequestId = new Map<string, AssignedClientHistoryRow[]>()
-    const unlinkedClients: AssignedClientHistoryRow[] = []
 
     clients.forEach((client) => {
-      if (!client.assignment_request_id) {
-        unlinkedClients.push(client)
-        return
-      }
+      if (!client.assignment_request_id) return
 
       const requestClients = clientsByRequestId.get(client.assignment_request_id) ?? []
       requestClients.push(client)
@@ -335,9 +347,7 @@ export default function ProfessionnelHistoriquePage() {
           activeAssignmentCount
         )
         const wasPersistedAsCompleted =
-          requestedCount > 0 &&
-          ((request.assigned_count ?? 0) >= requestedCount ||
-            request.remaining_count === 0)
+          requestedCount > 0 && activeAssignmentCount >= requestedCount
         const status: RequestStatus =
           wasPersistedAsCompleted || remainingCount === 0
             ? 'Completee'
@@ -369,54 +379,8 @@ export default function ProfessionnelHistoriquePage() {
         return secondDate - firstDate
       })
 
-    if (unlinkedClients.length > 0) {
-      const serviceTakenCount = unlinkedClients.filter(
-        (client) => client.is_active === true
-      ).length
-      const serviceNotTakenCount = unlinkedClients.filter(
-        (client) => client.is_active === false
-      ).length
-      const pendingCount = unlinkedClients.filter(
-        (client) => client.is_active === null
-      ).length
-      const latestAssignedDate =
-        unlinkedClients
-          .map(getClientDate)
-          .filter((date): date is Date => Boolean(date))
-          .sort((firstDate, secondDate) => secondDate.getTime() - firstDate.getTime())[0] ??
-        null
-      const status: RequestStatus = pendingCount > 0 ? 'Active' : 'Completee'
-
-      cards.unshift({
-        request: {
-          id: UNLINKED_ASSIGNMENTS_CARD_ID,
-          professional_id: currentUserId,
-          is_active: pendingCount > 0,
-          requested_count: unlinkedClients.length,
-          assigned_count: serviceTakenCount,
-          remaining_count: pendingCount,
-          request_comment: 'Assignations créées sans demande initiale.',
-          created_at: latestAssignedDate?.toISOString() ?? null,
-        },
-        clients: unlinkedClients,
-        createdDate: latestAssignedDate,
-        completionDate: null,
-        activeAssignmentCount: serviceTakenCount,
-        remainingCount: pendingCount,
-        serviceTakenCount,
-        serviceNotTakenCount,
-        pendingCount,
-        durationLabel:
-          status === 'Active'
-            ? `${pendingCount} assignation${pendingCount > 1 ? 's' : ''} en attente`
-            : 'Toutes les assignations sont traitées',
-        status,
-        isUnlinkedAssignmentCard: true,
-      })
-    }
-
     return cards
-  }, [clients, currentUserId, requests])
+  }, [clients, requests])
 
   const toggleRequest = (requestId: string) => {
     setExpandedRequestIds((currentIds) => ({
@@ -581,6 +545,17 @@ export default function ProfessionnelHistoriquePage() {
 
           {!loading && !error && (
             <div className="space-y-4">
+              {internalClients.length > 0 && (
+                <div className="rounded-2xl border border-[#d8b992] bg-[#fffaf4] p-4 text-sm text-[#6c5a4d]">
+                  <p className="font-semibold text-[#6d3f1f]">
+                    Associations internes sans demande
+                  </p>
+                  <p className="mt-1">
+                    {internalClients.length} client{internalClients.length > 1 ? 's' : ''} sont associés au professionnel pour suivi interne. Ils n’apparaissent pas dans “Mes assignations”.
+                  </p>
+                </div>
+              )}
+
               {requestCards.length === 0 ? (
                 <EmptyState title="Aucune demande à afficher." />
               ) : (
@@ -588,8 +563,6 @@ export default function ProfessionnelHistoriquePage() {
                   const requestedCount = card.request.requested_count ?? 0
                   const isCompleted = card.status === 'Completee'
                   const isExpanded = expandedRequestIds[card.request.id] === true
-                  const isUnlinkedAssignmentCard =
-                    card.isUnlinkedAssignmentCard === true
 
                   return (
                     <article
@@ -610,18 +583,10 @@ export default function ProfessionnelHistoriquePage() {
                             </span>
                           </div>
                           <h2 className="mt-3 text-base font-semibold text-[#332820]">
-                            {isUnlinkedAssignmentCard
-                              ? 'Assignations sans demande liée'
-                              : `Demande du ${formatDate(card.createdDate)}`}
+                            {`Demande du ${formatDate(card.createdDate)}`}
                           </h2>
                           <p className="mt-1 text-sm text-[#7a6859]">
-                            {isUnlinkedAssignmentCard
-                              ? `Dernière assignation : ${formatDate(
-                                  card.createdDate
-                                )}`
-                              : `Complétion estimée : ${formatDate(
-                                  card.completionDate
-                                )}`}
+                            {`Complétion estimée : ${formatDate(card.completionDate)}`}
                           </p>
                         </div>
                         <button
@@ -638,7 +603,7 @@ export default function ProfessionnelHistoriquePage() {
                       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                         <div className="rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-3">
                           <p className="text-xs font-medium uppercase text-[#8a6f5d]">
-                            {isUnlinkedAssignmentCard ? 'Assignations' : 'Demande'}
+                            {'Demande'}
                           </p>
                           <p className="mt-1 text-xl font-semibold text-[#332820]">
                             {requestedCount}

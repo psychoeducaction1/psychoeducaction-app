@@ -84,7 +84,7 @@ export type AuditLogInput = {
 export function getUsedAssignmentCount(
   clients: Array<{ is_active: boolean | null }>
 ): number {
-  return clients.filter((client) => client.is_active === true).length
+  return clients.length
 }
 
 export async function logAssignedClientStatusChange({

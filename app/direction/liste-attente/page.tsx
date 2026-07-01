@@ -206,6 +206,37 @@ function getContactPhones(client: WaitingListClient): string[] {
   ])
 }
 
+async function recalculateAssignmentRequest(requestId: string): Promise<void> {
+  const { data: request, error: requestError } = await supabase
+    .from('assignment_requests')
+    .select('requested_count')
+    .eq('id', requestId)
+    .limit(1)
+    .maybeSingle()
+
+  if (requestError || !request) return
+
+  const { data: assignedClients, error: assignedClientsError } = await supabase
+    .from('assigned_clients')
+    .select('is_active')
+    .eq('assignment_request_id', requestId)
+
+  if (assignedClientsError || !assignedClients) return
+
+  const assignedCount = assignedClients.length
+  const remainingCount = Math.max((request.requested_count ?? 0) - assignedCount, 0)
+  const isActive = remainingCount > 0
+
+  await supabase
+    .from('assignment_requests')
+    .update({
+      assigned_count: assignedCount,
+      remaining_count: remainingCount,
+      is_active: isActive,
+    })
+    .eq('id', requestId)
+}
+
 function formatDate(value: string | null | undefined): string {
   if (!value) return '-'
 
@@ -516,7 +547,7 @@ export default function DirectionListeAttentePage() {
           return
         }
 
-        const serviceTakenCountByRequestId = new Map<string, number>()
+        const assignedCountByRequestId = new Map<string, number>()
 
         ;(
           (assignedClientsResponse.data ?? []) as Array<{
@@ -524,24 +555,24 @@ export default function DirectionListeAttentePage() {
             is_active: boolean | null
           }>
         ).forEach((client) => {
-          if (!client.assignment_request_id || client.is_active !== true) return
+          if (!client.assignment_request_id) return
 
-          serviceTakenCountByRequestId.set(
+          assignedCountByRequestId.set(
             client.assignment_request_id,
-            (serviceTakenCountByRequestId.get(client.assignment_request_id) ?? 0) + 1
+            (assignedCountByRequestId.get(client.assignment_request_id) ?? 0) + 1
           )
         })
 
         setActiveRequests(
           requests
             .map((request) => {
-              const acceptedCount = serviceTakenCountByRequestId.get(request.id) ?? 0
+              const assignedCount = assignedCountByRequestId.get(request.id) ?? 0
               const requestedCount = Math.max(request.requested_count ?? 0, 0)
-              const remainingCount = Math.max(requestedCount - acceptedCount, 0)
+              const remainingCount = Math.max(requestedCount - assignedCount, 0)
 
               return {
                 ...request,
-                assigned_count: acceptedCount,
+                assigned_count: assignedCount,
                 remaining_count: remainingCount,
               }
             })
@@ -997,6 +1028,7 @@ export default function DirectionListeAttentePage() {
           remainingCount: request.remaining_count,
         }).isActive
     )
+    const shouldCreateInternalOnlyLink = !assignmentRequest?.id
 
     const { firstName, lastName } = splitClientName(client.client_name)
     const requesterName = nullableText(
@@ -1048,6 +1080,10 @@ export default function DirectionListeAttentePage() {
       return
     }
 
+    if (assignmentRequest?.id) {
+      await recalculateAssignmentRequest(assignmentRequest.id)
+    }
+
     const { data, error: updateError } = await supabase
       .from('waiting_list_clients')
       .update({
@@ -1082,7 +1118,11 @@ export default function DirectionListeAttentePage() {
     setAssigningClientId(null)
     setNotifyProfessional(false)
     setNotifyClient(false)
-    setFormMessage('Client assigné au professionnel avec succès.')
+    setFormMessage(
+      shouldCreateInternalOnlyLink
+        ? 'Client associé au professionnel pour historique interne seulement.'
+        : 'Client assigné au professionnel avec succès.'
+    )
     const selectedProfessional = professionals.find(
       (professional) => professional.id === selectedProfessionalId
     )
@@ -1106,11 +1146,14 @@ export default function DirectionListeAttentePage() {
           waiting_list_client_id: client.id,
           assignment_request_id: assignmentRequest?.id ?? null,
           has_assignment_request: Boolean(assignmentRequest?.id),
+          assignment_mode: shouldCreateInternalOnlyLink
+            ? 'internal_history'
+            : 'request_assignment',
         },
       })
     }
 
-    if (notifyProfessional) {
+    if (assignmentRequest?.id && notifyProfessional) {
       const notificationSent = await sendProfessionalAssignmentNotification({
         professionalId: selectedProfessionalId,
         previousPendingCount,
@@ -1157,7 +1200,7 @@ export default function DirectionListeAttentePage() {
       })
     }
 
-    if (notifyClient && getContactEmails(client).length > 0) {
+    if (assignmentRequest?.id && notifyClient && getContactEmails(client).length > 0) {
       const notificationSent = await sendClientAssignmentNotification(
         insertedAssignment.id
       )
@@ -1183,7 +1226,7 @@ export default function DirectionListeAttentePage() {
           },
         })
       }
-    } else if (notifyClient) {
+    } else if (assignmentRequest?.id && notifyClient) {
       console.log('[client-assignment-notification] Courriel client absent.', {
         assignedClientId: insertedAssignment.id,
       })
@@ -1204,7 +1247,7 @@ export default function DirectionListeAttentePage() {
           },
         })
       }
-    } else if (auditActor) {
+    } else if (assignmentRequest?.id && auditActor) {
       void logAudit({
         supabase,
         actor: auditActor,
@@ -2011,8 +2054,7 @@ export default function DirectionListeAttentePage() {
                       Assigner le client
                     </h2>
                     <p className="mt-1 text-sm text-[#7a6859]">
-                      Choisissez un professionnel actif. Sans demande ouverte,
-                      l’assignation sera créée sans demande liée.
+                      Choisissez un professionnel actif. S’il a une demande ouverte avec des places, l’assignation sera liée à cette demande. Sinon, vous pouvez l’associer pour historique interne seulement.
                     </p>
                   </div>
                   <form onSubmit={handleAssignClient} className="mt-5 space-y-4">
@@ -2036,46 +2078,46 @@ export default function DirectionListeAttentePage() {
                         )}
                       </select>
                     </label>
-                    {selectedProfessionalHasNoActiveRequest && (
-                      <p className="rounded-xl border border-[#eadfd2] bg-[#fffaf4] px-4 py-3 text-sm text-[#7a6859]">
-                        Ce professionnel n’a pas de demande active. L’assignation
-                        sera créée sans demande liée.
-                      </p>
-                    )}
-                    <div className="rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-4">
-                      <p className="text-sm font-semibold text-[#332820]">
-                        Souhaitez-vous envoyer les notifications ?
-                      </p>
-                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                        <label className="flex items-start gap-2 text-sm text-[#6c5a4d]">
-                          <input
-                            type="checkbox"
-                            checked={notifyProfessional}
-                            onChange={(event) =>
-                              setNotifyProfessional(event.target.checked)
-                            }
-                            className="mt-0.5 h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
-                          />
-                          Envoyer un courriel au professionnel
-                        </label>
-                        <label className="flex items-start gap-2 text-sm text-[#6c5a4d]">
-                          <input
-                            type="checkbox"
-                            checked={notifyClient}
-                            disabled={!selectedAssignmentClientHasEmail}
-                            onChange={(event) => setNotifyClient(event.target.checked)}
-                            className="mt-0.5 h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633] disabled:opacity-50"
-                          />
-                          Envoyer un courriel au client
-                        </label>
+                    {selectedProfessionalHasNoActiveRequest ? (
+                      <div className="rounded-xl border border-[#eadfd2] bg-[#fffaf4] px-4 py-3 text-sm text-[#7a6859]">
+                        Ce professionnel n’a pas de demande active. Cette action créera un lien interne seulement, visible dans l’historique du professionnel mais pas dans “Mes assignations”.
                       </div>
-                      {!selectedAssignmentClientHasEmail && (
-                        <p className="mt-2 text-xs text-[#8a6f5d]">
-                          Courriel client absent : la notification client est
-                          désactivée.
+                    ) : (
+                      <div className="rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-4">
+                        <p className="text-sm font-semibold text-[#332820]">
+                          Souhaitez-vous envoyer les notifications ?
                         </p>
-                      )}
-                    </div>
+                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                          <label className="flex items-start gap-2 text-sm text-[#6c5a4d]">
+                            <input
+                              type="checkbox"
+                              checked={notifyProfessional}
+                              onChange={(event) =>
+                                setNotifyProfessional(event.target.checked)
+                              }
+                              className="mt-0.5 h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
+                            />
+                            Envoyer un courriel au professionnel
+                          </label>
+                          <label className="flex items-start gap-2 text-sm text-[#6c5a4d]">
+                            <input
+                              type="checkbox"
+                              checked={notifyClient}
+                              disabled={!selectedAssignmentClientHasEmail}
+                              onChange={(event) => setNotifyClient(event.target.checked)}
+                              className="mt-0.5 h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633] disabled:opacity-50"
+                            />
+                            Envoyer un courriel au client
+                          </label>
+                        </div>
+                        {!selectedAssignmentClientHasEmail && (
+                          <p className="mt-2 text-xs text-[#8a6f5d]">
+                            Courriel client absent : la notification client est
+                            désactivée.
+                          </p>
+                        )}
+                      </div>
+                    )}
                     <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
                       <button
                         type="button"
@@ -2093,7 +2135,11 @@ export default function DirectionListeAttentePage() {
                         className={buttonClass('primary')}
                         disabled={savingAssignment || professionals.length === 0}
                       >
-                        {savingAssignment ? 'Assignation...' : 'Créer l’assignation'}
+                        {savingAssignment
+                          ? 'Assignation...'
+                          : selectedProfessionalHasNoActiveRequest
+                            ? 'Associer pour historique interne seulement'
+                            : 'Créer l’assignation'}
                       </button>
                     </div>
                   </form>

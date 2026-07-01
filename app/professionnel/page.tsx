@@ -157,9 +157,12 @@ export default function ProfessionnelPage() {
       }
 
       const loadedClients = (clientsResponse.data || []) as AssignedClient[]
+      const visibleClients = loadedClients.filter(
+        (client) => client.assignment_request_id !== null
+      )
       const clientsByRequestId = new Map<string, AssignedClient[]>()
 
-      loadedClients.forEach((client) => {
+      visibleClients.forEach((client) => {
         if (!client.assignment_request_id) return
 
         const requestClients = clientsByRequestId.get(client.assignment_request_id) ?? []
@@ -168,29 +171,29 @@ export default function ProfessionnelPage() {
       })
 
       const activeRequest =
-        requests.find(
-          (currentRequest) => {
-            const requestClients = clientsByRequestId.get(currentRequest.id) ?? []
+        requests.find((currentRequest) => {
+          const requestClients = clientsByRequestId.get(currentRequest.id) ?? []
+          const assignedCount = requestClients.length
 
-            return getAssignmentRequestMetrics({
-              isActive: currentRequest.is_active,
-              requestedCount: currentRequest.requested_count,
-              acceptedCount: requestClients.filter(
-                (client) => client.is_active === true
-              ).length,
-              remainingCount: currentRequest.remaining_count,
-            }).isActive
-          }
-        ) ?? null
+          return getAssignmentRequestMetrics({
+            isActive: currentRequest.is_active,
+            requestedCount: currentRequest.requested_count,
+            acceptedCount: assignedCount,
+            remainingCount: Math.max(
+              (currentRequest.requested_count ?? 0) - assignedCount,
+              0
+            ),
+          }).isActive
+        }) ?? null
 
       if (!activeRequest) {
-        setClients(loadedClients)
+        setClients(visibleClients)
         setRequest(null)
         setLoading(false)
         return
       }
 
-      setClients(loadedClients)
+      setClients(visibleClients)
       setRequest(activeRequest)
       setLoading(false)
     }
@@ -206,21 +209,19 @@ export default function ProfessionnelPage() {
   const requestClients = request
     ? clients.filter((client) => client.assignment_request_id === request.id)
     : []
-  const requestServicesTakenCount = requestClients.filter(
-    (client) => client.is_active === true
-  ).length
+  const requestAssignedCount = requestClients.length
   const requestMetrics = getAssignmentRequestMetrics({
     isActive: request?.is_active,
     requestedCount: request?.requested_count,
-    acceptedCount: requestServicesTakenCount,
+    acceptedCount: requestAssignedCount,
     remainingCount: request
-      ? Math.max((request.requested_count ?? 0) - requestServicesTakenCount, 0)
+      ? Math.max((request.requested_count ?? 0) - requestAssignedCount, 0)
       : null,
   })
   const requestedCount = requestMetrics.requestedCount
-  const assignedCount = requestServicesTakenCount
+  const assignedCount = requestMetrics.acceptedCount
   const remainingCount = requestMetrics.isActive
-    ? Math.max(requestMetrics.requestedCount - requestServicesTakenCount, 0)
+    ? Math.max(requestMetrics.requestedCount - requestAssignedCount, 0)
     : 0
   const requestStatus = getAssignmentRequestStatus({
     isActive: requestMetrics.isActive,

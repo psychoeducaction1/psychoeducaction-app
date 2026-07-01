@@ -122,12 +122,12 @@ export function getAssignmentRequestStatus({
   remainingCount: number | null | undefined
   requestedCount: number | null | undefined
 }): { label: string; tone: BadgeTone } {
-  if (!isActive) {
-    return { label: 'demande inactive', tone: 'muted' }
-  }
-
   if ((remainingCount ?? 0) === 0 && (requestedCount ?? 0) > 0) {
     return { label: 'demande complétée', tone: 'success' }
+  }
+
+  if (!isActive) {
+    return { label: 'demande inactive', tone: 'muted' }
   }
 
   return { label: 'demande en cours', tone: 'warning' }

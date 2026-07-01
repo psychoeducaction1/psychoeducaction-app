@@ -26,15 +26,13 @@ async function recalculateAssignmentRequest(
     .select('is_active')
     .eq('assignment_request_id', requestId)
 
-  const serviceTakenCount = (clients ?? []).filter(
-    (client) => client.is_active === true
-  ).length
-  const remainingCount = Math.max((request?.requested_count ?? 0) - serviceTakenCount, 0)
+  const assignedCount = (clients ?? []).length
+  const remainingCount = Math.max((request?.requested_count ?? 0) - assignedCount, 0)
 
   await supabaseAdmin
     .from('assignment_requests')
     .update({
-      assigned_count: serviceTakenCount,
+      assigned_count: assignedCount,
       remaining_count: remainingCount,
     })
     .eq('id', requestId)

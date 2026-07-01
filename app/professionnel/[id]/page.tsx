@@ -219,6 +219,37 @@ function getWaitingClientSortValue(client: WaitingListClient): number {
   return Number.isNaN(date.getTime()) ? Number.MAX_SAFE_INTEGER : date.getTime();
 }
 
+async function recalculateAssignmentRequest(requestId: string): Promise<void> {
+  const { data: request, error: requestError } = await supabase
+    .from("assignment_requests")
+    .select("requested_count")
+    .eq("id", requestId)
+    .limit(1)
+    .maybeSingle();
+
+  if (requestError || !request) return;
+
+  const { data: assignedClients, error: assignedClientsError } = await supabase
+    .from("assigned_clients")
+    .select("is_active")
+    .eq("assignment_request_id", requestId);
+
+  if (assignedClientsError || !assignedClients) return;
+
+  const assignedCount = assignedClients.length;
+  const remainingCount = Math.max((request.requested_count ?? 0) - assignedCount, 0);
+  const isActive = remainingCount > 0;
+
+  await supabase
+    .from("assignment_requests")
+    .update({
+      assigned_count: assignedCount,
+      remaining_count: remainingCount,
+      is_active: isActive,
+    })
+    .eq("id", requestId);
+}
+
 function getWaitingClientPrioritySortValue(client: WaitingListClient): number {
   return (
     waitingListPriorityOrder[client.priority_level ?? ""] ??
@@ -522,20 +553,18 @@ export default function ProfessionnelDetailPage() {
         const activeRequest =
           loadedRequests.find((request) => {
             const requestClients = clientsByRequestId.get(request.id) ?? [];
-            const acceptedCount = requestClients.filter(
-              (client) => client.is_active === true,
-            ).length;
+            const assignedCount = requestClients.length;
 
             return getAssignmentRequestMetrics({
               isActive: request.is_active,
               requestedCount: request.requested_count,
-              acceptedCount,
+              acceptedCount: assignedCount,
               remainingCount: Math.max(
-                (request.requested_count ?? 0) - acceptedCount,
+                (request.requested_count ?? 0) - assignedCount,
                 0,
               ),
             }).isActive;
-          }) ?? null;
+          }) ?? loadedRequests[0] ?? null;
 
         const loadedProfile = profileResponse.data as Profile;
 
@@ -1040,6 +1069,10 @@ export default function ProfessionnelDetailPage() {
         );
       }
 
+      if (assignmentRequest?.id) {
+        await recalculateAssignmentRequest(assignmentRequest.id);
+      }
+
       const { error: updateWaitingListError } = await supabase
         .from("waiting_list_clients")
         .update({
@@ -1238,9 +1271,7 @@ export default function ProfessionnelDetailPage() {
           (currentClient) =>
             currentClient.assignment_request_id === client.assignment_request_id,
         );
-        const nextAssignedCount = requestClients.filter(
-          (currentClient) => currentClient.is_active === true,
-        ).length;
+        const nextAssignedCount = requestClients.length;
 
         const { data: requestData, error: requestLoadError } = await supabase
           .from("assignment_requests")
@@ -1340,34 +1371,30 @@ export default function ProfessionnelDetailPage() {
   const clientsWithService = activeRequestClients.filter(
     (client) => client.is_active === true,
   );
-  const clientsPendingService = assignedClients.filter(
+  const clientsPendingService = activeRequestClients.filter(
     (client) => client.is_active === null,
   );
   const requestMetrics = getAssignmentRequestMetrics({
     isActive: assignmentRequest?.is_active,
     requestedCount: assignmentRequest?.requested_count,
-    acceptedCount: clientsWithService.length,
+    acceptedCount: activeRequestClients.length,
     remainingCount:
       assignmentRequest && assignmentRequest.requested_count !== null
         ? Math.max(
-            (assignmentRequest.requested_count ?? 0) - clientsWithService.length,
+            (assignmentRequest.requested_count ?? 0) - activeRequestClients.length,
             0,
           )
         : assignmentRequest?.remaining_count,
   });
   const requestedCount = requestMetrics.requestedCount;
   const assignedCount = requestMetrics.acceptedCount;
-  const remainingCount = requestMetrics.isActive
-    ? requestMetrics.remainingCount
-    : 0;
+  const remainingCount = requestMetrics.remainingCount;
   const assignmentRequestStatus = getAssignmentRequestStatus({
     isActive: requestMetrics.isActive,
     remainingCount,
     requestedCount,
   });
-  const displayAssignmentRequest = requestMetrics.isActive
-    ? assignmentRequest
-    : null;
+  const displayAssignmentRequest = assignmentRequest;
   const waitingListSearchValue = normalizeSearchValue(waitingListSearch);
   const canShowWaitingListResults = waitingListSearchValue.length >= 2;
   const matchingWaitingListClients = canShowWaitingListResults
@@ -1659,7 +1686,8 @@ export default function ProfessionnelDetailPage() {
                         </p>
                       </div>
                       <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] px-4 py-3 text-sm font-semibold text-[#5d4a3d]">
-                        {assignedCount} service{assignedCount > 1 ? "s" : ""} pris
+                        {assignedCount} assignation{assignedCount > 1 ? "s" : ""} liée
+                        {assignedCount > 1 ? "s" : ""}
                         {" - "}
                         {remainingCount} à combler
                       </div>
@@ -1694,7 +1722,7 @@ export default function ProfessionnelDetailPage() {
                     value={clientsPendingService.length}
                     helper={
                       displayAssignmentRequest
-                        ? `${assignedCount} services pris sur ${requestedCount}`
+                        ? `${clientsPendingService.length} à confirmer sur ${requestedCount}`
                         : "Aucune demande active"
                     }
                   />
@@ -2114,7 +2142,7 @@ export default function ProfessionnelDetailPage() {
                     </div>
                     <div>
                       <dt className="text-sm font-medium text-[#8a6f5d]">
-                        Services pris
+                        Assignations liées
                       </dt>
                       <dd className="mt-1 text-sm text-[#332820]">
                         {assignedCount}
