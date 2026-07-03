@@ -498,6 +498,12 @@ export default function ProfessionnelDetailPage() {
   const [cancelAssignmentReason, setCancelAssignmentReason] = useState("");
   const [cancelAssignmentOtherReason, setCancelAssignmentOtherReason] =
     useState("");
+  const [
+    restoreCanceledClientToWaitingList,
+    setRestoreCanceledClientToWaitingList,
+  ] = useState(false);
+  const [restoringWaitingListClientId, setRestoringWaitingListClientId] =
+    useState("");
   const [clientHistoryPage, setClientHistoryPage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1098,6 +1104,7 @@ export default function ProfessionnelDetailPage() {
     setCancelAssignmentClient(client);
     setCancelAssignmentReason("");
     setCancelAssignmentOtherReason("");
+    setRestoreCanceledClientToWaitingList(false);
   };
 
   const closeCancelAssignmentDialog = () => {
@@ -1106,6 +1113,7 @@ export default function ProfessionnelDetailPage() {
     setCancelAssignmentClient(null);
     setCancelAssignmentReason("");
     setCancelAssignmentOtherReason("");
+    setRestoreCanceledClientToWaitingList(false);
   };
 
   const handleCancelAssignment = async () => {
@@ -1142,11 +1150,17 @@ export default function ProfessionnelDetailPage() {
           body: JSON.stringify({
             reason: cancelAssignmentReason,
             otherReason: cancelAssignmentOtherReason,
+            restoreToWaitingList: restoreCanceledClientToWaitingList,
           }),
         },
       );
       const result = (await response.json().catch(() => null)) as
-        | { error?: string; skipped?: boolean }
+        | {
+            error?: string;
+            skipped?: boolean;
+            restoredToWaitingList?: boolean;
+            restoreWarning?: string;
+          }
         | null;
 
       if (!response.ok) {
@@ -1158,12 +1172,77 @@ export default function ProfessionnelDetailPage() {
       setCancelAssignmentClient(null);
       setCancelAssignmentReason("");
       setCancelAssignmentOtherReason("");
-      setClientMessage("Assignation annulée.");
+      setRestoreCanceledClientToWaitingList(false);
+      setClientMessage(
+        result?.restoreWarning
+          ? `Assignation annulée. ${result.restoreWarning}`
+          : result?.restoredToWaitingList
+            ? "Assignation annulée. Client remis dans la liste d’attente."
+            : "Assignation annulée.",
+      );
       await loadProfessionalProfile({ showLoading: false });
     } catch (caughtError: unknown) {
       setClientError(getErrorMessage(caughtError));
     } finally {
       setCancelingAssignedClientId("");
+    }
+  };
+
+  const handleRestoreWaitingListClient = async (client: AssignedClient) => {
+    if (!client.waiting_list_client_id) {
+      setClientError(
+        "Ce client ne peut pas être remis automatiquement dans la liste d’attente puisque le lien avec la liste d’attente est introuvable.",
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      [
+        "Remettre ce client dans la liste d'attente ?",
+        "",
+        "Le client réapparaîtra dans la liste des clients en attente et pourra être réassigné à un autre professionnel.",
+        "",
+        "Cette action ne supprime aucun historique.",
+      ].join("\n"),
+    );
+
+    if (!confirmed) return;
+
+    setClientMessage(null);
+    setClientError(null);
+    setRestoringWaitingListClientId(client.id);
+
+    try {
+      const accessToken = await getSessionToken();
+      const response = await fetch(
+        `/api/direction/waiting-list-clients/${client.waiting_list_client_id}/restore`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        },
+      );
+      const result = (await response.json().catch(() => null)) as
+        | { error?: string; skipped?: boolean; message?: string }
+        | null;
+
+      if (!response.ok) {
+        throw new Error(
+          result?.error ?? "Impossible de remettre ce client en liste d’attente.",
+        );
+      }
+
+      setClientMessage(
+        result?.skipped
+          ? result.message ??
+              "Ce client est déjà présent dans la liste d’attente."
+          : "Client remis dans la liste d’attente.",
+      );
+    } catch (caughtError: unknown) {
+      setClientError(getErrorMessage(caughtError));
+    } finally {
+      setRestoringWaitingListClientId("");
     }
   };
 
@@ -2287,6 +2366,24 @@ export default function ProfessionnelDetailPage() {
                               >
                                 Annuler l’assignation
                               </button>
+                              {client.waiting_list_client_id &&
+                                client.is_active !== null && (
+                                  <button
+                                    type="button"
+                                    className="inline-flex min-h-9 items-center justify-center rounded-xl border border-[#dfd0bf] bg-[#fffdf9] px-3 py-2 text-xs font-semibold text-[#5d4a3d] transition hover:bg-[#fbf6ef] disabled:cursor-not-allowed disabled:opacity-60"
+                                    onClick={() =>
+                                      void handleRestoreWaitingListClient(client)
+                                    }
+                                    disabled={
+                                      restoringWaitingListClientId === client.id ||
+                                      cancelingAssignedClientId === client.id
+                                    }
+                                  >
+                                    {restoringWaitingListClientId === client.id
+                                      ? "Restauration..."
+                                      : "Remettre en liste d’attente"}
+                                  </button>
+                                )}
                             </div>
                           </div>
 
@@ -2783,6 +2880,26 @@ export default function ProfessionnelDetailPage() {
                 />
               </label>
             )}
+
+            <label className="mt-5 flex items-start gap-3 rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-4 text-sm text-[#5d4a3d]">
+              <input
+                type="checkbox"
+                checked={restoreCanceledClientToWaitingList}
+                onChange={(event) =>
+                  setRestoreCanceledClientToWaitingList(event.target.checked)
+                }
+                className="mt-0.5 h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
+              />
+              <span>
+                <span className="block font-semibold">
+                  Remettre ce client dans la liste d’attente
+                </span>
+                <span className="mt-1 block text-[#7a6859]">
+                  L’assignation sera annulée, puis le client réapparaîtra dans
+                  les clients en attente si son dossier source existe encore.
+                </span>
+              </span>
+            </label>
 
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button

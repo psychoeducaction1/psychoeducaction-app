@@ -15,6 +15,7 @@ const cancelReasons = new Set([
 type CancelBody = {
   reason?: unknown
   otherReason?: unknown
+  restoreToWaitingList?: unknown
 }
 
 type AssignedClientRow = {
@@ -29,12 +30,23 @@ type AssignedClientRow = {
   canceled_at: string | null
 }
 
+type WaitingListClientRow = {
+  id: string
+  status: string | null
+  client_name: string | null
+  contact_email: string | null
+}
+
 function jsonResponse(body: object, status: number) {
   return NextResponse.json(body, { status })
 }
 
 function normalizeText(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
+}
+
+function normalizeBoolean(value: unknown) {
+  return value === true
 }
 
 function getClientName(client: AssignedClientRow) {
@@ -74,6 +86,7 @@ export async function POST(
 
   const reason = normalizeText(body.reason)
   const otherReason = normalizeText(body.otherReason)
+  const restoreToWaitingList = normalizeBoolean(body.restoreToWaitingList)
 
   if (!cancelReasons.has(reason)) {
     return jsonResponse({ error: "Le motif d'annulation est requis." }, 400)
@@ -177,5 +190,92 @@ export async function POST(
     },
   })
 
-  return jsonResponse({ success: true }, 200)
+  if (!restoreToWaitingList) {
+    return jsonResponse({ success: true, restoredToWaitingList: false }, 200)
+  }
+
+  if (!assignedClient.waiting_list_client_id) {
+    return jsonResponse(
+      {
+        success: true,
+        restoredToWaitingList: false,
+        restoreWarning:
+          "Le client ne peut pas être remis automatiquement dans la liste d'attente puisque le lien avec la liste d'attente est introuvable.",
+      },
+      200
+    )
+  }
+
+  const { data: waitingListClientData, error: waitingListLoadError } =
+    await supabaseAdmin
+      .from('waiting_list_clients')
+      .select('id, status, client_name, contact_email')
+      .eq('id', assignedClient.waiting_list_client_id)
+      .limit(1)
+      .maybeSingle()
+
+  if (waitingListLoadError) {
+    return jsonResponse({ error: waitingListLoadError.message }, 500)
+  }
+
+  const waitingListClient =
+    waitingListClientData as WaitingListClientRow | null
+
+  if (!waitingListClient) {
+    return jsonResponse(
+      {
+        success: true,
+        restoredToWaitingList: false,
+        restoreWarning:
+          "Le client ne peut pas être remis automatiquement dans la liste d'attente puisque l'enregistrement source est introuvable.",
+      },
+      200
+    )
+  }
+
+  if (waitingListClient.status === 'waiting') {
+    return jsonResponse(
+      {
+        success: true,
+        restoredToWaitingList: false,
+        restoreWarning: "Ce client est déjà présent dans la liste d'attente.",
+      },
+      200
+    )
+  }
+
+  const { error: waitingListUpdateError } = await supabaseAdmin
+    .from('waiting_list_clients')
+    .update({
+      status: 'waiting',
+      assigned_professional_id: null,
+      assigned_at: null,
+    })
+    .eq('id', waitingListClient.id)
+
+  if (waitingListUpdateError) {
+    return jsonResponse({ error: waitingListUpdateError.message }, 500)
+  }
+
+  await supabaseAdmin.from('audit_logs').insert({
+    actor_profile_id: actor.user.id,
+    actor_name: actor.profile.full_name ?? actor.user.email ?? null,
+    actor_role: actor.profile.role,
+    action: 'waiting_list_client_restored',
+    entity_type: 'waiting_list_client',
+    entity_id: waitingListClient.id,
+    description: `Client ${
+      waitingListClient.client_name ?? (clientName || 'sans nom')
+    } remis dans la liste d'attente.`,
+    metadata: {
+      client_name: waitingListClient.client_name ?? (clientName || null),
+      contact_email: waitingListClient.contact_email,
+      assigned_client_id: assignedClient.id,
+      assignment_request_id: assignedClient.assignment_request_id,
+      professional_id: assignedClient.professional_id,
+      previous_waiting_list_status: waitingListClient.status,
+    },
+  })
+
+  return jsonResponse({ success: true, restoredToWaitingList: true }, 200)
 }

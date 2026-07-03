@@ -521,6 +521,8 @@ export default function DirectionListeAttentePage() {
   const [savingAssignment, setSavingAssignment] = useState(false)
   const [permanentlyDeletingClientId, setPermanentlyDeletingClientId] =
     useState('')
+  const [restoringWaitingListClientId, setRestoringWaitingListClientId] =
+    useState('')
   const [formMessage, setFormMessage] = useState('')
   const [formError, setFormError] = useState('')
   const [waitingPage, setWaitingPage] = useState(0)
@@ -1101,6 +1103,79 @@ export default function DirectionListeAttentePage() {
     setFormMessage('Client supprimé définitivement.')
   }
 
+  const handleRestoreWaitingListClient = async (client: WaitingListClient) => {
+    const confirmed = window.confirm(
+      [
+        "Remettre ce client dans la liste d'attente ?",
+        '',
+        'Le client réapparaîtra dans la liste des clients en attente et pourra être réassigné à un autre professionnel.',
+        '',
+        'Cette action ne supprime aucun historique.',
+      ].join('\n')
+    )
+
+    if (!confirmed) return
+
+    setFormMessage('')
+    setFormError('')
+    setRestoringWaitingListClientId(client.id)
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+
+    if (!session?.access_token) {
+      setFormError('Session introuvable.')
+      setRestoringWaitingListClientId('')
+      return
+    }
+
+    const response = await fetch(
+      `/api/direction/waiting-list-clients/${client.id}/restore`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      }
+    )
+    const result = (await response.json().catch(() => null)) as
+      | { error?: string; skipped?: boolean; message?: string }
+      | null
+
+    setRestoringWaitingListClientId('')
+
+    if (!response.ok) {
+      setFormError(
+        result?.error ?? "Impossible de remettre ce client en liste d'attente."
+      )
+      return
+    }
+
+    if (result?.skipped) {
+      setFormMessage(
+        result.message ?? "Ce client est déjà présent dans la liste d'attente."
+      )
+      return
+    }
+
+    setClients((currentClients) =>
+      sortClientsByContactDate(
+        currentClients.map((currentClient) =>
+          currentClient.id === client.id
+            ? {
+                ...currentClient,
+                status: 'waiting',
+                assigned_professional_id: null,
+                assigned_at: null,
+              }
+            : currentClient
+        )
+      )
+    )
+    setFormMessage("Client remis dans la liste d'attente.")
+  }
+
   const handleAssignClient = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
@@ -1670,6 +1745,18 @@ export default function DirectionListeAttentePage() {
                           {permanentlyDeletingClientId === client.id
                             ? 'Suppression...'
                             : 'Supprimer définitivement'}
+                        </button>
+                      )}
+                      {!allowAssignment && client.status !== 'waiting' && (
+                        <button
+                          type="button"
+                          className={`${buttonClass('secondary')} !min-h-8 !w-full justify-center whitespace-normal px-2 py-1 text-xs`}
+                          disabled={restoringWaitingListClientId === client.id}
+                          onClick={() => void handleRestoreWaitingListClient(client)}
+                        >
+                          {restoringWaitingListClientId === client.id
+                            ? 'Restauration...'
+                            : "Remettre en liste d'attente"}
                         </button>
                       )}
                     </div>
