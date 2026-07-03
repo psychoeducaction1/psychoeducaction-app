@@ -146,7 +146,8 @@ export default function DirectionAssignationsPage() {
           supabase
             .from('assigned_clients')
             .select('assignment_request_id, is_active')
-            .in('professional_id', professionalIds),
+            .in('professional_id', professionalIds)
+            .is('canceled_at', null),
         ])
 
       if (assignmentRequestsResponse.error) {

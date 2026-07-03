@@ -167,6 +167,7 @@ export async function POST(request: NextRequest) {
     .select('id', { count: 'exact', head: true })
     .eq('professional_id', professionalId)
     .is('is_active', null)
+    .is('canceled_at', null)
 
   if (countError) {
     return jsonResponse({ error: countError.message }, 500)

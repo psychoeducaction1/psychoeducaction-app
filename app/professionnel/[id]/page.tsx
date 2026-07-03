@@ -128,6 +128,14 @@ const waitingListPriorityOrder: Record<string, number> = {
   existing_or_transfer: 1,
   normal: 2,
 };
+const cancelAssignmentReasons = [
+  "Mauvais professionnel",
+  "Mauvais client",
+  "Doublon",
+  "Erreur administrative",
+  "Client déjà pris en charge",
+  "Autre",
+];
 
 const emptyProfessionalProfileForm: ProfessionalProfileForm = {
   full_name: "",
@@ -234,7 +242,8 @@ async function recalculateAssignmentRequest(requestId: string): Promise<void> {
   const { data: assignedClients, error: assignedClientsError } = await supabase
     .from("assigned_clients")
     .select("is_active")
-    .eq("assignment_request_id", requestId);
+    .eq("assignment_request_id", requestId)
+    .is("canceled_at", null);
 
   if (assignedClientsError || !assignedClients) return;
 
@@ -277,7 +286,8 @@ async function getFreshActiveAssignmentRequest(
   const { data: assignedClients, error: assignedClientsError } = await supabase
     .from("assigned_clients")
     .select("assignment_request_id, is_active")
-    .in("assignment_request_id", requestIds);
+    .in("assignment_request_id", requestIds)
+    .is("canceled_at", null);
 
   if (assignedClientsError) throw assignedClientsError;
 
@@ -478,6 +488,16 @@ export default function ProfessionnelDetailPage() {
   const [deletingAssignmentRequest, setDeletingAssignmentRequest] =
     useState(false);
   const [deletingAssignedClientId, setDeletingAssignedClientId] = useState("");
+  const [resendingProfessionalEmailId, setResendingProfessionalEmailId] =
+    useState("");
+  const [resendingClientEmailId, setResendingClientEmailId] = useState("");
+  const [cancelingAssignedClientId, setCancelingAssignedClientId] =
+    useState("");
+  const [cancelAssignmentClient, setCancelAssignmentClient] =
+    useState<AssignedClient | null>(null);
+  const [cancelAssignmentReason, setCancelAssignmentReason] = useState("");
+  const [cancelAssignmentOtherReason, setCancelAssignmentOtherReason] =
+    useState("");
   const [clientHistoryPage, setClientHistoryPage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -571,6 +591,7 @@ export default function ProfessionnelDetailPage() {
               "id, assignment_request_id, waiting_list_client_id, first_name, last_name, email, phone, requester_name, assigned_date, contacted, is_active, meeting_count, dossier_closed, closure_reason, short_comment, meeting_modality, service_address",
             )
             .eq("professional_id", professionalId)
+            .is("canceled_at", null)
             .order("assigned_date", { ascending: false }),
           supabase
             .from("waiting_list_clients")
@@ -808,7 +829,8 @@ export default function ProfessionnelDetailPage() {
       .from("assigned_clients")
       .select("id", { count: "exact", head: true })
       .eq("professional_id", selectedProfessionalId)
-      .is("is_active", null);
+      .is("is_active", null)
+      .is("canceled_at", null);
 
     if (countError) {
       console.error(
@@ -964,6 +986,184 @@ export default function ProfessionnelDetailPage() {
         notificationError,
       );
       return false;
+    }
+  };
+
+  const getSessionToken = async (): Promise<string> => {
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession();
+
+    if (sessionError || !session?.access_token) {
+      throw new Error("Session introuvable. Veuillez vous reconnecter.");
+    }
+
+    return session.access_token;
+  };
+
+  const handleResendProfessionalAssignmentNotification = async (
+    client: AssignedClient,
+  ) => {
+    setClientMessage(null);
+    setClientError(null);
+    setResendingProfessionalEmailId(client.id);
+
+    try {
+      const accessToken = await getSessionToken();
+      const response = await fetch(
+        "/api/direction/resend-professional-assignment-notification",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ assignedClientId: client.id }),
+        },
+      );
+      const result = (await response.json().catch(() => null)) as
+        | { error?: string; skipped?: boolean; reason?: string }
+        | null;
+
+      if (!response.ok) {
+        throw new Error(
+          result?.error ?? "Impossible de renvoyer le courriel professionnel.",
+        );
+      }
+
+      if (result?.skipped) {
+        setClientMessage(
+          result.reason === "platform_access_disabled"
+            ? "Courriel professionnel non envoyé : accès plateforme désactivé."
+            : "Courriel professionnel non envoyé.",
+        );
+        return;
+      }
+
+      setClientMessage("Courriel professionnel renvoyé.");
+    } catch (caughtError: unknown) {
+      setClientError(getErrorMessage(caughtError));
+    } finally {
+      setResendingProfessionalEmailId("");
+    }
+  };
+
+  const handleResendClientAssignmentNotification = async (
+    client: AssignedClient,
+  ) => {
+    setClientMessage(null);
+    setClientError(null);
+    setResendingClientEmailId(client.id);
+
+    try {
+      const accessToken = await getSessionToken();
+      const response = await fetch(
+        "/api/direction/resend-client-assignment-notification",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ assignedClientId: client.id }),
+        },
+      );
+      const result = (await response.json().catch(() => null)) as
+        | { error?: string; skipped?: boolean; reason?: string }
+        | null;
+
+      if (!response.ok) {
+        throw new Error(
+          result?.error ?? "Impossible de renvoyer le courriel client.",
+        );
+      }
+
+      if (result?.skipped) {
+        setClientMessage("Courriel client non envoyé : aucun courriel disponible.");
+        return;
+      }
+
+      setClientMessage("Courriel client renvoyé.");
+    } catch (caughtError: unknown) {
+      setClientError(getErrorMessage(caughtError));
+    } finally {
+      setResendingClientEmailId("");
+    }
+  };
+
+  const openCancelAssignmentDialog = (client: AssignedClient) => {
+    setClientMessage(null);
+    setClientError(null);
+    setCancelAssignmentClient(client);
+    setCancelAssignmentReason("");
+    setCancelAssignmentOtherReason("");
+  };
+
+  const closeCancelAssignmentDialog = () => {
+    if (cancelingAssignedClientId) return;
+
+    setCancelAssignmentClient(null);
+    setCancelAssignmentReason("");
+    setCancelAssignmentOtherReason("");
+  };
+
+  const handleCancelAssignment = async () => {
+    if (!cancelAssignmentClient) return;
+
+    setClientMessage(null);
+    setClientError(null);
+
+    if (!cancelAssignmentReason) {
+      setClientError("Veuillez sélectionner un motif d’annulation.");
+      return;
+    }
+
+    if (
+      cancelAssignmentReason === "Autre" &&
+      cancelAssignmentOtherReason.trim().length === 0
+    ) {
+      setClientError("Veuillez préciser le motif d’annulation.");
+      return;
+    }
+
+    setCancelingAssignedClientId(cancelAssignmentClient.id);
+
+    try {
+      const accessToken = await getSessionToken();
+      const response = await fetch(
+        `/api/direction/assigned-clients/${cancelAssignmentClient.id}/cancel`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            reason: cancelAssignmentReason,
+            otherReason: cancelAssignmentOtherReason,
+          }),
+        },
+      );
+      const result = (await response.json().catch(() => null)) as
+        | { error?: string; skipped?: boolean }
+        | null;
+
+      if (!response.ok) {
+        throw new Error(
+          result?.error ?? "Impossible d’annuler cette assignation.",
+        );
+      }
+
+      setCancelAssignmentClient(null);
+      setCancelAssignmentReason("");
+      setCancelAssignmentOtherReason("");
+      setClientMessage("Assignation annulée.");
+      await loadProfessionalProfile({ showLoading: false });
+    } catch (caughtError: unknown) {
+      setClientError(getErrorMessage(caughtError));
+    } finally {
+      setCancelingAssignedClientId("");
     }
   };
 
@@ -2037,6 +2237,59 @@ export default function ProfessionnelDetailPage() {
                             )}
                           </div>
 
+                          <div className="mt-4 rounded-xl border border-[#eadfd2] bg-white p-4">
+                            <h4 className="text-sm font-semibold text-[#5d4a3d]">
+                              Actions sur l’assignation
+                            </h4>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                className="inline-flex min-h-9 items-center justify-center rounded-xl border border-[#dfd0bf] bg-[#fffdf9] px-3 py-2 text-xs font-semibold text-[#5d4a3d] transition hover:bg-[#fbf6ef] disabled:cursor-not-allowed disabled:opacity-60"
+                                onClick={() =>
+                                  void handleResendProfessionalAssignmentNotification(
+                                    client,
+                                  )
+                                }
+                                disabled={
+                                  resendingProfessionalEmailId === client.id ||
+                                  resendingClientEmailId === client.id ||
+                                  cancelingAssignedClientId === client.id
+                                }
+                              >
+                                {resendingProfessionalEmailId === client.id
+                                  ? "Envoi..."
+                                  : "Renvoyer courriel au professionnel"}
+                              </button>
+                              <button
+                                type="button"
+                                className="inline-flex min-h-9 items-center justify-center rounded-xl border border-[#dfd0bf] bg-[#fffdf9] px-3 py-2 text-xs font-semibold text-[#5d4a3d] transition hover:bg-[#fbf6ef] disabled:cursor-not-allowed disabled:opacity-60"
+                                onClick={() =>
+                                  void handleResendClientAssignmentNotification(
+                                    client,
+                                  )
+                                }
+                                disabled={
+                                  !client.email?.trim() ||
+                                  resendingClientEmailId === client.id ||
+                                  resendingProfessionalEmailId === client.id ||
+                                  cancelingAssignedClientId === client.id
+                                }
+                              >
+                                {resendingClientEmailId === client.id
+                                  ? "Envoi..."
+                                  : "Renvoyer courriel au client"}
+                              </button>
+                              <button
+                                type="button"
+                                className="inline-flex min-h-9 items-center justify-center rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                onClick={() => openCancelAssignmentDialog(client)}
+                                disabled={cancelingAssignedClientId === client.id}
+                              >
+                                Annuler l’assignation
+                              </button>
+                            </div>
+                          </div>
+
                           {canUseSuperAdminActions && (
                             <div className="mt-4 flex justify-end">
                               <button
@@ -2488,6 +2741,70 @@ export default function ProfessionnelDetailPage() {
           )}
         </div>
       </main>
+      {cancelAssignmentClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-lg rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-6 shadow-xl">
+            <h2 className="text-xl font-semibold text-[#332820]">
+              Annuler cette assignation ?
+            </h2>
+            <p className="mt-3 text-sm text-[#6c5a4d]">
+              Cette action retirera cette assignation des demandes actives.
+            </p>
+            <p className="mt-1 text-sm text-[#6c5a4d]">
+              Le client ne sera pas supprimé.
+            </p>
+
+            <label className="mt-5 block text-sm font-medium text-[#5d4a3d]">
+              Motif obligatoire
+              <select
+                value={cancelAssignmentReason}
+                onChange={(event) => setCancelAssignmentReason(event.target.value)}
+                className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+              >
+                <option value="">Sélectionner un motif</option>
+                {cancelAssignmentReasons.map((reason) => (
+                  <option key={reason} value={reason}>
+                    {reason}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {cancelAssignmentReason === "Autre" && (
+              <label className="mt-4 block text-sm font-medium text-[#5d4a3d]">
+                Préciser le motif
+                <textarea
+                  value={cancelAssignmentOtherReason}
+                  onChange={(event) =>
+                    setCancelAssignmentOtherReason(event.target.value)
+                  }
+                  rows={3}
+                  className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                />
+              </label>
+            )}
+
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                className="inline-flex min-h-10 items-center justify-center rounded-xl border border-[#dfd0bf] bg-white px-4 py-2 text-sm font-semibold text-[#5d4a3d] transition hover:bg-[#fbf6ef] disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={closeCancelAssignmentDialog}
+                disabled={Boolean(cancelingAssignedClientId)}
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                className="inline-flex min-h-10 items-center justify-center rounded-xl border border-red-300 bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={() => void handleCancelAssignment()}
+                disabled={Boolean(cancelingAssignedClientId)}
+              >
+                {cancelingAssignedClientId ? "Annulation..." : "Confirmer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

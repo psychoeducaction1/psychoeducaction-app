@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { recalculateAssignmentRequestFromActiveAssignments } from '@/lib/assignmentRequestsServer'
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
 import { getSuperAdminContext } from '@/lib/superAdminServer'
 
@@ -8,34 +9,6 @@ function jsonResponse(body: object, status: number) {
 
 function normalizeId(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
-}
-
-async function recalculateAssignmentRequest(
-  requestId: string,
-  supabaseAdmin: ReturnType<typeof getSupabaseAdmin>
-) {
-  const { data: request } = await supabaseAdmin
-    .from('assignment_requests')
-    .select('requested_count')
-    .eq('id', requestId)
-    .limit(1)
-    .maybeSingle()
-
-  const { data: clients } = await supabaseAdmin
-    .from('assigned_clients')
-    .select('is_active')
-    .eq('assignment_request_id', requestId)
-
-  const assignedCount = (clients ?? []).length
-  const remainingCount = Math.max((request?.requested_count ?? 0) - assignedCount, 0)
-
-  await supabaseAdmin
-    .from('assignment_requests')
-    .update({
-      assigned_count: assignedCount,
-      remaining_count: remainingCount,
-    })
-    .eq('id', requestId)
 }
 
 export async function DELETE(
@@ -120,7 +93,7 @@ export async function DELETE(
 
   await Promise.all(
     assignmentRequestIds.map((requestId) =>
-      recalculateAssignmentRequest(requestId, supabaseAdmin)
+      recalculateAssignmentRequestFromActiveAssignments(requestId, supabaseAdmin)
     )
   )
 

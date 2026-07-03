@@ -32,7 +32,8 @@ async function getProfessionalSummary(
     supabaseAdmin
       .from('assigned_clients')
       .select('id, is_active')
-      .eq('professional_id', professionalId),
+      .eq('professional_id', professionalId)
+      .is('canceled_at', null),
   ])
 
   if (requestsResponse.error) throw requestsResponse.error

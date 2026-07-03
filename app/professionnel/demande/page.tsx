@@ -154,6 +154,7 @@ export default function ProfessionnelDemandePage() {
             .select('is_active')
             .eq('professional_id', user.id)
             .eq('assignment_request_id', currentRequest.id)
+            .is('canceled_at', null)
         : null
 
       if (clientsResponse?.error) {
@@ -228,6 +229,7 @@ export default function ProfessionnelDemandePage() {
         .select('is_active')
         .eq('professional_id', user.id)
         .eq('assignment_request_id', currentRequestId)
+        .is('canceled_at', null)
 
       if (clientsError) {
         setRequestError(clientsError.message)

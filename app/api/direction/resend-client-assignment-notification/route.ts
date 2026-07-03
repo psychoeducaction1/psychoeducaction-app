@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { getDirectionContext } from '@/lib/directionServer'
+import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
 
 type NotificationBody = {
   assignedClientId?: unknown
@@ -9,7 +10,10 @@ type AssignedClientRow = {
   id: string
   email: string | null
   professional_id: string | null
-  client_assignment_notified_at: string | null
+  assignment_request_id: string | null
+  waiting_list_client_id: string | null
+  first_name: string | null
+  last_name: string | null
   canceled_at: string | null
 }
 
@@ -30,20 +34,10 @@ function normalizeId(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-function getBearerToken(request: NextRequest) {
-  const authorization = request.headers.get('authorization') ?? ''
-
-  if (!authorization.toLowerCase().startsWith('bearer ')) return ''
-
-  return authorization.slice('bearer '.length).trim()
-}
-
 function getRequiredEnv(name: string) {
   const value = process.env[name]
 
-  if (!value) {
-    throw new Error(`${name} est manquant.`)
-  }
+  if (!value) throw new Error(`${name} est manquant.`)
 
   return value
 }
@@ -52,6 +46,13 @@ function formatOptionalLine(label: string, value: string | null) {
   const normalizedValue = value?.trim()
 
   return normalizedValue ? `${label} : ${normalizedValue}` : null
+}
+
+function getClientName(client: AssignedClientRow) {
+  return [client.first_name, client.last_name]
+    .map((part) => part?.trim())
+    .filter(Boolean)
+    .join(' ')
 }
 
 async function sendEmail({
@@ -83,11 +84,6 @@ async function sendEmail({
   })
 
   const responseText = await response.text()
-  console.log('[client-assignment-notification] Resend response:', {
-    status: response.status,
-    ok: response.ok,
-    body: response.ok ? undefined : responseText,
-  })
 
   if (!response.ok) {
     throw new Error(
@@ -97,59 +93,13 @@ async function sendEmail({
 }
 
 export async function POST(request: NextRequest) {
-  console.log('[client-assignment-notification] Route appelee.')
+  const directionResult = await getDirectionContext(request)
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-  if (!supabaseUrl || !supabaseAnonKey) {
+  if (directionResult.error) {
     return jsonResponse(
-      { error: 'Configuration Supabase publique manquante cote serveur.' },
-      500
+      { error: directionResult.error.message },
+      directionResult.error.status
     )
-  }
-
-  const accessToken = getBearerToken(request)
-
-  if (!accessToken) {
-    return jsonResponse({ error: 'Non autorise.' }, 401)
-  }
-
-  const supabaseServer = createClient(supabaseUrl, supabaseAnonKey, {
-    global: {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    },
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  })
-
-  const {
-    data: { user },
-    error: userError,
-  } = await supabaseServer.auth.getUser()
-
-  if (userError || !user) {
-    return jsonResponse({ error: 'Utilisateur connecte introuvable.' }, 401)
-  }
-
-  const { data: currentProfile, error: currentProfileError } =
-    await supabaseServer
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .limit(1)
-      .maybeSingle()
-
-  if (currentProfileError) {
-    return jsonResponse({ error: currentProfileError.message }, 500)
-  }
-
-  if (currentProfile?.role !== 'direction') {
-    return jsonResponse({ error: 'Acces reserve a la direction.' }, 403)
   }
 
   let body: NotificationBody
@@ -162,18 +112,17 @@ export async function POST(request: NextRequest) {
 
   const assignedClientId = normalizeId(body.assignedClientId)
 
-  console.log('[client-assignment-notification] Payload recu:', {
-    assignedClientId,
-  })
-
   if (!assignedClientId) {
     return jsonResponse({ error: "L'identifiant de l'assignation est requis." }, 400)
   }
 
+  const supabaseAdmin = getSupabaseAdmin()
   const { data: assignedClientData, error: assignedClientError } =
-    await supabaseServer
+    await supabaseAdmin
       .from('assigned_clients')
-      .select('id, email, professional_id, client_assignment_notified_at, canceled_at')
+      .select(
+        'id, email, professional_id, assignment_request_id, waiting_list_client_id, first_name, last_name, canceled_at'
+      )
       .eq('id', assignedClientId)
       .limit(1)
       .maybeSingle()
@@ -192,21 +141,7 @@ export async function POST(request: NextRequest) {
     return jsonResponse({ error: 'Assignation annulée.' }, 409)
   }
 
-  if (assignedClient.client_assignment_notified_at) {
-    return jsonResponse(
-      { skipped: true, reason: 'deja_notifie', assignedClientId },
-      200
-    )
-  }
-
   const recipientEmail = assignedClient.email?.trim()
-
-  console.log('[client-assignment-notification] Assignation trouvee:', {
-    assignedClientId,
-    professionalId: assignedClient.professional_id,
-    hasContactEmail: Boolean(recipientEmail),
-    alreadyNotified: Boolean(assignedClient.client_assignment_notified_at),
-  })
 
   if (!recipientEmail) {
     return jsonResponse(
@@ -216,11 +151,11 @@ export async function POST(request: NextRequest) {
   }
 
   if (!assignedClient.professional_id) {
-    return jsonResponse({ error: 'Professionnel associe introuvable.' }, 404)
+    return jsonResponse({ error: 'Professionnel associé introuvable.' }, 404)
   }
 
   const { data: professionalProfileData, error: professionalProfileError } =
-    await supabaseServer
+    await supabaseAdmin
       .from('profiles')
       .select(
         'full_name, email, professional_title, professional_phone, professional_license_number, role'
@@ -235,18 +170,6 @@ export async function POST(request: NextRequest) {
 
   const professionalProfile =
     professionalProfileData as ProfessionalProfileRow | null
-
-  console.log('[client-assignment-notification] Profil professionnel:', {
-    professionalId: assignedClient.professional_id,
-    role: professionalProfile?.role ?? null,
-    hasName: Boolean(professionalProfile?.full_name?.trim()),
-    hasEmail: Boolean(professionalProfile?.email?.trim()),
-    hasTitle: Boolean(professionalProfile?.professional_title?.trim()),
-    hasPhone: Boolean(professionalProfile?.professional_phone?.trim()),
-    hasLicenseNumber: Boolean(
-      professionalProfile?.professional_license_number?.trim()
-    ),
-  })
 
   if (professionalProfile?.role !== 'professionnel') {
     return jsonResponse({ error: 'Profil professionnel introuvable.' }, 404)
@@ -296,10 +219,6 @@ export async function POST(request: NextRequest) {
   try {
     await sendEmail({ to: recipientEmail, subject, text })
   } catch (error) {
-    console.error(
-      "[client-assignment-notification] Erreur d'envoi courriel:",
-      error
-    )
     return jsonResponse(
       {
         error:
@@ -311,14 +230,27 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const { error: updateNotificationError } = await supabaseServer
-    .from('assigned_clients')
-    .update({ client_assignment_notified_at: new Date().toISOString() })
-    .eq('id', assignedClientId)
+  const actor = directionResult.context
+  const clientName = getClientName(assignedClient)
 
-  if (updateNotificationError) {
-    return jsonResponse({ error: updateNotificationError.message }, 500)
-  }
+  await supabaseAdmin.from('audit_logs').insert({
+    actor_profile_id: actor.user.id,
+    actor_name: actor.profile.full_name ?? actor.user.email ?? null,
+    actor_role: actor.profile.role,
+    action: 'client_assignment_email_resent',
+    entity_type: 'assigned_client',
+    entity_id: assignedClient.id,
+    description: `Courriel client renvoyé pour ${clientName || 'client sans nom'}.`,
+    metadata: {
+      client_name: clientName || null,
+      client_email: recipientEmail,
+      professional_id: assignedClient.professional_id,
+      professional_name: professionalName,
+      assignment_request_id: assignedClient.assignment_request_id,
+      waiting_list_client_id: assignedClient.waiting_list_client_id,
+      notification_type: 'client_assignment_resend',
+    },
+  })
 
   return jsonResponse({ success: true }, 200)
 }

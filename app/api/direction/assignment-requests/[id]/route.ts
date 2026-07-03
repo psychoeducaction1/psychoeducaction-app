@@ -35,6 +35,7 @@ export async function GET(
     .from('assigned_clients')
     .select('is_active')
     .eq('assignment_request_id', assignmentRequestId)
+    .is('canceled_at', null)
 
   if (clientsError) return jsonResponse({ error: clientsError.message }, 500)
 
@@ -96,6 +97,7 @@ export async function DELETE(
     .from('assigned_clients')
     .select('is_active')
     .eq('assignment_request_id', assignmentRequestId)
+    .is('canceled_at', null)
 
   if (clientsError) return jsonResponse({ error: clientsError.message }, 500)
 

@@ -128,6 +128,7 @@ export default function ProfessionnelClientsPage() {
             closure_reason
           `)
           .eq('professional_id', user.id)
+          .is('canceled_at', null)
           .order('assigned_date', { ascending: false }),
         supabase
           .from('assignment_requests')

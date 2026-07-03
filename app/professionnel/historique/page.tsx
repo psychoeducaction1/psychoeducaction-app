@@ -254,6 +254,7 @@ export default function ProfessionnelHistoriquePage() {
             'id, assignment_request_id, waiting_list_client_id, first_name, last_name, email, phone, requester_name, assigned_date, meeting_modality, closure_reason, short_comment, is_active'
           )
           .eq('professional_id', user.id)
+          .is('canceled_at', null)
           .order('assigned_date', { ascending: false }),
       ])
 

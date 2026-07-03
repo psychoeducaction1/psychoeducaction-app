@@ -223,6 +223,7 @@ async function recalculateAssignmentRequest(requestId: string): Promise<void> {
     .from('assigned_clients')
     .select('is_active')
     .eq('assignment_request_id', requestId)
+    .is('canceled_at', null)
 
   if (assignedClientsError || !assignedClients) return
 
@@ -266,6 +267,7 @@ async function getFreshActiveAssignmentRequest(
     .from('assigned_clients')
     .select('assignment_request_id, is_active')
     .in('assignment_request_id', requestIds)
+    .is('canceled_at', null)
 
   if (assignedClientsError) {
     throw assignedClientsError
@@ -627,6 +629,7 @@ export default function DirectionListeAttentePage() {
                 .from('assigned_clients')
                 .select('assignment_request_id, is_active')
                 .in('assignment_request_id', requestIds)
+                .is('canceled_at', null)
             : { data: [], error: null }
 
         if (assignedClientsResponse.error) {
@@ -782,6 +785,7 @@ export default function DirectionListeAttentePage() {
       .select('id', { count: 'exact', head: true })
       .eq('professional_id', professionalId)
       .is('is_active', null)
+      .is('canceled_at', null)
 
     if (countError) {
       console.error(
