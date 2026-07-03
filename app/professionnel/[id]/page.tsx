@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   type FormEvent,
@@ -252,6 +252,86 @@ async function recalculateAssignmentRequest(requestId: string): Promise<void> {
       is_active: isActive,
     })
     .eq("id", requestId);
+}
+
+async function getFreshActiveAssignmentRequest(
+  professionalId: string,
+): Promise<AssignmentRequest | null> {
+  const { data: requests, error: requestsError } = await supabase
+    .from("assignment_requests")
+    .select(
+      "id, professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment, created_at",
+    )
+    .eq("professional_id", professionalId)
+    .eq("is_active", true)
+    .gt("requested_count", 0)
+    .order("created_at", { ascending: false });
+
+  if (requestsError) throw requestsError;
+
+  const activeRequests = (requests ?? []) as AssignmentRequest[];
+  const requestIds = activeRequests.map((request) => request.id);
+
+  if (requestIds.length === 0) return null;
+
+  const { data: assignedClients, error: assignedClientsError } = await supabase
+    .from("assigned_clients")
+    .select("assignment_request_id, is_active")
+    .in("assignment_request_id", requestIds);
+
+  if (assignedClientsError) throw assignedClientsError;
+
+  const serviceTakenCountByRequestId = new Map<string, number>();
+  const occupiedCountByRequestId = new Map<string, number>();
+
+  (
+    (assignedClients ?? []) as Array<{
+      assignment_request_id: string | null;
+      is_active: boolean | null;
+    }>
+  ).forEach((client) => {
+    if (!client.assignment_request_id) return;
+
+    if (client.is_active === true) {
+      serviceTakenCountByRequestId.set(
+        client.assignment_request_id,
+        (serviceTakenCountByRequestId.get(client.assignment_request_id) ?? 0) + 1,
+      );
+      occupiedCountByRequestId.set(
+        client.assignment_request_id,
+        (occupiedCountByRequestId.get(client.assignment_request_id) ?? 0) + 1,
+      );
+    } else if (client.is_active === null) {
+      occupiedCountByRequestId.set(
+        client.assignment_request_id,
+        (occupiedCountByRequestId.get(client.assignment_request_id) ?? 0) + 1,
+      );
+    }
+  });
+
+  return (
+    activeRequests
+      .map((request) => {
+        const requestedCount = Math.max(request.requested_count ?? 0, 0);
+        const assignedCount = serviceTakenCountByRequestId.get(request.id) ?? 0;
+        const occupiedCount = occupiedCountByRequestId.get(request.id) ?? 0;
+        const remainingCount = Math.max(requestedCount - occupiedCount, 0);
+
+        return {
+          ...request,
+          assigned_count: assignedCount,
+          remaining_count: remainingCount,
+        };
+      })
+      .find((request) => {
+        const requestedCount = Math.max(request.requested_count ?? 0, 0);
+        return (
+          requestedCount > 0 &&
+          (request.assigned_count ?? 0) < requestedCount &&
+          (request.remaining_count ?? 0) > 0
+        );
+      }) ?? null
+  );
 }
 
 function getWaitingClientPrioritySortValue(client: WaitingListClient): number {
@@ -1038,7 +1118,10 @@ export default function ProfessionnelDetailPage() {
     setSavingClient(true);
 
     try {
-      if (!assignmentRequest?.id || !displayAssignmentRequest) {
+      const freshAssignmentRequest =
+        await getFreshActiveAssignmentRequest(professionalId);
+
+      if (!freshAssignmentRequest?.id) {
         throw new Error(
           "Ce professionnel n’a aucune demande active avec place restante.",
         );
@@ -1052,7 +1135,7 @@ export default function ProfessionnelDetailPage() {
       const { data: insertedAssignment, error: insertError } = await supabase
         .from("assigned_clients")
         .insert({
-          assignment_request_id: assignmentRequest.id,
+          assignment_request_id: freshAssignmentRequest.id,
           waiting_list_client_id: client.id,
           professional_id: professionalId,
           first_name: firstName,
@@ -1081,7 +1164,7 @@ export default function ProfessionnelDetailPage() {
         );
       }
 
-      await recalculateAssignmentRequest(assignmentRequest.id);
+      await recalculateAssignmentRequest(freshAssignmentRequest.id);
 
       const { error: updateWaitingListError } = await supabase
         .from("waiting_list_clients")
@@ -1117,7 +1200,7 @@ export default function ProfessionnelDetailPage() {
             client_email: client.contact_email,
             professional_id: professionalId,
             waiting_list_client_id: client.id,
-            assignment_request_id: assignmentRequest.id,
+            assignment_request_id: freshAssignmentRequest.id,
             has_assignment_request: true,
           },
         });
@@ -2408,3 +2491,4 @@ export default function ProfessionnelDetailPage() {
     </>
   );
 }
+

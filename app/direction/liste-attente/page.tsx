@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { type FormEvent, type RefObject, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -240,6 +240,89 @@ async function recalculateAssignmentRequest(requestId: string): Promise<void> {
       is_active: isActive,
     })
     .eq('id', requestId)
+}
+
+async function getFreshActiveAssignmentRequest(
+  professionalId: string
+): Promise<ActiveAssignmentRequest | null> {
+  const { data: requests, error: requestsError } = await supabase
+    .from('assignment_requests')
+    .select('id, professional_id, is_active, requested_count, assigned_count, remaining_count')
+    .eq('professional_id', professionalId)
+    .eq('is_active', true)
+    .gt('requested_count', 0)
+    .order('created_at', { ascending: false })
+
+  if (requestsError) {
+    throw requestsError
+  }
+
+  const activeRequests = (requests ?? []) as ActiveAssignmentRequest[]
+  const requestIds = activeRequests.map((request) => request.id)
+
+  if (requestIds.length === 0) return null
+
+  const { data: assignedClients, error: assignedClientsError } = await supabase
+    .from('assigned_clients')
+    .select('assignment_request_id, is_active')
+    .in('assignment_request_id', requestIds)
+
+  if (assignedClientsError) {
+    throw assignedClientsError
+  }
+
+  const serviceTakenCountByRequestId = new Map<string, number>()
+  const occupiedCountByRequestId = new Map<string, number>()
+
+  ;(
+    (assignedClients ?? []) as Array<{
+      assignment_request_id: string | null
+      is_active: boolean | null
+    }>
+  ).forEach((client) => {
+    if (!client.assignment_request_id) return
+
+    if (client.is_active === true) {
+      serviceTakenCountByRequestId.set(
+        client.assignment_request_id,
+        (serviceTakenCountByRequestId.get(client.assignment_request_id) ?? 0) + 1
+      )
+      occupiedCountByRequestId.set(
+        client.assignment_request_id,
+        (occupiedCountByRequestId.get(client.assignment_request_id) ?? 0) + 1
+      )
+    } else if (client.is_active === null) {
+      occupiedCountByRequestId.set(
+        client.assignment_request_id,
+        (occupiedCountByRequestId.get(client.assignment_request_id) ?? 0) + 1
+      )
+    }
+  })
+
+  return (
+    activeRequests
+      .map((request) => {
+        const requestedCount = Math.max(request.requested_count ?? 0, 0)
+        const assignedCount = serviceTakenCountByRequestId.get(request.id) ?? 0
+        const occupiedCount = occupiedCountByRequestId.get(request.id) ?? 0
+        const remainingCount = Math.max(requestedCount - occupiedCount, 0)
+
+        return {
+          ...request,
+          assigned_count: assignedCount,
+          occupied_count: occupiedCount,
+          remaining_count: remainingCount,
+        }
+      })
+      .find((request) => {
+        const requestedCount = Math.max(request.requested_count ?? 0, 0)
+        return (
+          requestedCount > 0 &&
+          (request.assigned_count ?? 0) < requestedCount &&
+          (request.remaining_count ?? 0) > 0
+        )
+      }) ?? null
+  )
 }
 
 function formatDate(value: string | null | undefined): string {
@@ -1041,18 +1124,24 @@ export default function DirectionListeAttentePage() {
       return
     }
 
-    const assignmentRequest = activeRequests.find(
-      (request) =>
-        request.professional_id === selectedProfessionalId &&
-        getAssignmentRequestMetrics({
-          isActive: request.is_active,
-          requestedCount: request.requested_count,
-          acceptedCount: request.assigned_count,
-          occupiedCount: request.occupied_count,
-          remainingCount: request.remaining_count,
-        }).isActive
-    )
+    setSavingAssignment(true)
+
+    let assignmentRequest: ActiveAssignmentRequest | null = null
+
+    try {
+      assignmentRequest = await getFreshActiveAssignmentRequest(selectedProfessionalId)
+    } catch (caughtError) {
+      setSavingAssignment(false)
+      setFormError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Impossible de vérifier la demande active du professionnel."
+      )
+      return
+    }
+
     if (!assignmentRequest?.id) {
+      setSavingAssignment(false)
       setFormError('Ce professionnel n’a aucune demande active avec place restante.')
       return
     }
@@ -1065,7 +1154,6 @@ export default function DirectionListeAttentePage() {
         .join(' / ')
     )
 
-    setSavingAssignment(true)
     const previousPendingCount = await getPendingAssignmentCount(
       selectedProfessionalId
     )
@@ -2361,3 +2449,4 @@ export default function DirectionListeAttentePage() {
     </>
   )
 }
+
