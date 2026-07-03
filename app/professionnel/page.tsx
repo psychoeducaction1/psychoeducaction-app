@@ -19,6 +19,8 @@ import {
 import { supabase } from '@/lib/supabaseClient'
 import {
   getAssignmentRequestMetrics,
+  getServiceTakenCount,
+  getUsedAssignmentCount,
   type AssignedClient,
   type AssignmentRequest,
 } from './shared'
@@ -173,27 +175,33 @@ export default function ProfessionnelPage() {
       const activeRequest =
         requests.find((currentRequest) => {
           const requestClients = clientsByRequestId.get(currentRequest.id) ?? []
-          const assignedCount = requestClients.length
+          const serviceTakenCount = getServiceTakenCount(requestClients)
+          const occupiedCount = getUsedAssignmentCount(requestClients)
 
           return getAssignmentRequestMetrics({
             isActive: currentRequest.is_active,
             requestedCount: currentRequest.requested_count,
-            acceptedCount: assignedCount,
+            acceptedCount: serviceTakenCount,
+            occupiedCount,
             remainingCount: Math.max(
-              (currentRequest.requested_count ?? 0) - assignedCount,
+              (currentRequest.requested_count ?? 0) - occupiedCount,
               0
             ),
           }).isActive
         }) ?? null
 
       if (!activeRequest) {
-        setClients(visibleClients)
+        setClients([])
         setRequest(null)
         setLoading(false)
         return
       }
 
-      setClients(visibleClients)
+      setClients(
+        visibleClients.filter(
+          (client) => client.assignment_request_id === activeRequest.id
+        )
+      )
       setRequest(activeRequest)
       setLoading(false)
     }
@@ -209,20 +217,20 @@ export default function ProfessionnelPage() {
   const requestClients = request
     ? clients.filter((client) => client.assignment_request_id === request.id)
     : []
-  const requestAssignedCount = requestClients.length
+  const requestServiceTakenCount = getServiceTakenCount(requestClients)
+  const requestOccupiedCount = getUsedAssignmentCount(requestClients)
   const requestMetrics = getAssignmentRequestMetrics({
     isActive: request?.is_active,
     requestedCount: request?.requested_count,
-    acceptedCount: requestAssignedCount,
+    acceptedCount: requestServiceTakenCount,
+    occupiedCount: requestOccupiedCount,
     remainingCount: request
-      ? Math.max((request.requested_count ?? 0) - requestAssignedCount, 0)
+      ? Math.max((request.requested_count ?? 0) - requestOccupiedCount, 0)
       : null,
   })
   const requestedCount = requestMetrics.requestedCount
   const assignedCount = requestMetrics.acceptedCount
-  const remainingCount = requestMetrics.isActive
-    ? Math.max(requestMetrics.requestedCount - requestAssignedCount, 0)
-    : 0
+  const remainingCount = requestMetrics.isActive ? requestMetrics.remainingCount : 0
   const requestStatus = getAssignmentRequestStatus({
     isActive: requestMetrics.isActive,
     remainingCount,

@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
+﻿import type { SupabaseClient } from '@supabase/supabase-js'
 
 export type AssignedClient = {
   id: string
@@ -84,7 +84,13 @@ export type AuditLogInput = {
 export function getUsedAssignmentCount(
   clients: Array<{ is_active: boolean | null }>
 ): number {
-  return clients.length
+  return clients.filter((client) => client.is_active !== false).length
+}
+
+export function getServiceTakenCount(
+  clients: Array<{ is_active: boolean | null }>
+): number {
+  return clients.filter((client) => client.is_active === true).length
 }
 
 export async function logAssignedClientStatusChange({
@@ -186,15 +192,18 @@ export function getAssignmentRequestMetrics({
   isActive,
   requestedCount,
   acceptedCount,
+  occupiedCount,
   remainingCount,
 }: {
   isActive: boolean | null | undefined
   requestedCount: number | null | undefined
   acceptedCount: number | null | undefined
+  occupiedCount?: number | null | undefined
   remainingCount?: number | null | undefined
 }): {
   requestedCount: number
   acceptedCount: number
+  occupiedCount: number
   remainingCount: number
   state: AssignmentRequestState
   isActive: boolean
@@ -202,22 +211,24 @@ export function getAssignmentRequestMetrics({
 } {
   const normalizedRequestedCount = Math.max(requestedCount ?? 0, 0)
   const normalizedAcceptedCount = Math.max(acceptedCount ?? 0, 0)
+  const normalizedOccupiedCount = Math.max(
+    occupiedCount ?? acceptedCount ?? 0,
+    0
+  )
   const normalizedRemainingCount =
     normalizedRequestedCount > 0
       ? getRemainingAssignmentCount(
           normalizedRequestedCount,
-          normalizedAcceptedCount
+          normalizedOccupiedCount
         )
       : Math.max(remainingCount ?? 0, 0)
   const isCompleted =
     normalizedRequestedCount > 0 &&
     normalizedAcceptedCount >= normalizedRequestedCount
   const isCurrentlyActive =
-    isActive === true &&
-    !isCompleted &&
-    (normalizedRequestedCount > 0
-      ? normalizedAcceptedCount < normalizedRequestedCount
-      : normalizedRemainingCount > 0)
+    normalizedRequestedCount > 0
+      ? !isCompleted
+      : isActive === true && normalizedRemainingCount > 0
   const state: AssignmentRequestState = isCompleted
     ? 'completed'
     : isCurrentlyActive
@@ -227,6 +238,7 @@ export function getAssignmentRequestMetrics({
   return {
     requestedCount: normalizedRequestedCount,
     acceptedCount: normalizedAcceptedCount,
+    occupiedCount: normalizedOccupiedCount,
     remainingCount: normalizedRemainingCount,
     state,
     isActive: isCurrentlyActive,
@@ -258,3 +270,4 @@ export function isRecentDate(value: string): boolean {
 
   return assignedDate >= sevenDaysAgo
 }
+

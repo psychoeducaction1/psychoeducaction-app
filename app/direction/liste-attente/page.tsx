@@ -20,6 +20,8 @@ import { supabase } from '@/lib/supabaseClient'
 import { isSuperAdmin } from '@/lib/superAdmin'
 import {
   getAssignmentRequestMetrics,
+  getServiceTakenCount,
+  getUsedAssignmentCount,
   logAudit,
 } from '@/app/professionnel/shared'
 
@@ -67,6 +69,7 @@ type ActiveAssignmentRequest = {
   requested_count: number | null
   assigned_count: number | null
   remaining_count: number | null
+  occupied_count?: number | null
 }
 
 
@@ -223,9 +226,11 @@ async function recalculateAssignmentRequest(requestId: string): Promise<void> {
 
   if (assignedClientsError || !assignedClients) return
 
-  const assignedCount = assignedClients.length
-  const remainingCount = Math.max((request.requested_count ?? 0) - assignedCount, 0)
-  const isActive = remainingCount > 0
+  const assignedCount = getServiceTakenCount(assignedClients)
+  const occupiedCount = getUsedAssignmentCount(assignedClients)
+  const requestedCount = Math.max(request.requested_count ?? 0, 0)
+  const remainingCount = Math.max(requestedCount - occupiedCount, 0)
+  const isActive = assignedCount < requestedCount
 
   await supabase
     .from('assignment_requests')
@@ -547,7 +552,8 @@ export default function DirectionListeAttentePage() {
           return
         }
 
-        const assignedCountByRequestId = new Map<string, number>()
+        const serviceTakenCountByRequestId = new Map<string, number>()
+        const occupiedCountByRequestId = new Map<string, number>()
 
         ;(
           (assignedClientsResponse.data ?? []) as Array<{
@@ -557,22 +563,38 @@ export default function DirectionListeAttentePage() {
         ).forEach((client) => {
           if (!client.assignment_request_id) return
 
-          assignedCountByRequestId.set(
-            client.assignment_request_id,
-            (assignedCountByRequestId.get(client.assignment_request_id) ?? 0) + 1
-          )
+          if (client.is_active === true) {
+            serviceTakenCountByRequestId.set(
+              client.assignment_request_id,
+              (serviceTakenCountByRequestId.get(client.assignment_request_id) ??
+                0) + 1
+            )
+            occupiedCountByRequestId.set(
+              client.assignment_request_id,
+              (occupiedCountByRequestId.get(client.assignment_request_id) ?? 0) +
+                1
+            )
+          } else if (client.is_active === null) {
+            occupiedCountByRequestId.set(
+              client.assignment_request_id,
+              (occupiedCountByRequestId.get(client.assignment_request_id) ?? 0) +
+                1
+            )
+          }
         })
 
         setActiveRequests(
           requests
             .map((request) => {
-              const assignedCount = assignedCountByRequestId.get(request.id) ?? 0
+              const assignedCount = serviceTakenCountByRequestId.get(request.id) ?? 0
+              const occupiedCount = occupiedCountByRequestId.get(request.id) ?? 0
               const requestedCount = Math.max(request.requested_count ?? 0, 0)
-              const remainingCount = Math.max(requestedCount - assignedCount, 0)
+              const remainingCount = Math.max(requestedCount - occupiedCount, 0)
 
               return {
                 ...request,
                 assigned_count: assignedCount,
+                occupied_count: occupiedCount,
                 remaining_count: remainingCount,
               }
             })
@@ -581,6 +603,7 @@ export default function DirectionListeAttentePage() {
                 isActive: request.is_active,
                 requestedCount: request.requested_count,
                 acceptedCount: request.assigned_count,
+                occupiedCount: request.occupied_count,
                 remainingCount: request.remaining_count,
               }).isActive
             )
@@ -1025,10 +1048,14 @@ export default function DirectionListeAttentePage() {
           isActive: request.is_active,
           requestedCount: request.requested_count,
           acceptedCount: request.assigned_count,
+          occupiedCount: request.occupied_count,
           remainingCount: request.remaining_count,
         }).isActive
     )
-    const shouldCreateInternalOnlyLink = !assignmentRequest?.id
+    if (!assignmentRequest?.id) {
+      setFormError('Ce professionnel n’a aucune demande active avec place restante.')
+      return
+    }
 
     const { firstName, lastName } = splitClientName(client.client_name)
     const requesterName = nullableText(
@@ -1046,7 +1073,7 @@ export default function DirectionListeAttentePage() {
     const { data: insertedAssignment, error: insertError } = await supabase
       .from('assigned_clients')
       .insert({
-        assignment_request_id: assignmentRequest?.id ?? null,
+        assignment_request_id: assignmentRequest.id,
         waiting_list_client_id: client.id,
         professional_id: selectedProfessionalId,
         first_name: firstName,
@@ -1080,9 +1107,7 @@ export default function DirectionListeAttentePage() {
       return
     }
 
-    if (assignmentRequest?.id) {
-      await recalculateAssignmentRequest(assignmentRequest.id)
-    }
+    await recalculateAssignmentRequest(assignmentRequest.id)
 
     const { data, error: updateError } = await supabase
       .from('waiting_list_clients')
@@ -1118,11 +1143,7 @@ export default function DirectionListeAttentePage() {
     setAssigningClientId(null)
     setNotifyProfessional(false)
     setNotifyClient(false)
-    setFormMessage(
-      shouldCreateInternalOnlyLink
-        ? 'Client associé au professionnel pour historique interne seulement.'
-        : 'Client assigné au professionnel avec succès.'
-    )
+    setFormMessage('Client assigné au professionnel avec succès.')
     const selectedProfessional = professionals.find(
       (professional) => professional.id === selectedProfessionalId
     )
@@ -1144,16 +1165,14 @@ export default function DirectionListeAttentePage() {
           client_email: getContactEmails(client)[0] ?? null,
           professional_id: selectedProfessionalId,
           waiting_list_client_id: client.id,
-          assignment_request_id: assignmentRequest?.id ?? null,
-          has_assignment_request: Boolean(assignmentRequest?.id),
-          assignment_mode: shouldCreateInternalOnlyLink
-            ? 'internal_history'
-            : 'request_assignment',
+          assignment_request_id: assignmentRequest.id,
+          has_assignment_request: true,
+          assignment_mode: 'request_assignment',
         },
       })
     }
 
-    if (assignmentRequest?.id && notifyProfessional) {
+    if (notifyProfessional) {
       const notificationSent = await sendProfessionalAssignmentNotification({
         professionalId: selectedProfessionalId,
         previousPendingCount,
@@ -1200,7 +1219,7 @@ export default function DirectionListeAttentePage() {
       })
     }
 
-    if (assignmentRequest?.id && notifyClient && getContactEmails(client).length > 0) {
+    if (notifyClient && getContactEmails(client).length > 0) {
       const notificationSent = await sendClientAssignmentNotification(
         insertedAssignment.id
       )
@@ -1226,7 +1245,7 @@ export default function DirectionListeAttentePage() {
           },
         })
       }
-    } else if (assignmentRequest?.id && notifyClient) {
+    } else if (notifyClient) {
       console.log('[client-assignment-notification] Courriel client absent.', {
         assignedClientId: insertedAssignment.id,
       })
@@ -1247,7 +1266,7 @@ export default function DirectionListeAttentePage() {
           },
         })
       }
-    } else if (assignmentRequest?.id && auditActor) {
+    } else if (auditActor) {
       void logAudit({
         supabase,
         actor: auditActor,
@@ -1291,6 +1310,7 @@ export default function DirectionListeAttentePage() {
         isActive: request.is_active,
         requestedCount: request.requested_count,
         acceptedCount: request.assigned_count,
+        occupiedCount: request.occupied_count,
         remainingCount: request.remaining_count,
       }).isActive
   )
@@ -2054,7 +2074,8 @@ export default function DirectionListeAttentePage() {
                       Assigner le client
                     </h2>
                     <p className="mt-1 text-sm text-[#7a6859]">
-                      Choisissez un professionnel actif. S’il a une demande ouverte avec des places, l’assignation sera liée à cette demande. Sinon, vous pouvez l’associer pour historique interne seulement.
+                      Choisissez un professionnel actif ayant une demande active
+                      avec place restante.
                     </p>
                   </div>
                   <form onSubmit={handleAssignClient} className="mt-5 space-y-4">
@@ -2080,7 +2101,7 @@ export default function DirectionListeAttentePage() {
                     </label>
                     {selectedProfessionalHasNoActiveRequest ? (
                       <div className="rounded-xl border border-[#eadfd2] bg-[#fffaf4] px-4 py-3 text-sm text-[#7a6859]">
-                        Ce professionnel n’a pas de demande active. Cette action créera un lien interne seulement, visible dans l’historique du professionnel mais pas dans “Mes assignations”.
+                        Ce professionnel n’a aucune demande active avec place restante.
                       </div>
                     ) : (
                       <div className="rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-4">
@@ -2133,13 +2154,15 @@ export default function DirectionListeAttentePage() {
                       <button
                         type="submit"
                         className={buttonClass('primary')}
-                        disabled={savingAssignment || professionals.length === 0}
+                        disabled={
+                          savingAssignment ||
+                          professionals.length === 0 ||
+                          selectedProfessionalHasNoActiveRequest
+                        }
                       >
                         {savingAssignment
                           ? 'Assignation...'
-                          : selectedProfessionalHasNoActiveRequest
-                            ? 'Associer pour historique interne seulement'
-                            : 'Créer l’assignation'}
+                          : 'Créer l’assignation'}
                       </button>
                     </div>
                   </form>

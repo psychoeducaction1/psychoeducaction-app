@@ -241,14 +241,15 @@ export default function DirectionPage() {
         }
 
         currentRequestStats.total += 1
-        currentRequestStats.usedAssignments += 1
 
         if (client.is_active === true) {
           currentRequestStats.active += 1
+          currentRequestStats.usedAssignments += 1
         } else if (client.is_active === false) {
           currentRequestStats.noResponse += 1
         } else {
           currentRequestStats.pending += 1
+          currentRequestStats.usedAssignments += 1
         }
 
         clientStatsByRequestId.set(client.assignment_request_id, currentRequestStats)
@@ -270,9 +271,11 @@ export default function DirectionPage() {
           return getAssignmentRequestMetrics({
             isActive: currentRequest.is_active,
             requestedCount: currentRequest.requested_count,
-            acceptedCount: requestStats?.total ?? 0,
+            acceptedCount: requestStats?.active ?? 0,
+            occupiedCount: requestStats?.usedAssignments ?? 0,
             remainingCount: Math.max(
-              (currentRequest.requested_count ?? 0) - (requestStats?.total ?? 0),
+              (currentRequest.requested_count ?? 0) -
+                (requestStats?.usedAssignments ?? 0),
               0
             ),
           })
@@ -300,10 +303,7 @@ export default function DirectionPage() {
               remainingCount: null,
             })
         const unassignedCount = requestMetrics.isActive
-          ? Math.max(
-              requestMetrics.requestedCount - (requestClientStats?.total ?? 0),
-              0
-            )
+          ? requestMetrics.remainingCount
           : 0
 
         return {

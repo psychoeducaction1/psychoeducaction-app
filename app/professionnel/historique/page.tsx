@@ -347,9 +347,9 @@ export default function ProfessionnelHistoriquePage() {
           activeAssignmentCount
         )
         const wasPersistedAsCompleted =
-          requestedCount > 0 && activeAssignmentCount >= requestedCount
+          requestedCount > 0 && serviceTakenCount >= requestedCount
         const status: RequestStatus =
-          wasPersistedAsCompleted || remainingCount === 0
+          wasPersistedAsCompleted
             ? 'Completee'
             : 'Active'
         const createdDate = parseDate(request.created_at)
@@ -548,10 +548,10 @@ export default function ProfessionnelHistoriquePage() {
               {internalClients.length > 0 && (
                 <div className="rounded-2xl border border-[#d8b992] bg-[#fffaf4] p-4 text-sm text-[#6c5a4d]">
                   <p className="font-semibold text-[#6d3f1f]">
-                    Associations internes sans demande
+                    Anciennes assignations sans demande
                   </p>
                   <p className="mt-1">
-                    {internalClients.length} client{internalClients.length > 1 ? 's' : ''} sont associés au professionnel pour suivi interne. Ils n’apparaissent pas dans “Mes assignations”.
+                    {internalClients.length} client{internalClients.length > 1 ? 's' : ''} ont été créés sans demande liée avant le retour à la logique de demande obligatoire. Ils n’apparaissent pas dans “Mes assignations”.
                   </p>
                 </div>
               )}

@@ -23,6 +23,8 @@ import { supabase } from "@/lib/supabaseClient";
 import { isSuperAdmin } from "@/lib/superAdmin";
 import {
   getAssignmentRequestMetrics,
+  getServiceTakenCount,
+  getUsedAssignmentCount,
   logAudit,
   logAssignedClientStatusChange,
 } from "../shared";
@@ -236,9 +238,11 @@ async function recalculateAssignmentRequest(requestId: string): Promise<void> {
 
   if (assignedClientsError || !assignedClients) return;
 
-  const assignedCount = assignedClients.length;
-  const remainingCount = Math.max((request.requested_count ?? 0) - assignedCount, 0);
-  const isActive = remainingCount > 0;
+  const assignedCount = getServiceTakenCount(assignedClients);
+  const occupiedCount = getUsedAssignmentCount(assignedClients);
+  const requestedCount = Math.max(request.requested_count ?? 0, 0);
+  const remainingCount = Math.max(requestedCount - occupiedCount, 0);
+  const isActive = assignedCount < requestedCount;
 
   await supabase
     .from("assignment_requests")
@@ -553,18 +557,20 @@ export default function ProfessionnelDetailPage() {
         const activeRequest =
           loadedRequests.find((request) => {
             const requestClients = clientsByRequestId.get(request.id) ?? [];
-            const assignedCount = requestClients.length;
+            const serviceTakenCount = getServiceTakenCount(requestClients);
+            const occupiedCount = getUsedAssignmentCount(requestClients);
 
             return getAssignmentRequestMetrics({
               isActive: request.is_active,
               requestedCount: request.requested_count,
-              acceptedCount: assignedCount,
+              acceptedCount: serviceTakenCount,
+              occupiedCount,
               remainingCount: Math.max(
-                (request.requested_count ?? 0) - assignedCount,
+                (request.requested_count ?? 0) - occupiedCount,
                 0,
               ),
             }).isActive;
-          }) ?? loadedRequests[0] ?? null;
+          }) ?? null;
 
         const loadedProfile = profileResponse.data as Profile;
 
@@ -1032,6 +1038,12 @@ export default function ProfessionnelDetailPage() {
     setSavingClient(true);
 
     try {
+      if (!assignmentRequest?.id || !displayAssignmentRequest) {
+        throw new Error(
+          "Ce professionnel n’a aucune demande active avec place restante.",
+        );
+      }
+
       const previousPendingCount =
         await getPendingAssignmentCount(professionalId);
       const { firstName, lastName } = splitClientName(client.client_name);
@@ -1040,7 +1052,7 @@ export default function ProfessionnelDetailPage() {
       const { data: insertedAssignment, error: insertError } = await supabase
         .from("assigned_clients")
         .insert({
-          assignment_request_id: assignmentRequest?.id ?? null,
+          assignment_request_id: assignmentRequest.id,
           waiting_list_client_id: client.id,
           professional_id: professionalId,
           first_name: firstName,
@@ -1069,9 +1081,7 @@ export default function ProfessionnelDetailPage() {
         );
       }
 
-      if (assignmentRequest?.id) {
-        await recalculateAssignmentRequest(assignmentRequest.id);
-      }
+      await recalculateAssignmentRequest(assignmentRequest.id);
 
       const { error: updateWaitingListError } = await supabase
         .from("waiting_list_clients")
@@ -1107,8 +1117,8 @@ export default function ProfessionnelDetailPage() {
             client_email: client.contact_email,
             professional_id: professionalId,
             waiting_list_client_id: client.id,
-            assignment_request_id: assignmentRequest?.id ?? null,
-            has_assignment_request: Boolean(assignmentRequest?.id),
+            assignment_request_id: assignmentRequest.id,
+            has_assignment_request: true,
           },
         });
       }
@@ -1271,7 +1281,8 @@ export default function ProfessionnelDetailPage() {
           (currentClient) =>
             currentClient.assignment_request_id === client.assignment_request_id,
         );
-        const nextAssignedCount = requestClients.length;
+        const nextAssignedCount = getServiceTakenCount(requestClients);
+        const nextOccupiedCount = getUsedAssignmentCount(requestClients);
 
         const { data: requestData, error: requestLoadError } = await supabase
           .from("assignment_requests")
@@ -1283,15 +1294,18 @@ export default function ProfessionnelDetailPage() {
         if (requestLoadError) throw requestLoadError;
 
         const nextRemainingCount = Math.max(
-          (requestData?.requested_count ?? 0) - nextAssignedCount,
+          (requestData?.requested_count ?? 0) - nextOccupiedCount,
           0,
         );
+        const nextRequestIsActive =
+          nextAssignedCount < Math.max(requestData?.requested_count ?? 0, 0);
 
         const { error: requestUpdateError } = await supabase
           .from("assignment_requests")
           .update({
             assigned_count: nextAssignedCount,
             remaining_count: nextRemainingCount,
+            is_active: nextRequestIsActive,
           })
           .eq("id", client.assignment_request_id);
 
@@ -1303,6 +1317,7 @@ export default function ProfessionnelDetailPage() {
                 ...currentRequest,
                 assigned_count: nextAssignedCount,
                 remaining_count: nextRemainingCount,
+                is_active: nextRequestIsActive,
               }
             : currentRequest,
         );
@@ -1374,14 +1389,17 @@ export default function ProfessionnelDetailPage() {
   const clientsPendingService = activeRequestClients.filter(
     (client) => client.is_active === null,
   );
+  const occupiedRequestClientsCount = getUsedAssignmentCount(activeRequestClients);
   const requestMetrics = getAssignmentRequestMetrics({
     isActive: assignmentRequest?.is_active,
     requestedCount: assignmentRequest?.requested_count,
-    acceptedCount: activeRequestClients.length,
+    acceptedCount: clientsWithService.length,
+    occupiedCount: occupiedRequestClientsCount,
     remainingCount:
       assignmentRequest && assignmentRequest.requested_count !== null
         ? Math.max(
-            (assignmentRequest.requested_count ?? 0) - activeRequestClients.length,
+            (assignmentRequest.requested_count ?? 0) -
+              occupiedRequestClientsCount,
             0,
           )
         : assignmentRequest?.remaining_count,
@@ -1485,36 +1503,37 @@ export default function ProfessionnelDetailPage() {
 
       {!displayAssignmentRequest && (
         <p className="mt-4 rounded-xl border border-[#eadfd2] bg-[#fffaf4] px-4 py-3 text-sm text-[#7a6859]">
-          Ce professionnel n’a pas de demande active. L’assignation sera créée
-          sans demande liée.
+          Ce professionnel n’a aucune demande active avec place restante.
         </p>
       )}
 
-      <div className="mt-4 rounded-xl border border-[#eadfd2] bg-[#fffdf9] p-4">
-        <p className="text-sm font-semibold text-[#332820]">
-          Souhaitez-vous envoyer les notifications ?
-        </p>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-          <label className="flex items-start gap-2 text-sm text-[#6c5a4d]">
-            <input
-              type="checkbox"
-              checked={notifyProfessional}
-              onChange={(event) => setNotifyProfessional(event.target.checked)}
-              className="mt-0.5 h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
-            />
-            Envoyer un courriel au professionnel
-          </label>
-          <label className="flex items-start gap-2 text-sm text-[#6c5a4d]">
-            <input
-              type="checkbox"
-              checked={notifyClient}
-              onChange={(event) => setNotifyClient(event.target.checked)}
-              className="mt-0.5 h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
-            />
-            Envoyer un courriel au client
-          </label>
+      {displayAssignmentRequest && (
+        <div className="mt-4 rounded-xl border border-[#eadfd2] bg-[#fffdf9] p-4">
+          <p className="text-sm font-semibold text-[#332820]">
+            Souhaitez-vous envoyer les notifications ?
+          </p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <label className="flex items-start gap-2 text-sm text-[#6c5a4d]">
+              <input
+                type="checkbox"
+                checked={notifyProfessional}
+                onChange={(event) => setNotifyProfessional(event.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
+              />
+              Envoyer un courriel au professionnel
+            </label>
+            <label className="flex items-start gap-2 text-sm text-[#6c5a4d]">
+              <input
+                type="checkbox"
+                checked={notifyClient}
+                onChange={(event) => setNotifyClient(event.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
+              />
+              Envoyer un courriel au client
+            </label>
+          </div>
         </div>
-      </div>
+      )}
 
       {canShowWaitingListResults && (
         <p className="mt-4 text-sm font-medium text-[#7a6859]">
@@ -1585,7 +1604,7 @@ export default function ProfessionnelDetailPage() {
                 </div>
                 <button
                   type="button"
-                  disabled={savingClient}
+                  disabled={savingClient || !displayAssignmentRequest}
                   className={`${buttonClass("primary")} whitespace-nowrap`}
                   onClick={() => void handleAssignWaitingClient(client)}
                 >

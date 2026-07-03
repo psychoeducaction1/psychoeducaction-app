@@ -239,6 +239,7 @@ export default function DirectionProfessionnelsPage() {
           currentProfessionalStats.noResponse += 1
         } else {
           currentProfessionalStats.pending += 1
+          currentProfessionalStats.usedAssignments += 1
         }
 
         clientStatsByProfessionalId.set(
@@ -267,6 +268,7 @@ export default function DirectionProfessionnelsPage() {
           currentRequestStats.noResponse += 1
         } else {
           currentRequestStats.pending += 1
+          currentRequestStats.usedAssignments += 1
         }
 
         clientStatsByRequestId.set(client.assignment_request_id, currentRequestStats)
@@ -288,9 +290,11 @@ export default function DirectionProfessionnelsPage() {
           return getAssignmentRequestMetrics({
             isActive: currentRequest.is_active,
             requestedCount: currentRequest.requested_count,
-            acceptedCount: requestStats?.total ?? 0,
+            acceptedCount: requestStats?.active ?? 0,
+            occupiedCount: requestStats?.usedAssignments ?? 0,
             remainingCount: Math.max(
-              (currentRequest.requested_count ?? 0) - (requestStats?.total ?? 0),
+              (currentRequest.requested_count ?? 0) -
+                (requestStats?.usedAssignments ?? 0),
               0
             ),
           })
@@ -326,10 +330,7 @@ export default function DirectionProfessionnelsPage() {
           requestedCount: requestMetrics.requestedCount,
           assignedCount: requestClientStats?.total ?? 0,
           remainingCount: requestMetrics.isActive
-            ? Math.max(
-                requestMetrics.requestedCount - (requestClientStats?.total ?? 0),
-                0
-              )
+            ? requestMetrics.remainingCount
             : 0,
           pendingClients: professionalClientStats?.pending ?? 0,
           activeClients: professionalClientStats?.active ?? 0,

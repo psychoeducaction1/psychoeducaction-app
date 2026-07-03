@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -14,7 +14,9 @@ import {
 import { supabase } from '@/lib/supabaseClient'
 import {
   closureReasonOptions,
+  getAssignmentRequestMetrics,
   getRemainingAssignmentCount,
+  getServiceTakenCount,
   getUsedAssignmentCount,
   logAudit,
   logAssignedClientStatusChange,
@@ -24,6 +26,14 @@ import {
 } from '../shared'
 
 type ServiceStatus = 'pending' | 'yes' | 'no'
+
+type AssignmentRequestSummary = {
+  id: string
+  is_active: boolean | null
+  requested_count: number | null
+  assigned_count: number | null
+  remaining_count: number | null
+}
 
 const AUTO_SAVE_DEBOUNCE_MS = 700
 
@@ -57,6 +67,7 @@ export default function ProfessionnelClientsPage() {
   const autoSaveTimersRef = useRef<Record<string, number>>({})
   const latestClientsRef = useRef<AssignedClient[]>([])
   const persistedStatusByClientIdRef = useRef<Record<string, boolean | null>>({})
+  const requestSummariesRef = useRef<Map<string, AssignmentRequestSummary>>(new Map())
 
   useEffect(() => {
     const loadClients = async () => {
@@ -96,41 +107,98 @@ export default function ProfessionnelClientsPage() {
       setCurrentUserRole(profile.role)
       setCurrentUserName(profile.full_name ?? profile.email ?? null)
 
-      const { data: clientsData, error: clientsError } = await supabase
-        .from('assigned_clients')
-        .select(`
-          id,
-          assignment_request_id,
-          waiting_list_client_id,
-          first_name,
-          last_name,
-          email,
-          phone,
-          requester_name,
-          assigned_date,
-          contacted,
-          is_active,
-          short_comment,
-          meeting_modality,
-          service_address,
-          closure_reason
-        `)
-        .eq('professional_id', user.id)
-        .order('assigned_date', { ascending: false })
+      const [clientsResponse, requestsResponse] = await Promise.all([
+        supabase
+          .from('assigned_clients')
+          .select(`
+            id,
+            assignment_request_id,
+            waiting_list_client_id,
+            first_name,
+            last_name,
+            email,
+            phone,
+            requester_name,
+            assigned_date,
+            contacted,
+            is_active,
+            short_comment,
+            meeting_modality,
+            service_address,
+            closure_reason
+          `)
+          .eq('professional_id', user.id)
+          .order('assigned_date', { ascending: false }),
+        supabase
+          .from('assignment_requests')
+          .select('id, is_active, requested_count, assigned_count, remaining_count')
+          .eq('professional_id', user.id)
+          .order('created_at', { ascending: false }),
+      ])
 
-      if (clientsError) {
-        setError(clientsError.message)
+      if (clientsResponse.error) {
+        setError(clientsResponse.error.message)
         setLoading(false)
         return
       }
 
-      const loadedClients = (clientsData ?? []) as AssignedClient[]
-      const pendingClients = loadedClients.filter(
-        (client) => client.assignment_request_id !== null && client.is_active === null
-      )
+      if (requestsResponse.error) {
+        setError(requestsResponse.error.message)
+        setLoading(false)
+        return
+      }
+
+      const loadedClients = (clientsResponse.data ?? []) as AssignedClient[]
+      const requestSummaries = (requestsResponse.data ?? []) as AssignmentRequestSummary[]
+      const requestSummariesById = new Map<string, AssignmentRequestSummary>()
+
+      requestSummaries.forEach((requestSummary) => {
+        requestSummariesById.set(requestSummary.id, requestSummary)
+      })
+      const serviceTakenCountByRequestId = new Map<string, number>()
+      const occupiedCountByRequestId = new Map<string, number>()
+
+      loadedClients.forEach((client) => {
+        if (!client.assignment_request_id) return
+
+        if (client.is_active === true) {
+          serviceTakenCountByRequestId.set(
+            client.assignment_request_id,
+            (serviceTakenCountByRequestId.get(client.assignment_request_id) ?? 0) + 1
+          )
+        }
+
+        if (client.is_active !== false) {
+          occupiedCountByRequestId.set(
+            client.assignment_request_id,
+            (occupiedCountByRequestId.get(client.assignment_request_id) ?? 0) + 1
+          )
+        }
+      })
+
+      const shouldDisplayClient = (client: AssignedClient) => {
+        if (!client.assignment_request_id) return false
+
+        const requestSummary = requestSummariesById.get(client.assignment_request_id)
+
+        if (!requestSummary) return false
+
+        const requestMetrics = getAssignmentRequestMetrics({
+          isActive: requestSummary.is_active,
+          requestedCount: requestSummary.requested_count,
+          acceptedCount:
+            serviceTakenCountByRequestId.get(client.assignment_request_id) ?? 0,
+          occupiedCount:
+            occupiedCountByRequestId.get(client.assignment_request_id) ?? 0,
+          remainingCount: requestSummary.remaining_count,
+        })
+
+        return requestMetrics.requestedCount > 0 && !requestMetrics.isCompleted
+      }
 
       latestClientsRef.current = loadedClients
-      setClients(pendingClients)
+      requestSummariesRef.current = requestSummariesById
+      setClients(loadedClients.filter(shouldDisplayClient))
       persistedStatusByClientIdRef.current = Object.fromEntries(
         loadedClients.map((client) => [client.id, client.is_active])
       )
@@ -152,6 +220,30 @@ export default function ProfessionnelClientsPage() {
 
   const hasNonServiceReason = (client: AssignedClient) =>
     Boolean(client.closure_reason?.trim())
+
+  const shouldKeepClientVisible = (client: AssignedClient) => {
+    if (!client.assignment_request_id) return false
+
+    const requestSummary = requestSummariesRef.current.get(
+      client.assignment_request_id
+    )
+
+    if (!requestSummary) return false
+
+    const requestClients = latestClientsRef.current.filter(
+      (currentClient) =>
+        currentClient.assignment_request_id === client.assignment_request_id
+    )
+    const requestMetrics = getAssignmentRequestMetrics({
+      isActive: requestSummary.is_active,
+      requestedCount: requestSummary.requested_count,
+      acceptedCount: getServiceTakenCount(requestClients),
+      occupiedCount: getUsedAssignmentCount(requestClients),
+      remainingCount: requestSummary.remaining_count,
+    })
+
+    return requestMetrics.requestedCount > 0 && !requestMetrics.isCompleted
+  }
 
   const syncWaitingListStatus = async (
     client: AssignedClient
@@ -271,7 +363,7 @@ export default function ProfessionnelClientsPage() {
     latestClientsRef.current = updatedClients
 
     if (!client.assignment_request_id) {
-      setClients(updatedClients.filter((currentClient) => currentClient.is_active === null))
+      setClients(updatedClients.filter(shouldKeepClientVisible))
       if (waitingListSyncError) {
         setClientErrors((currentErrors) => ({
           ...currentErrors,
@@ -305,16 +397,18 @@ export default function ProfessionnelClientsPage() {
       const requestClients = updatedClients.filter(
         (currentClient) => currentClient.assignment_request_id === client.assignment_request_id
       )
-      const nextAssignedCount = getUsedAssignmentCount(requestClients)
+      const nextServiceTakenCount = getServiceTakenCount(requestClients)
+      const nextOccupiedCount = getUsedAssignmentCount(requestClients)
       const nextRemainingCount = getRemainingAssignmentCount(
         request.requested_count ?? 0,
-        nextAssignedCount
+        nextOccupiedCount
       )
       const { error: requestUpdateError } = await supabase
         .from('assignment_requests')
         .update({
-          assigned_count: nextAssignedCount,
+          assigned_count: nextServiceTakenCount,
           remaining_count: nextRemainingCount,
+          is_active: nextServiceTakenCount < (request.requested_count ?? 0),
         })
         .eq('id', client.assignment_request_id)
 
@@ -325,9 +419,17 @@ export default function ProfessionnelClientsPage() {
         }))
         return
       }
+
+      requestSummariesRef.current.set(client.assignment_request_id, {
+        id: client.assignment_request_id,
+        requested_count: request.requested_count,
+        assigned_count: nextServiceTakenCount,
+        remaining_count: nextRemainingCount,
+        is_active: nextServiceTakenCount < (request.requested_count ?? 0),
+      })
     }
 
-    setClients(updatedClients.filter((currentClient) => currentClient.is_active === null))
+    setClients(updatedClients.filter(shouldKeepClientVisible))
     if (waitingListSyncError) {
       setClientErrors((currentErrors) => ({
         ...currentErrors,
@@ -365,19 +467,38 @@ export default function ProfessionnelClientsPage() {
 
     const nextClient = { ...currentClient, [field]: value } as AssignedClient
 
+    if (field === 'closure_reason' && typeof value === 'string' && value.trim()) {
+      setClientErrors((currentErrors) => ({ ...currentErrors, [clientId]: '' }))
+    }
+
+    latestClientsRef.current = latestClientsRef.current.map((client) =>
+      client.id === clientId ? nextClient : client
+    )
+
     setClients((currentClients) =>
       currentClients.map((client) => (client.id === clientId ? nextClient : client))
     )
     scheduleAutoSave(nextClient)
   }
 
-  const clientsToProcess = clients.filter(
-    (client) => client.is_active === null || (client.is_active === false && !hasNonServiceReason(client))
-  )
+  const updateClientServiceStatus = (client: AssignedClient, status: ServiceStatus) => {
+    const nextIsActive = serviceStatusToIsActive(status)
+
+    if (nextIsActive === false && !hasNonServiceReason(client)) {
+      setClientErrors((currentErrors) => ({
+        ...currentErrors,
+        [client.id]:
+          'Veuillez indiquer le motif avant de classer ce client comme service non pris.',
+      }))
+      return
+    }
+
+    updateClientField(client.id, 'is_active', nextIsActive)
+  }
+
+  const clientsToProcess = clients.filter((client) => client.is_active === null)
   const activeClients = clients.filter((client) => client.is_active === true)
-  const noResponseClients = clients.filter(
-    (client) => client.is_active === false && hasNonServiceReason(client)
-  )
+  const noResponseClients = clients.filter((client) => client.is_active === false)
 
   const renderSaveStatus = (client: AssignedClient) => (
     <div className="text-sm">
@@ -445,7 +566,7 @@ export default function ProfessionnelClientsPage() {
     )
 
   const renderNonServiceReason = (client: AssignedClient) =>
-    client.is_active === false ? (
+    client.is_active !== true ? (
       <div className="space-y-2">
         <label className="block text-xs font-medium text-[#5d4a3d]">
           Motif de non-prise de service
@@ -535,10 +656,9 @@ export default function ProfessionnelClientsPage() {
                     <select
                       value={getServiceStatus(client.is_active)}
                       onChange={(event) =>
-                        updateClientField(
-                          client.id,
-                          'is_active',
-                          serviceStatusToIsActive(event.target.value as ServiceStatus)
+                        updateClientServiceStatus(
+                          client,
+                          event.target.value as ServiceStatus
                         )
                       }
                       className="mt-3 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm font-medium text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
@@ -617,10 +737,9 @@ export default function ProfessionnelClientsPage() {
                   <select
                     value={getServiceStatus(client.is_active)}
                     onChange={(event) =>
-                      updateClientField(
-                        client.id,
-                        'is_active',
-                        serviceStatusToIsActive(event.target.value as ServiceStatus)
+                      updateClientServiceStatus(
+                        client,
+                        event.target.value as ServiceStatus
                       )
                     }
                     className="w-28 rounded-xl border border-[#dfd0bf] bg-white px-2 py-1 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"

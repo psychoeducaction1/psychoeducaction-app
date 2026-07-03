@@ -7,6 +7,7 @@ import { Badge, buttonClass, getAssignmentRequestStatus } from '@/components/ui/
 import { supabase } from '@/lib/supabaseClient'
 import {
   getRemainingAssignmentCount,
+  getServiceTakenCount,
   getUsedAssignmentCount,
   type AssignmentRequest,
 } from '../shared'
@@ -161,15 +162,19 @@ export default function ProfessionnelDemandePage() {
         return
       }
 
+      const currentClients = (clientsResponse?.data ?? []) as Array<{
+        is_active: boolean | null
+      }>
       const currentAssignedCount = currentRequest
-        ? getUsedAssignmentCount(
-            (clientsResponse?.data ?? []) as Array<{ is_active: boolean | null }>
-          )
+        ? getServiceTakenCount(currentClients)
+        : 0
+      const currentOccupiedCount = currentRequest
+        ? getUsedAssignmentCount(currentClients)
         : 0
       const currentRemainingCount = currentRequest
         ? getRemainingAssignmentCount(
             currentRequest.requested_count ?? 0,
-            currentAssignedCount
+            currentOccupiedCount
           )
         : 0
       const isLoadedRequestCompleted = Boolean(!currentRequest && completedRequest)
@@ -215,6 +220,7 @@ export default function ProfessionnelDemandePage() {
     }
 
     let normalizedAssignedCount = 0
+    let normalizedOccupiedCount = 0
 
     if (currentRequestId) {
       const { data: clientsData, error: clientsError } = await supabase
@@ -229,13 +235,15 @@ export default function ProfessionnelDemandePage() {
         return
       }
 
-      normalizedAssignedCount = getUsedAssignmentCount(
-        (clientsData ?? []) as Array<{ is_active: boolean | null }>
-      )
+      const requestClients = (clientsData ?? []) as Array<{
+        is_active: boolean | null
+      }>
+      normalizedAssignedCount = getServiceTakenCount(requestClients)
+      normalizedOccupiedCount = getUsedAssignmentCount(requestClients)
     }
     const nextRemainingCount = getRemainingAssignmentCount(
       normalizedRequestedCount,
-      normalizedAssignedCount
+      normalizedOccupiedCount
     )
 
     const requestPayload = {
