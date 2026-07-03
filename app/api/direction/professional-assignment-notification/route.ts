@@ -11,7 +11,10 @@ type ProfileRow = {
   email: string | null
   role: string | null
   platform_access_enabled: boolean | null
+  last_professional_assignment_notification_sent_at: string | null
 }
+
+const notificationCooldownMinutes = 15
 
 function jsonResponse(body: object, status: number) {
   return NextResponse.json(body, { status })
@@ -202,7 +205,9 @@ export async function POST(request: NextRequest) {
   const { data: professionalProfile, error: professionalProfileError } =
     await supabaseServer
       .from('profiles')
-      .select('full_name, email, role, platform_access_enabled')
+      .select(
+        'full_name, email, role, platform_access_enabled, last_professional_assignment_notification_sent_at'
+      )
       .eq('id', professionalId)
       .limit(1)
       .maybeSingle()
@@ -234,6 +239,32 @@ export async function POST(request: NextRequest) {
       },
       200
     )
+  }
+
+  const lastNotificationSentAt =
+    profile.last_professional_assignment_notification_sent_at
+      ? new Date(profile.last_professional_assignment_notification_sent_at)
+      : null
+
+  if (lastNotificationSentAt && !Number.isNaN(lastNotificationSentAt.getTime())) {
+    const cooldownEndsAt = new Date(
+      lastNotificationSentAt.getTime() +
+        notificationCooldownMinutes * 60 * 1000
+    )
+
+    if (cooldownEndsAt > new Date()) {
+      return jsonResponse(
+        {
+          skipped: true,
+          reason: 'cooldown',
+          cooldownMinutes: notificationCooldownMinutes,
+          lastNotificationSentAt: profile.last_professional_assignment_notification_sent_at,
+          pendingBefore: previousPendingCount,
+          pendingAfter,
+        },
+        200
+      )
+    }
   }
 
   const professionalName =
@@ -270,6 +301,18 @@ export async function POST(request: NextRequest) {
       },
       500
     )
+  }
+
+  const { error: updateCooldownError } = await supabaseServer
+    .from('profiles')
+    .update({
+      last_professional_assignment_notification_sent_at:
+        new Date().toISOString(),
+    })
+    .eq('id', professionalId)
+
+  if (updateCooldownError) {
+    return jsonResponse({ error: updateCooldownError.message }, 500)
   }
 
   return jsonResponse({ success: true }, 200)

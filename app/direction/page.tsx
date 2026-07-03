@@ -12,7 +12,6 @@ import {
 } from 'lucide-react'
 import { AppNav } from '@/components/AppNav'
 import {
-  AlertBanner,
   Badge,
   buttonClass,
   EmptyState,
@@ -377,61 +376,6 @@ export default function DirectionPage() {
         .slice(0, 8),
     [rows]
   )
-  const directionAlerts = [
-    professionalsWithRemaining.some((row) => row.unassignedCount >= 3)
-      ? {
-          title: 'Capacité disponible importante',
-          description: `${
-            professionalsWithRemaining.filter((row) => row.unassignedCount >= 3).length
-          } professionnel${
-            professionalsWithRemaining.filter((row) => row.unassignedCount >= 3)
-              .length > 1
-              ? 's ont'
-              : ' a'
-          } encore plusieurs assignations à faire.`,
-          tone: 'warning' as const,
-        }
-      : null,
-    completedRequests.length > 0
-      ? {
-          title: 'Demandes complétées',
-          description: `${completedRequests.length} demande${
-            completedRequests.length > 1 ? 's sont complétées' : ' est complétée'
-          } et reste${completedRequests.length > 1 ? 'nt' : ''} visible${
-            completedRequests.length > 1 ? 's' : ''
-          }.`,
-          tone: 'success' as const,
-        }
-      : null,
-    waitingListStats.urgent > 0
-      ? {
-          title: 'Priorités en liste d’attente',
-          description: `${waitingListStats.urgent} client${
-            waitingListStats.urgent > 1 ? 's sont' : ' est'
-          } urgent${waitingListStats.urgent > 1 ? 's' : ''} ou en transfert.`,
-          tone: 'warning' as const,
-        }
-      : null,
-    dashboardStats.pendingClients > 0
-      ? {
-          title: 'Confirmations à suivre',
-          description: `${dashboardStats.pendingClients} client${
-            dashboardStats.pendingClients > 1 ? 's assignés attendent' : ' assigné attend'
-          } une confirmation du service.`,
-          tone: 'warning' as const,
-        }
-      : null,
-    dashboardStats.activeRequests === 0
-      ? {
-          title: 'Aucune demande active',
-          description: 'Aucune demande d assignation active actuellement.',
-          tone: 'muted' as const,
-        }
-      : null,
-  ].filter((alert): alert is { title: string; description: string; tone: 'warning' | 'success' | 'muted' } =>
-    Boolean(alert)
-  )
-
   return (
     <>
       <AppNav />
@@ -465,20 +409,6 @@ export default function DirectionPage() {
 
           {!loading && !error && (
             <div className="space-y-6">
-              {directionAlerts.length > 0 && (
-                <section className="grid gap-3 lg:grid-cols-2">
-                  {directionAlerts.map((alert) => (
-                    <AlertBanner
-                      key={alert.title}
-                      title={alert.title}
-                      description={alert.description}
-                      tone={alert.tone}
-                      priority={alert.tone === 'warning' ? 'high' : 'default'}
-                    />
-                  ))}
-                </section>
-              )}
-
               <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
                 <StatCard
                   label="Clients en liste d’attente"
@@ -489,7 +419,7 @@ export default function DirectionPage() {
                   icon={Users}
                 />
                 <StatCard
-                  label="Assignations à faire"
+                  label="Places à combler"
                   value={dashboardStats.remainingPlaces}
                   helper="Places non assignées"
                   tone="warm"

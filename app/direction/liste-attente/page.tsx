@@ -806,7 +806,7 @@ export default function DirectionListeAttentePage() {
   }: {
     professionalId: string
     previousPendingCount: number | null
-  }): Promise<boolean> => {
+  }): Promise<'sent' | 'skipped' | 'failed'> => {
     const {
       data: { session },
       error: sessionError,
@@ -817,7 +817,7 @@ export default function DirectionListeAttentePage() {
         "[professional-assignment-notification] Session introuvable pour l'envoi.",
         sessionError
       )
-      return false
+      return 'failed'
     }
 
     try {
@@ -863,16 +863,16 @@ export default function DirectionListeAttentePage() {
           "[professional-assignment-notification] Échec de l'envoi:",
           result?.error ?? response.statusText
         )
-        return false
+        return 'failed'
       }
 
-      return true;
+      return result?.skipped ? 'skipped' : 'sent'
     } catch (notificationError) {
       console.error(
         "[professional-assignment-notification] Erreur réseau pendant l'envoi:",
         notificationError
       )
-      return false
+      return 'failed'
     }
   }
 
@@ -1340,24 +1340,32 @@ export default function DirectionListeAttentePage() {
     }
 
     if (notifyProfessional) {
-      const notificationSent = await sendProfessionalAssignmentNotification({
+      const notificationStatus = await sendProfessionalAssignmentNotification({
         professionalId: selectedProfessionalId,
         previousPendingCount,
       })
 
       if (auditActor) {
+        const notificationSent = notificationStatus === 'sent'
+        const notificationSkipped = notificationStatus === 'skipped'
         void logAudit({
           supabase,
           actor: auditActor,
           action: notificationSent
             ? 'professional_notification_sent'
-            : 'professional_notification_failed',
+            : notificationSkipped
+              ? 'professional_notification_not_sent'
+              : 'professional_notification_failed',
           entityType: 'assigned_client',
           entityId: insertedAssignment.id,
           description: notificationSent
             ? `Courriel professionnel envoyé à ${
                 selectedProfessional?.full_name ?? 'professionnel inconnu'
               }.`
+            : notificationSkipped
+              ? `Courriel professionnel non envoyé à ${
+                  selectedProfessional?.full_name ?? 'professionnel inconnu'
+                } (cooldown ou envoi ignoré).`
             : `Courriel professionnel non envoyé à ${
                 selectedProfessional?.full_name ?? 'professionnel inconnu'
               }.`,
