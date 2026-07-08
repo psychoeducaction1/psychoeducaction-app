@@ -1,9 +1,13 @@
-import { NextRequest, NextResponse } from 'next/server'
+﻿import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { buildProfessionalAssignmentEmailTemplate } from '@/lib/assignmentEmailTemplates'
 
 type NotificationBody = {
   professionalId?: unknown
   previousPendingCount?: unknown
+  to?: unknown
+  subject?: unknown
+  message?: unknown
 }
 
 type ProfileRow = {
@@ -26,6 +30,10 @@ function normalizeId(value: unknown) {
 
 function normalizeCount(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function normalizeText(value: unknown) {
+  return typeof value === 'string' ? value.trim() : ''
 }
 
 function getBearerToken(request: NextRequest) {
@@ -90,14 +98,14 @@ async function sendEmail({
 }
 
 export async function POST(request: NextRequest) {
-  console.log('[professional-assignment-notification] Route appelée.')
+  console.log('[professional-assignment-notification] Route appelÃ©e.')
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
   if (!supabaseUrl || !supabaseAnonKey) {
     return jsonResponse(
-      { error: 'Configuration Supabase publique manquante côté serveur.' },
+      { error: 'Configuration Supabase publique manquante cÃ´tÃ© serveur.' },
       500
     )
   }
@@ -105,7 +113,7 @@ export async function POST(request: NextRequest) {
   const accessToken = getBearerToken(request)
 
   if (!accessToken) {
-    return jsonResponse({ error: 'Non autorisé.' }, 401)
+    return jsonResponse({ error: 'Non autorisÃ©.' }, 401)
   }
 
   const supabaseServer = createClient(supabaseUrl, supabaseAnonKey, {
@@ -126,7 +134,7 @@ export async function POST(request: NextRequest) {
   } = await supabaseServer.auth.getUser()
 
   if (userError || !user) {
-    return jsonResponse({ error: 'Utilisateur connecté introuvable.' }, 401)
+    return jsonResponse({ error: 'Utilisateur connectÃ© introuvable.' }, 401)
   }
 
   const { data: currentProfile, error: currentProfileError } =
@@ -142,7 +150,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (currentProfile?.role !== 'direction') {
-    return jsonResponse({ error: 'Accès réservé à la direction.' }, 403)
+    return jsonResponse({ error: 'AccÃ¨s rÃ©servÃ© Ã  la direction.' }, 403)
   }
 
   let body: NotificationBody
@@ -156,7 +164,7 @@ export async function POST(request: NextRequest) {
   const professionalId = normalizeId(body.professionalId)
   const previousPendingCount = normalizeCount(body.previousPendingCount)
 
-  console.log('[professional-assignment-notification] Payload reçu:', {
+  console.log('[professional-assignment-notification] Payload reÃ§u:', {
     professionalId,
     pendingBefore: previousPendingCount,
   })
@@ -179,7 +187,7 @@ export async function POST(request: NextRequest) {
   const pendingAfter = currentPendingCount ?? 0
   const shouldSendEmail = pendingAfter > 0
 
-  console.log('[professional-assignment-notification] Envoi explicite évalué:', {
+  console.log('[professional-assignment-notification] Envoi explicite Ã©valuÃ©:', {
     professionalId,
     pendingBefore: previousPendingCount,
     pendingAfter,
@@ -270,23 +278,29 @@ export async function POST(request: NextRequest) {
   const professionalName =
     profile.full_name?.trim() || profile.email.trim() || 'Professionnel'
   const appUrl = getAppUrl()
-  const subject = 'Nouvelle assignation disponible'
-  const text = [
-    `Bonjour ${professionalName},`,
-    '',
-    'Une ou plusieurs nouvelles assignations ont été ajoutées à votre compte PsychoÉducAction.',
-    '',
-    'Veuillez vous connecter à la plateforme afin de consulter vos assignations et mettre à jour leur statut.',
-    '',
-    'Accéder à la plateforme :',
+  const defaultEmail = buildProfessionalAssignmentEmailTemplate({
+    professionalName,
+    professionalEmail: profile.email,
     appUrl,
-    '',
-    'Merci,',
-    'Clinique PsychoÉducAction',
-  ].join('\n')
+  })
+  const recipientEmail = normalizeText(body.to) || defaultEmail.to
+  const subject = normalizeText(body.subject) || defaultEmail.subject
+  const text = normalizeText(body.message) || defaultEmail.message
+
+  if (!recipientEmail) {
+    return jsonResponse({ error: 'Le destinataire est requis.' }, 400)
+  }
+
+  if (!subject) {
+    return jsonResponse({ error: 'Le sujet est requis.' }, 400)
+  }
+
+  if (!text) {
+    return jsonResponse({ error: 'Le message est requis.' }, 400)
+  }
 
   try {
-    await sendEmail({ to: profile.email.trim(), subject, text })
+    await sendEmail({ to: recipientEmail, subject, text })
   } catch (error) {
     console.error(
       "[professional-assignment-notification] Erreur d'envoi courriel:",

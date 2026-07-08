@@ -10,6 +10,11 @@ import {
 import { useParams, useRouter } from "next/navigation";
 import { AppNav } from "@/components/AppNav";
 import {
+  EmailComposerModal,
+  type EmailComposerDrafts,
+  type EmailComposerSection,
+} from "@/components/EmailComposerModal";
+import {
   AlertBanner,
   Badge,
   type BadgeTone,
@@ -20,6 +25,10 @@ import {
   StatCard,
 } from "@/components/ui/index";
 import { supabase } from "@/lib/supabaseClient";
+import {
+  buildClientAssignmentEmailTemplate,
+  buildProfessionalAssignmentEmailTemplate,
+} from "@/lib/assignmentEmailTemplates";
 import { isSuperAdmin } from "@/lib/superAdmin";
 import {
   getAssignmentRequestMetrics,
@@ -106,6 +115,17 @@ type WaitingListClient = {
   contact_email: string | null;
   contact_phone: string | null;
   consultation_reason: string | null;
+};
+
+type PendingEmailNotification = {
+  assignedClientId: string;
+  professionalId: string;
+  professionalName: string;
+  clientName: string | null;
+  clientEmail: string | null;
+  waitingListClientId: string;
+  assignmentRequestId: string;
+  previousPendingCount: number | null;
 };
 
 type ProfessionalProfileForm = {
@@ -520,6 +540,11 @@ export default function ProfessionnelDetailPage() {
   const [clientError, setClientError] = useState<string | null>(null);
   const [notifyProfessional, setNotifyProfessional] = useState(false);
   const [notifyClient, setNotifyClient] = useState(false);
+  const [emailComposerDrafts, setEmailComposerDrafts] =
+    useState<EmailComposerDrafts | null>(null);
+  const [pendingEmailNotification, setPendingEmailNotification] =
+    useState<PendingEmailNotification | null>(null);
+  const [sendingComposedEmails, setSendingComposedEmails] = useState(false);
 
   const professionalName = useMemo(
     () => profile?.full_name?.trim() || "Professionnel",
@@ -852,9 +877,11 @@ export default function ProfessionnelDetailPage() {
   const sendProfessionalAssignmentNotification = async ({
     selectedProfessionalId,
     previousPendingCount,
+    email,
   }: {
     selectedProfessionalId: string;
     previousPendingCount: number | null;
+    email?: EmailComposerSection;
   }): Promise<"sent" | "skipped" | "failed"> => {
     const {
       data: { session },
@@ -886,6 +913,9 @@ export default function ProfessionnelDetailPage() {
           body: JSON.stringify({
             professionalId: selectedProfessionalId,
             previousPendingCount,
+            to: email?.to,
+            subject: email?.subject,
+            message: email?.message,
           }),
         },
       );
@@ -930,6 +960,7 @@ export default function ProfessionnelDetailPage() {
 
   const sendClientAssignmentNotification = async (
     assignedClientId: string,
+    email?: EmailComposerSection,
   ): Promise<boolean> => {
     const {
       data: { session },
@@ -957,7 +988,12 @@ export default function ProfessionnelDetailPage() {
             Authorization: `Bearer ${session.access_token}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ assignedClientId }),
+          body: JSON.stringify({
+            assignedClientId,
+            to: email?.to,
+            subject: email?.subject,
+            message: email?.message,
+          }),
         },
       );
 
@@ -1390,6 +1426,221 @@ export default function ProfessionnelDetailPage() {
     }
   };
 
+  const getComposerFromLabel = () =>
+    "Clinique PsychoÉducAction (adresse d’envoi configurée)";
+
+  const getClientAppUrl = () =>
+    typeof window === "undefined"
+      ? "https://app.psychoeducaction.com"
+      : window.location.origin;
+
+  const buildEmailComposerDrafts = ({
+    client,
+    enableProfessional,
+    enableClient,
+  }: {
+    client: WaitingListClient;
+    enableProfessional: boolean;
+    enableClient: boolean;
+  }): EmailComposerDrafts => {
+    const professionalEmail = buildProfessionalAssignmentEmailTemplate({
+      professionalName: profile?.full_name,
+      professionalEmail: profile?.email,
+      appUrl: getClientAppUrl(),
+    });
+    const clientEmail = buildClientAssignmentEmailTemplate({
+      professionalName: profile?.full_name,
+      professionalEmail: profile?.email,
+      professionalTitle: profile?.professional_title,
+      professionalPhone: profile?.professional_phone,
+      professionalLicenseNumber: profile?.professional_license_number,
+    });
+
+    return {
+      professional: {
+        enabled: enableProfessional,
+        fromLabel: getComposerFromLabel(),
+        to: professionalEmail.to,
+        subject: professionalEmail.subject,
+        message: professionalEmail.message,
+      },
+      client: {
+        enabled: enableClient,
+        fromLabel: getComposerFromLabel(),
+        to: client.contact_email?.trim() ?? "",
+        subject: clientEmail.subject,
+        message: clientEmail.message,
+      },
+    };
+  };
+
+  const logNotificationNotSent = ({
+    pendingNotification,
+    notificationType,
+    reason,
+  }: {
+    pendingNotification: PendingEmailNotification;
+    notificationType: "professional_assignment" | "client_assignment";
+    reason: string;
+  }) => {
+    if (!auditActor) return;
+
+    const isProfessional = notificationType === "professional_assignment";
+
+    void logAudit({
+      supabase,
+      actor: auditActor,
+      action: isProfessional
+        ? "professional_notification_not_sent"
+        : "client_notification_not_sent",
+      entityType: "assigned_client",
+      entityId: pendingNotification.assignedClientId,
+      description: isProfessional
+        ? `Courriel professionnel non envoyé à ${pendingNotification.professionalName}.`
+        : `Courriel client non envoyé pour ${pendingNotification.clientName ?? "client sans nom"}.`,
+      metadata: {
+        client_name: pendingNotification.clientName,
+        client_email: pendingNotification.clientEmail,
+        professional_name: pendingNotification.professionalName,
+        professional_id: pendingNotification.professionalId,
+        waiting_list_client_id: pendingNotification.waitingListClientId,
+        assignment_request_id: pendingNotification.assignmentRequestId,
+        notification_type: notificationType,
+        reason,
+      },
+    });
+  };
+
+  const sendComposedAssignmentEmails = async (
+    drafts: EmailComposerDrafts,
+    pendingNotification: PendingEmailNotification,
+  ) => {
+    const professionalDraft = drafts.professional;
+    const clientDraft = drafts.client;
+
+    if (professionalDraft?.enabled) {
+      const notificationStatus = await sendProfessionalAssignmentNotification({
+        selectedProfessionalId: pendingNotification.professionalId,
+        previousPendingCount: pendingNotification.previousPendingCount,
+        email: professionalDraft,
+      });
+
+      if (auditActor) {
+        const notificationSent = notificationStatus === "sent";
+        const notificationSkipped = notificationStatus === "skipped";
+        void logAudit({
+          supabase,
+          actor: auditActor,
+          action: notificationSent
+            ? "professional_notification_sent"
+            : notificationSkipped
+              ? "professional_notification_not_sent"
+              : "professional_notification_failed",
+          entityType: "assigned_client",
+          entityId: pendingNotification.assignedClientId,
+          description: notificationSent
+            ? `Courriel professionnel envoyé à ${pendingNotification.professionalName}.`
+            : notificationSkipped
+              ? `Courriel professionnel non envoyé à ${pendingNotification.professionalName} (cooldown ou envoi ignoré).`
+              : `Courriel professionnel non envoyé à ${pendingNotification.professionalName}.`,
+          metadata: {
+            client_name: pendingNotification.clientName,
+            professional_name: pendingNotification.professionalName,
+            professional_id: pendingNotification.professionalId,
+            recipient_email: professionalDraft.to.trim(),
+            notification_type: "professional_assignment",
+            customized: true,
+          },
+        });
+      }
+    } else {
+      logNotificationNotSent({
+        pendingNotification,
+        notificationType: "professional_assignment",
+        reason: "composer_unchecked",
+      });
+    }
+
+    if (clientDraft?.enabled) {
+      const notificationSent = await sendClientAssignmentNotification(
+        pendingNotification.assignedClientId,
+        clientDraft,
+      );
+
+      if (auditActor) {
+        void logAudit({
+          supabase,
+          actor: auditActor,
+          action: notificationSent
+            ? "client_notification_sent"
+            : "client_notification_failed",
+          entityType: "assigned_client",
+          entityId: pendingNotification.assignedClientId,
+          description: notificationSent
+            ? `Courriel client envoyé pour ${pendingNotification.clientName ?? "client sans nom"}.`
+            : `Courriel client non envoyé pour ${pendingNotification.clientName ?? "client sans nom"}.`,
+          metadata: {
+            client_name: pendingNotification.clientName,
+            client_email: pendingNotification.clientEmail,
+            professional_name: pendingNotification.professionalName,
+            professional_id: pendingNotification.professionalId,
+            recipient_email: clientDraft.to.trim(),
+            waiting_list_client_id: pendingNotification.waitingListClientId,
+            assignment_request_id: pendingNotification.assignmentRequestId,
+            notification_type: "client_assignment",
+            customized: true,
+          },
+        });
+      }
+    } else {
+      logNotificationNotSent({
+        pendingNotification,
+        notificationType: "client_assignment",
+        reason: "composer_unchecked",
+      });
+    }
+  };
+
+  const handleSendComposedEmails = async (drafts: EmailComposerDrafts) => {
+    if (!pendingEmailNotification) return;
+
+    setSendingComposedEmails(true);
+    setClientError(null);
+
+    try {
+      await sendComposedAssignmentEmails(drafts, pendingEmailNotification);
+      setClientMessage("Assignation créée. Courriels traités.");
+      setEmailComposerDrafts(null);
+      setPendingEmailNotification(null);
+    } finally {
+      setSendingComposedEmails(false);
+    }
+  };
+
+  const handleCancelComposedEmails = () => {
+    if (pendingEmailNotification) {
+      if (emailComposerDrafts?.professional?.enabled) {
+        logNotificationNotSent({
+          pendingNotification: pendingEmailNotification,
+          notificationType: "professional_assignment",
+          reason: "composer_closed",
+        });
+      }
+
+      if (emailComposerDrafts?.client?.enabled) {
+        logNotificationNotSent({
+          pendingNotification: pendingEmailNotification,
+          notificationType: "client_assignment",
+          reason: "composer_closed",
+        });
+      }
+    }
+
+    setEmailComposerDrafts(null);
+    setPendingEmailNotification(null);
+    setClientMessage("Assignation créée. Aucun courriel envoyé.");
+  };
+
   const handleAssignWaitingClient = async (client: WaitingListClient) => {
     setClientMessage(null);
     setClientError(null);
@@ -1485,117 +1736,36 @@ export default function ProfessionnelDetailPage() {
         });
       }
 
-      if (notifyProfessional) {
-        const notificationStatus = await sendProfessionalAssignmentNotification({
-          selectedProfessionalId: professionalId,
-          previousPendingCount,
-        });
+      const pendingNotification: PendingEmailNotification = {
+        assignedClientId: insertedAssignment.id,
+        professionalId,
+        professionalName,
+        clientName: client.client_name,
+        clientEmail: client.contact_email,
+        waitingListClientId: client.id,
+        assignmentRequestId: freshAssignmentRequest.id,
+        previousPendingCount,
+      };
 
-        if (auditActor) {
-          const notificationSent = notificationStatus === "sent";
-          const notificationSkipped = notificationStatus === "skipped";
-          void logAudit({
-            supabase,
-            actor: auditActor,
-            action: notificationSent
-              ? "professional_notification_sent"
-              : notificationSkipped
-                ? "professional_notification_not_sent"
-                : "professional_notification_failed",
-            entityType: "assigned_client",
-            entityId: insertedAssignment.id,
-            description: notificationSent
-              ? `Courriel professionnel envoyé à ${professionalName}.`
-              : notificationSkipped
-                ? `Courriel professionnel non envoyé à ${professionalName} (cooldown ou envoi ignoré).`
-              : `Courriel professionnel non envoyé à ${professionalName}.`,
-            metadata: {
-              client_name: client.client_name,
-              professional_name: professionalName,
-              professional_id: professionalId,
-              notification_type: "professional_assignment",
-            },
-          });
-        }
-      } else if (auditActor) {
-        void logAudit({
-          supabase,
-          actor: auditActor,
-          action: "professional_notification_not_sent",
-          entityType: "assigned_client",
-          entityId: insertedAssignment.id,
-          description: "Courriel professionnel non envoyé (case décochée).",
-          metadata: {
-            client_name: client.client_name,
-            professional_name: professionalName,
-            professional_id: professionalId,
-            notification_type: "professional_assignment",
-          },
-        });
-      }
-
-      if (notifyClient && client.contact_email?.trim()) {
-        const notificationSent = await sendClientAssignmentNotification(
-          insertedAssignment.id,
+      if (notifyProfessional || notifyClient) {
+        setPendingEmailNotification(pendingNotification);
+        setEmailComposerDrafts(
+          buildEmailComposerDrafts({
+            client,
+            enableProfessional: notifyProfessional,
+            enableClient: notifyClient,
+          }),
         );
-
-        if (auditActor) {
-          void logAudit({
-            supabase,
-            actor: auditActor,
-            action: notificationSent
-              ? "client_notification_sent"
-              : "client_notification_failed",
-            entityType: "assigned_client",
-            entityId: insertedAssignment.id,
-            description: notificationSent
-              ? `Courriel client envoyé pour ${client.client_name ?? "client sans nom"}.`
-              : `Courriel client non envoyé pour ${client.client_name ?? "client sans nom"}.`,
-            metadata: {
-              client_name: client.client_name,
-              professional_name: professionalName,
-              client_email: client.contact_email,
-              waiting_list_client_id: client.id,
-              notification_type: "client_assignment",
-            },
-          });
-        }
-      } else if (notifyClient) {
-        console.log("[client-assignment-notification] Courriel client absent.", {
-          assignedClientId: insertedAssignment.id,
+      } else {
+        logNotificationNotSent({
+          pendingNotification,
+          notificationType: "professional_assignment",
+          reason: "checkbox_unchecked",
         });
-        if (auditActor) {
-          void logAudit({
-            supabase,
-            actor: auditActor,
-            action: "client_notification_not_sent",
-            entityType: "assigned_client",
-            entityId: insertedAssignment.id,
-            description: "Courriel client non envoyé (courriel absent).",
-            metadata: {
-              client_name: client.client_name,
-              professional_name: professionalName,
-              waiting_list_client_id: client.id,
-              notification_type: "client_assignment",
-              reason: "missing_email",
-            },
-          });
-        }
-      } else if (auditActor) {
-        void logAudit({
-          supabase,
-          actor: auditActor,
-          action: "client_notification_not_sent",
-          entityType: "assigned_client",
-          entityId: insertedAssignment.id,
-          description: "Courriel client non envoyé (case décochée).",
-          metadata: {
-            client_name: client.client_name,
-            professional_name: professionalName,
-            client_email: client.contact_email,
-            waiting_list_client_id: client.id,
-            notification_type: "client_assignment",
-          },
+        logNotificationNotSent({
+          pendingNotification,
+          notificationType: "client_assignment",
+          reason: "checkbox_unchecked",
         });
       }
     } catch (caughtError: unknown) {
@@ -1999,6 +2169,15 @@ export default function ProfessionnelDetailPage() {
   return (
     <>
       <AppNav />
+      {emailComposerDrafts && (
+        <EmailComposerModal
+          open
+          drafts={emailComposerDrafts}
+          sending={sendingComposedEmails}
+          onCancel={handleCancelComposedEmails}
+          onSend={handleSendComposedEmails}
+        />
+      )}
       <main className="min-h-screen px-4 py-8 sm:px-6 lg:ml-72 lg:px-10">
         <div className="mx-auto max-w-7xl">
           {loading && (

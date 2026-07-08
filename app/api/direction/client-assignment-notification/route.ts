@@ -1,8 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server'
+﻿import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { buildClientAssignmentEmailTemplate } from '@/lib/assignmentEmailTemplates'
 
 type NotificationBody = {
   assignedClientId?: unknown
+  to?: unknown
+  subject?: unknown
+  message?: unknown
 }
 
 type AssignedClientRow = {
@@ -30,6 +34,10 @@ function normalizeId(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function normalizeText(value: unknown) {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
 function getBearerToken(request: NextRequest) {
   const authorization = request.headers.get('authorization') ?? ''
 
@@ -46,12 +54,6 @@ function getRequiredEnv(name: string) {
   }
 
   return value
-}
-
-function formatOptionalLine(label: string, value: string | null) {
-  const normalizedValue = value?.trim()
-
-  return normalizedValue ? `${label} : ${normalizedValue}` : null
 }
 
 async function sendEmail({
@@ -189,7 +191,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (assignedClient.canceled_at) {
-    return jsonResponse({ error: 'Assignation annulée.' }, 409)
+    return jsonResponse({ error: 'Assignation annulÃ©e.' }, 409)
   }
 
   if (assignedClient.client_assignment_notified_at) {
@@ -199,7 +201,8 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const recipientEmail = assignedClient.email?.trim()
+  const requestedRecipientEmail = normalizeText(body.to)
+  const recipientEmail = requestedRecipientEmail || assignedClient.email?.trim() || ''
 
   console.log('[client-assignment-notification] Assignation trouvee:', {
     assignedClientId,
@@ -209,10 +212,7 @@ export async function POST(request: NextRequest) {
   })
 
   if (!recipientEmail) {
-    return jsonResponse(
-      { skipped: true, reason: 'courriel_contact_absent', assignedClientId },
-      200
-    )
+    return jsonResponse({ error: 'Le destinataire est requis.' }, 400)
   }
 
   if (!assignedClient.professional_id) {
@@ -254,44 +254,23 @@ export async function POST(request: NextRequest) {
 
   const professionalName =
     professionalProfile.full_name?.trim() || 'votre professionnel'
-  const professionalTitle = professionalProfile.professional_title?.trim()
-  const professionalNameWithTitle = professionalTitle
-    ? `${professionalName}, ${professionalTitle}`
-    : professionalName
-  const contactLines = [
-    formatOptionalLine('Courriel', professionalProfile.email),
-    formatOptionalLine('Téléphone', professionalProfile.professional_phone),
-    formatOptionalLine(
-      'Numéro de permis',
-      professionalProfile.professional_license_number
-    ),
-  ].filter(Boolean)
+  const defaultEmail = buildClientAssignmentEmailTemplate({
+    professionalName,
+    professionalEmail: professionalProfile.email,
+    professionalTitle: professionalProfile.professional_title,
+    professionalPhone: professionalProfile.professional_phone,
+    professionalLicenseNumber: professionalProfile.professional_license_number,
+  })
+  const subject = normalizeText(body.subject) || defaultEmail.subject
+  const text = normalizeText(body.message) || defaultEmail.message
 
-  const subject = 'Assignation de votre dossier - Clinique PsychoÉducAction'
-  const text = [
-    'Bonjour,',
-    '',
-    'Nous espérons que vous allez bien.',
-    '',
-    `Nous avons le plaisir de vous informer que votre demande auprès de la Clinique PsychoÉducAction a été assignée à ${professionalNameWithTitle}.`,
-    '',
-    `${professionalName} communiquera avec vous par courriel ou par téléphone dans les prochains jours afin de convenir d'une première rencontre.`,
-    '',
-    'Coordonnées du professionnel',
-    '',
-    ...contactLines,
-    '',
-    "Si vous avez des questions, n'hésitez pas à nous écrire par courriel ou à communiquer avec la clinique.",
-    '',
-    'Bien cordialement,',
-    '',
-    'Fatima Zahra Benlahcen',
-    'Agente administrative',
-    'Clinique PsychoÉducAction',
-    'T : (438) 500-1388',
-    'C : contact@psychoeducaction.com',
-    'www.psychoeducaction.com',
-  ].join('\n')
+  if (!subject) {
+    return jsonResponse({ error: 'Le sujet est requis.' }, 400)
+  }
+
+  if (!text) {
+    return jsonResponse({ error: 'Le message est requis.' }, 400)
+  }
 
   try {
     await sendEmail({ to: recipientEmail, subject, text })
