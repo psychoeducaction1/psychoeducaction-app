@@ -82,6 +82,7 @@ function formatAction(value: string | null): string {
     assigned_client_deleted: 'Assignation supprimée',
     assignment_request_deleted: 'Demande supprimée',
     professional_deleted: 'Professionnel supprimé',
+    pending_contact_reminder_sent: 'Rappel automatique envoyé',
   }
 
   return value ? labels[value] ?? value : '-'

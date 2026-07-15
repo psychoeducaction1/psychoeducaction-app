@@ -55,6 +55,74 @@ export function buildProfessionalAssignmentEmailTemplate({
   }
 }
 
+export type PendingReminderClient = {
+  firstName: string
+  lastName: string
+  assignedDate: string
+}
+
+export type ProfessionalPendingReminderEmailTemplateInput = {
+  professionalName?: string | null
+  professionalEmail?: string | null
+  appUrl: string
+  pendingClients: PendingReminderClient[]
+}
+
+function formatAssignedDateFr(value: string): string {
+  const date = new Date(`${value}T00:00:00`)
+
+  if (Number.isNaN(date.getTime())) return value
+
+  return new Intl.DateTimeFormat('fr-CA', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  }).format(date)
+}
+
+export function buildProfessionalPendingReminderEmailTemplate({
+  professionalName,
+  professionalEmail,
+  appUrl,
+  pendingClients,
+}: ProfessionalPendingReminderEmailTemplateInput): AssignmentEmailTemplate {
+  const normalizedName =
+    cleanText(professionalName) || cleanText(professionalEmail) || 'Professionnel'
+  const count = pendingClients.length
+  const plural = count > 1
+
+  return {
+    to: cleanText(professionalEmail),
+    subject: plural
+      ? 'Rappel : clients en attente de contact'
+      : 'Rappel : client en attente de contact',
+    message: [
+      `Bonjour ${normalizedName},`,
+      '',
+      `Vous avez ${count} client${plural ? 's' : ''} qui vous ${
+        plural ? 'ont été assignés' : 'a été assigné'
+      } depuis au moins 3 jours calendaires et pour ${
+        plural ? "lesquels aucune mise à jour n'a" : "lequel aucune mise à jour n'a"
+      } encore été indiquée dans la plateforme.`,
+      '',
+      'Client(s) concerné(s) :',
+      '',
+      ...pendingClients.map(
+        (client) =>
+          `- ${client.firstName} ${client.lastName} (assigné le ${formatAssignedDateFr(client.assignedDate)})`
+      ),
+      '',
+      'Merci de contacter ce ou ces clients dès que possible et de mettre à jour leur statut (contact effectué, service pris ou non) dans la plateforme.',
+      '',
+      'Accéder à la plateforme :',
+      appUrl.replace(/\/$/, ''),
+      '',
+      'Merci,',
+      'Clinique PsychoÉducAction',
+    ].join('\n'),
+  }
+}
+
 export function buildClientAssignmentEmailTemplate({
   professionalName,
   professionalEmail,
