@@ -75,7 +75,7 @@ function formatAssignedDateFr(value: string): string {
 
   return new Intl.DateTimeFormat('fr-CA', {
     year: 'numeric',
-    month: 'short',
+    month: 'long',
     day: 'numeric',
   }).format(date)
 }
@@ -99,25 +99,30 @@ export function buildProfessionalPendingReminderEmailTemplate({
     message: [
       `Bonjour ${normalizedName},`,
       '',
-      `Vous avez ${count} client${plural ? 's' : ''} qui vous ${
-        plural ? 'ont été assignés' : 'a été assigné'
-      } depuis au moins 3 jours calendaires et pour ${
-        plural ? "lesquels aucune mise à jour n'a" : "lequel aucune mise à jour n'a"
-      } encore été indiquée dans la plateforme.`,
+      `Petit rappel concernant ${
+        plural
+          ? 'certaines assignations qui vous ont été transmises'
+          : 'une assignation qui vous a été transmise'
+      } il y a quelques jours.`,
       '',
-      'Client(s) concerné(s) :',
+      `${
+        plural ? 'Les dossiers suivants apparaissent' : 'Le dossier suivant apparaît'
+      } toujours en attente dans la plateforme :`,
       '',
       ...pendingClients.map(
         (client) =>
-          `- ${client.firstName} ${client.lastName} (assigné le ${formatAssignedDateFr(client.assignedDate)})`
+          `${client.firstName} ${client.lastName} — assigné le ${formatAssignedDateFr(client.assignedDate)}`
       ),
       '',
-      'Merci de contacter ce ou ces clients dès que possible et de mettre à jour leur statut (contact effectué, service pris ou non) dans la plateforme.',
+      `Ce message est simplement un rappel concernant ${
+        plural ? 'ces dossiers' : 'ce dossier'
+      }. Aucune action de votre part n'est requise si un suivi est déjà en cours.`,
       '',
       'Accéder à la plateforme :',
       appUrl.replace(/\/$/, ''),
       '',
-      'Merci,',
+      'Merci et bonne journée,',
+      '',
       'Clinique PsychoÉducAction',
     ].join('\n'),
   }
