@@ -59,6 +59,59 @@ export const closureReasonOptions = [
   'Autre',
 ]
 
+export type AssignedClientStatus = 'not_contacted' | 'pending' | 'taken' | 'not_taken'
+
+export function getAssignedClientStatus(client: {
+  contacted: boolean | null
+  is_active: boolean | null
+}): AssignedClientStatus {
+  if (client.is_active === true) return 'taken'
+  if (client.is_active === false) return 'not_taken'
+  return client.contacted ? 'pending' : 'not_contacted'
+}
+
+export function getAssignedClientStatusMeta(
+  status: AssignedClientStatus
+): { label: string; className: string } {
+  switch (status) {
+    case 'not_contacted':
+      return {
+        label: 'Pas encore contacté',
+        className: 'border-gray-300 bg-gray-100 text-gray-700',
+      }
+    case 'pending':
+      return {
+        label: "En attente d'une réponse",
+        className: 'border-yellow-300 bg-yellow-100 text-yellow-800',
+      }
+    case 'taken':
+      return {
+        label: 'Service pris',
+        className: 'border-green-300 bg-green-100 text-green-800',
+      }
+    case 'not_taken':
+      return {
+        label: 'Service non pris',
+        className: 'border-red-300 bg-red-100 text-red-800',
+      }
+  }
+}
+
+export function getFieldsForAssignedClientStatus(
+  status: AssignedClientStatus
+): { contacted: boolean; is_active: boolean | null } {
+  switch (status) {
+    case 'not_contacted': return { contacted: false, is_active: null }
+    case 'pending': return { contacted: true, is_active: null }
+    case 'taken': return { contacted: true, is_active: true }
+    case 'not_taken': return { contacted: true, is_active: false }
+  }
+}
+
+export function hasNonServiceReason(closureReason: string | null | undefined): boolean {
+  return Boolean(closureReason?.trim())
+}
+
 export function nullableText(value: string | null): string | null {
   const trimmedValue = value?.trim() ?? ''
   return trimmedValue.length > 0 ? trimmedValue : null

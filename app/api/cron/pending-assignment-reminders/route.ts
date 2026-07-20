@@ -22,6 +22,7 @@ type PendingAssignedClientRow = {
   last_name: string | null
   assigned_date: string | null
   dossier_closed: boolean | null
+  contacted: boolean | null
 }
 
 type AssignmentRequestRow = {
@@ -118,9 +119,9 @@ export async function GET(request: NextRequest) {
   const { data: candidateRows, error: candidateError } = await supabaseAdmin
     .from('assigned_clients')
     .select(
-      'id, professional_id, assignment_request_id, first_name, last_name, assigned_date, dossier_closed'
+      'id, professional_id, assignment_request_id, first_name, last_name, assigned_date, dossier_closed, contacted'
     )
-    .is('is_active', null)
+    .eq('contacted', false)
     .is('canceled_at', null)
     .is('pending_contact_reminder_sent_at', null)
     .not('assigned_date', 'is', null)

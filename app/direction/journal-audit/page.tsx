@@ -19,6 +19,10 @@ import {
 import { buttonClass } from '@/components/Ui'
 import { supabase } from '@/lib/supabaseClient'
 import { isSuperAdmin } from '@/lib/superAdmin'
+import {
+  getAssignedClientStatusMeta,
+  type AssignedClientStatus,
+} from '@/app/professionnel/shared'
 
 type AuditLogRow = {
   id: string
@@ -110,7 +114,21 @@ function getMetadataString(metadata: AuditMetadata | null, keys: string[]) {
   return null
 }
 
+const ASSIGNED_CLIENT_STATUS_TOKENS: readonly AssignedClientStatus[] = [
+  'not_contacted',
+  'pending',
+  'taken',
+  'not_taken',
+]
+
 function formatStatusValue(value: unknown) {
+  if (
+    typeof value === 'string' &&
+    (ASSIGNED_CLIENT_STATUS_TOKENS as readonly string[]).includes(value)
+  ) {
+    return getAssignedClientStatusMeta(value as AssignedClientStatus).label
+  }
+  // Rétro-compatibilité : anciennes entrées d'audit qui stockaient un booléen brut.
   if (value === true) return 'Service pris'
   if (value === false) return 'Service non pris'
   if (value === null) return 'En attente'

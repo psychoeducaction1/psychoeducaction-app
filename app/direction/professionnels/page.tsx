@@ -18,7 +18,11 @@ import {
 } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
 import { isSuperAdmin } from '@/lib/superAdmin'
-import { getAssignmentRequestMetrics, logAudit } from '@/app/professionnel/shared'
+import {
+  getAssignedClientStatus,
+  getAssignmentRequestMetrics,
+  logAudit,
+} from '@/app/professionnel/shared'
 
 type Profile = {
   id: string
@@ -34,6 +38,7 @@ type Profile = {
 type AssignedClient = {
   professional_id: string | null
   assignment_request_id: string | null
+  contacted: boolean | null
   is_active: boolean | null
 }
 
@@ -53,6 +58,7 @@ type ClientStats = {
   active: number
   noResponse: number
   pending: number
+  notContacted: number
   usedAssignments: number
 }
 
@@ -70,6 +76,7 @@ type ProfessionalRow = {
   assignedCount: number
   remainingCount: number
   pendingClients: number
+  notContactedClients: number
   activeClients: number
   noResponseClients: number
   requestComment: string
@@ -185,7 +192,7 @@ export default function DirectionProfessionnelsPage() {
       const [assignedClientsResponse, assignmentRequestsResponse] = await Promise.all([
         supabase
           .from('assigned_clients')
-          .select('professional_id, assignment_request_id, is_active')
+          .select('professional_id, assignment_request_id, contacted, is_active')
           .in('professional_id', professionalIds)
           .is('canceled_at', null),
         supabase
@@ -225,21 +232,24 @@ export default function DirectionProfessionnelsPage() {
           active: 0,
           noResponse: 0,
           pending: 0,
+          notContacted: 0,
           usedAssignments: 0,
         }
 
         currentProfessionalStats.total += 1
 
-        if (client.is_active === true) {
-          currentProfessionalStats.usedAssignments += 1
-        }
+        const professionalStatus = getAssignedClientStatus(client)
 
-        if (client.is_active === true) {
+        if (professionalStatus === 'taken') {
           currentProfessionalStats.active += 1
-        } else if (client.is_active === false) {
+          currentProfessionalStats.usedAssignments += 1
+        } else if (professionalStatus === 'not_taken') {
           currentProfessionalStats.noResponse += 1
-        } else {
+        } else if (professionalStatus === 'pending') {
           currentProfessionalStats.pending += 1
+          currentProfessionalStats.usedAssignments += 1
+        } else {
+          currentProfessionalStats.notContacted += 1
           currentProfessionalStats.usedAssignments += 1
         }
 
@@ -257,18 +267,24 @@ export default function DirectionProfessionnelsPage() {
           active: 0,
           noResponse: 0,
           pending: 0,
+          notContacted: 0,
           usedAssignments: 0,
         }
 
         currentRequestStats.total += 1
 
-        if (client.is_active === true) {
+        const requestClientStatus = getAssignedClientStatus(client)
+
+        if (requestClientStatus === 'taken') {
           currentRequestStats.usedAssignments += 1
           currentRequestStats.active += 1
-        } else if (client.is_active === false) {
+        } else if (requestClientStatus === 'not_taken') {
           currentRequestStats.noResponse += 1
-        } else {
+        } else if (requestClientStatus === 'pending') {
           currentRequestStats.pending += 1
+          currentRequestStats.usedAssignments += 1
+        } else {
+          currentRequestStats.notContacted += 1
           currentRequestStats.usedAssignments += 1
         }
 
@@ -334,6 +350,7 @@ export default function DirectionProfessionnelsPage() {
             ? requestMetrics.remainingCount
             : 0,
           pendingClients: professionalClientStats?.pending ?? 0,
+          notContactedClients: professionalClientStats?.notContacted ?? 0,
           activeClients: professionalClientStats?.active ?? 0,
           noResponseClients: professionalClientStats?.noResponse ?? 0,
           requestComment: request?.request_comment?.trim() || '-',
@@ -1085,7 +1102,8 @@ export default function DirectionProfessionnelsPage() {
                       <th className={tableHeadCellClass}>Accès plateforme</th>
                       <th className={tableHeadCellClass}>Statut demande</th>
                       <th className={tableHeadCellClass}>Clients demandes</th>
-                      <th className={tableHeadCellClass}>En attente</th>
+                      <th className={tableHeadCellClass}>Pas encore contacté</th>
+                      <th className={tableHeadCellClass}>En attente d&apos;une réponse</th>
                       <th className={tableHeadCellClass}>Services pris</th>
                       <th className={tableHeadCellClass}>Places restantes</th>
                       <th className={tableHeadCellClass}>Services non pris</th>
@@ -1096,7 +1114,7 @@ export default function DirectionProfessionnelsPage() {
                   <tbody className={tableBodyClass}>
                     {visibleRows.length === 0 ? (
                       <tr>
-                        <td colSpan={11} className="px-4 py-8">
+                        <td colSpan={12} className="px-4 py-8">
                           <EmptyState
                             title="Aucun professionnel trouvé"
                             description="Ajustez la recherche pour élargir la liste."
@@ -1137,6 +1155,11 @@ export default function DirectionProfessionnelsPage() {
                               </Badge>
                             </td>
                             <td className={tableCellClass}>{row.requestedCount}</td>
+                            <td className={tableCellClass}>
+                              <Badge tone="muted">
+                                {row.notContactedClients} à contacter
+                              </Badge>
+                            </td>
                             <td className={tableCellClass}>
                               <Badge
                                 tone={row.pendingClients > 0 ? 'warning' : 'muted'}

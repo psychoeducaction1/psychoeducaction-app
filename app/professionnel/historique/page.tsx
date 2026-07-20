@@ -6,10 +6,16 @@ import { AppNav } from '@/components/AppNav'
 import { Badge, buttonClass, EmptyState, PageHeader } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
 import {
+  closureReasonOptions,
+  getAssignedClientStatus,
+  getAssignedClientStatusMeta,
+  getFieldsForAssignedClientStatus,
   getRemainingAssignmentCount,
   getUsedAssignmentCount,
+  hasNonServiceReason,
   logAudit,
   logAssignedClientStatusChange,
+  type AssignedClientStatus,
 } from '../shared'
 
 type AssignmentRequestHistoryRow = {
@@ -36,11 +42,11 @@ type AssignedClientHistoryRow = {
   meeting_modality: string | null
   closure_reason: string | null
   short_comment: string | null
+  contacted: boolean | null
   is_active: boolean | null
 }
 
 type RequestStatus = 'Completee' | 'Active'
-type ServiceStatusValue = 'pending' | 'taken' | 'not_taken'
 
 type RequestCardData = {
   request: AssignmentRequestHistoryRow
@@ -52,6 +58,7 @@ type RequestCardData = {
   serviceTakenCount: number
   serviceNotTakenCount: number
   pendingCount: number
+  notContactedCount: number
   durationLabel: string
   status: RequestStatus
 }
@@ -133,34 +140,8 @@ function getClientName(client: AssignedClientHistoryRow): string {
   )
 }
 
-function getServiceStatus(client: AssignedClientHistoryRow): {
-  label: string
-  tone: 'success' | 'danger' | 'warning'
-} {
-  if (client.is_active === true) {
-    return { label: 'Service pris', tone: 'success' }
-  }
-
-  if (client.is_active === false) {
-    return { label: 'Service non pris', tone: 'danger' }
-  }
-
-  return { label: 'En attente', tone: 'warning' }
-}
-
-function getServiceStatusValue(isActive: boolean | null): ServiceStatusValue {
-  if (isActive === true) return 'taken'
-  if (isActive === false) return 'not_taken'
-  return 'pending'
-}
-
-function getIsActiveFromServiceStatus(
-  status: ServiceStatusValue
-): boolean | null {
-  if (status === 'taken') return true
-  if (status === 'not_taken') return false
-  return null
-}
+const statusBadgeShapeClass =
+  'inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium leading-5'
 
 function getEstimatedCompletionDate(
   clients: AssignedClientHistoryRow[],
@@ -251,7 +232,7 @@ export default function ProfessionnelHistoriquePage() {
         supabase
           .from('assigned_clients')
           .select(
-            'id, assignment_request_id, waiting_list_client_id, first_name, last_name, email, phone, requester_name, assigned_date, meeting_modality, closure_reason, short_comment, is_active'
+            'id, assignment_request_id, waiting_list_client_id, first_name, last_name, email, phone, requester_name, assigned_date, meeting_modality, closure_reason, short_comment, contacted, is_active'
           )
           .eq('professional_id', user.id)
           .is('canceled_at', null)
@@ -334,13 +315,16 @@ export default function ProfessionnelHistoriquePage() {
         const requestClients = clientsByRequestId.get(request.id) ?? []
         const activeAssignmentCount = getUsedAssignmentCount(requestClients)
         const serviceTakenCount = requestClients.filter(
-          (client) => client.is_active === true
+          (client) => getAssignedClientStatus(client) === 'taken'
         ).length
         const serviceNotTakenCount = requestClients.filter(
-          (client) => client.is_active === false
+          (client) => getAssignedClientStatus(client) === 'not_taken'
         ).length
         const pendingCount = requestClients.filter(
-          (client) => client.is_active === null
+          (client) => getAssignedClientStatus(client) === 'pending'
+        ).length
+        const notContactedCount = requestClients.filter(
+          (client) => getAssignedClientStatus(client) === 'not_contacted'
         ).length
         const requestedCount = request.requested_count ?? 0
         const remainingCount = getRemainingAssignmentCount(
@@ -370,6 +354,7 @@ export default function ProfessionnelHistoriquePage() {
           serviceTakenCount,
           serviceNotTakenCount,
           pendingCount,
+          notContactedCount,
           durationLabel: formatDuration(status, createdDate, completionDate),
           status,
         }
@@ -411,7 +396,7 @@ export default function ProfessionnelHistoriquePage() {
 
   const handleServiceStatusChange = async (
     client: AssignedClientHistoryRow,
-    status: ServiceStatusValue
+    status: AssignedClientStatus
   ) => {
     if (!currentUserId) {
       setClientErrors((currentErrors) => ({
@@ -421,7 +406,17 @@ export default function ProfessionnelHistoriquePage() {
       return
     }
 
-    const nextIsActive = getIsActiveFromServiceStatus(status)
+    if (status === 'not_taken' && !hasNonServiceReason(client.closure_reason)) {
+      setClientErrors((currentErrors) => ({
+        ...currentErrors,
+        [client.id]:
+          'Veuillez indiquer le motif avant de classer ce client comme service non pris.',
+      }))
+      return
+    }
+
+    const { contacted: nextContacted, is_active: nextIsActive } =
+      getFieldsForAssignedClientStatus(status)
 
     setSavingClientIds((currentIds) => ({ ...currentIds, [client.id]: true }))
     setClientMessages((currentMessages) => ({
@@ -432,7 +427,7 @@ export default function ProfessionnelHistoriquePage() {
 
     const { error: assignedClientError } = await supabase
       .from('assigned_clients')
-      .update({ is_active: nextIsActive })
+      .update({ contacted: nextContacted, is_active: nextIsActive })
       .eq('id', client.id)
       .eq('professional_id', currentUserId)
 
@@ -467,7 +462,9 @@ export default function ProfessionnelHistoriquePage() {
       }
     }
 
-    if (client.is_active !== nextIsActive) {
+    const previousStatus = getAssignedClientStatus(client)
+
+    if (previousStatus !== status) {
       void logAssignedClientStatusChange({
         supabase,
         assignedClientId: client.id,
@@ -489,17 +486,18 @@ export default function ProfessionnelHistoriquePage() {
         action: 'assignment_status_changed',
         entityType: 'assigned_client',
         entityId: client.id,
-        description: `${getServiceStatus(client).label} → ${getServiceStatus({
-          ...client,
-          is_active: nextIsActive,
-        }).label}`,
+        description: `${getAssignedClientStatusMeta(previousStatus).label} → ${getAssignedClientStatusMeta(status).label}`,
         metadata: {
           client_name: `${client.first_name} ${client.last_name}`.trim(),
           requester_name: client.requester_name,
           client_email: client.email,
           assignment_request_id: client.assignment_request_id,
-          previous_status: client.is_active,
-          new_status: nextIsActive,
+          previous_status: previousStatus,
+          new_status: status,
+          previous_contacted: client.contacted,
+          new_contacted: nextContacted,
+          previous_is_active: client.is_active,
+          new_is_active: nextIsActive,
           source: 'historique',
         },
       })
@@ -507,7 +505,7 @@ export default function ProfessionnelHistoriquePage() {
 
     const nextClients = clients.map((currentClient) =>
       currentClient.id === client.id
-        ? { ...currentClient, is_active: nextIsActive }
+        ? { ...currentClient, contacted: nextContacted, is_active: nextIsActive }
         : currentClient
     )
 
@@ -519,6 +517,47 @@ export default function ProfessionnelHistoriquePage() {
     }))
     setEditingClientIds((currentIds) => ({ ...currentIds, [client.id]: false }))
     setSavingClientIds((currentIds) => ({ ...currentIds, [client.id]: false }))
+  }
+
+  const handleClosureReasonChange = async (
+    client: AssignedClientHistoryRow,
+    nextClosureReason: string
+  ) => {
+    if (!currentUserId) {
+      setClientErrors((currentErrors) => ({
+        ...currentErrors,
+        [client.id]: 'Utilisateur introuvable. Veuillez recharger la page.',
+      }))
+      return
+    }
+
+    setClientErrors((currentErrors) => ({ ...currentErrors, [client.id]: '' }))
+
+    const { error: updateError } = await supabase
+      .from('assigned_clients')
+      .update({ closure_reason: nextClosureReason || null })
+      .eq('id', client.id)
+      .eq('professional_id', currentUserId)
+
+    if (updateError) {
+      setClientErrors((currentErrors) => ({
+        ...currentErrors,
+        [client.id]: updateError.message,
+      }))
+      return
+    }
+
+    setClients((currentClients) =>
+      currentClients.map((currentClient) =>
+        currentClient.id === client.id
+          ? { ...currentClient, closure_reason: nextClosureReason || null }
+          : currentClient
+      )
+    )
+    setClientMessages((currentMessages) => ({
+      ...currentMessages,
+      [client.id]: 'Motif mis à jour.',
+    }))
   }
 
   return (
@@ -636,10 +675,18 @@ export default function ProfessionnelHistoriquePage() {
                         </div>
                       </div>
 
-                      <div className="mt-4 grid gap-3 lg:grid-cols-[0.35fr_0.65fr]">
+                      <div className="mt-4 grid gap-3 lg:grid-cols-[0.25fr_0.25fr_0.5fr]">
                         <div className="rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-3">
                           <p className="text-xs font-medium uppercase text-[#8a6f5d]">
-                            En attente
+                            Pas encore contacté
+                          </p>
+                          <p className="mt-1 text-sm font-semibold text-[#332820]">
+                            {card.notContactedCount}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-3">
+                          <p className="text-xs font-medium uppercase text-[#8a6f5d]">
+                            En attente d&apos;une réponse
                           </p>
                           <p className="mt-1 text-sm font-semibold text-[#332820]">
                             {card.pendingCount}
@@ -674,7 +721,8 @@ export default function ProfessionnelHistoriquePage() {
                           ) : (
                             <div className="mt-4 grid gap-3 xl:grid-cols-2">
                               {card.clients.map((client) => {
-                                const serviceStatus = getServiceStatus(client)
+                                const clientStatus = getAssignedClientStatus(client)
+                                const statusMeta = getAssignedClientStatusMeta(clientStatus)
                                 const motifExpanded =
                                   expandedMotifIds[client.id] === true
                                 const isEditing =
@@ -698,9 +746,11 @@ export default function ProfessionnelHistoriquePage() {
                                           </span>
                                         </p>
                                       </div>
-                                      <Badge tone={serviceStatus.tone}>
-                                        {serviceStatus.label}
-                                      </Badge>
+                                      <span
+                                        className={`${statusBadgeShapeClass} ${statusMeta.className}`}
+                                      >
+                                        {statusMeta.label}
+                                      </span>
                                     </div>
 
                                     <div className="mt-4 rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-3">
@@ -710,7 +760,7 @@ export default function ProfessionnelHistoriquePage() {
                                             Statut du service
                                           </p>
                                           <p className="mt-1 text-sm text-[#332820]">
-                                            {serviceStatus.label}
+                                            {statusMeta.label}
                                           </p>
                                         </div>
                                         <button
@@ -723,39 +773,73 @@ export default function ProfessionnelHistoriquePage() {
                                         </button>
                                       </div>
                                       {isEditing && (
-                                        <label
-                                          htmlFor={`service-status-${client.id}`}
-                                          className="mt-3 block text-xs font-medium uppercase text-[#8a6f5d]"
-                                        >
-                                          Nouveau statut
-                                          <select
-                                            id={`service-status-${client.id}`}
-                                            value={getServiceStatusValue(
-                                              client.is_active
-                                            )}
-                                            onChange={(event) =>
-                                              void handleServiceStatusChange(
-                                                client,
-                                                event.target
-                                                  .value as ServiceStatusValue
-                                              )
-                                            }
-                                            disabled={
-                                              savingClientIds[client.id] === true
-                                            }
-                                            className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm normal-case text-[#332820] outline-none transition focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd] disabled:cursor-wait disabled:bg-[#f7efe7] disabled:text-[#8a6f5d]"
+                                        <>
+                                          <label
+                                            htmlFor={`service-status-${client.id}`}
+                                            className="mt-3 block text-xs font-medium uppercase text-[#8a6f5d]"
                                           >
-                                            <option value="pending">
-                                              En attente
-                                            </option>
-                                            <option value="taken">
-                                              Service pris
-                                            </option>
-                                            <option value="not_taken">
-                                              Service non pris
-                                            </option>
-                                          </select>
-                                        </label>
+                                            Nouveau statut
+                                            <select
+                                              id={`service-status-${client.id}`}
+                                              value={clientStatus}
+                                              onChange={(event) =>
+                                                void handleServiceStatusChange(
+                                                  client,
+                                                  event.target
+                                                    .value as AssignedClientStatus
+                                                )
+                                              }
+                                              disabled={
+                                                savingClientIds[client.id] === true
+                                              }
+                                              className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm normal-case text-[#332820] outline-none transition focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd] disabled:cursor-wait disabled:bg-[#f7efe7] disabled:text-[#8a6f5d]"
+                                            >
+                                              <option value="not_contacted">
+                                                Pas encore contacté
+                                              </option>
+                                              <option value="pending">
+                                                En attente d&apos;une réponse
+                                              </option>
+                                              <option value="taken">
+                                                Service pris
+                                              </option>
+                                              <option value="not_taken">
+                                                Service non pris
+                                              </option>
+                                            </select>
+                                          </label>
+                                          {clientStatus === 'not_taken' && (
+                                            <label
+                                              htmlFor={`closure-reason-${client.id}`}
+                                              className="mt-3 block text-xs font-medium uppercase text-[#8a6f5d]"
+                                            >
+                                              Motif de non-prise de service
+                                              <select
+                                                id={`closure-reason-${client.id}`}
+                                                value={client.closure_reason ?? ''}
+                                                onChange={(event) =>
+                                                  void handleClosureReasonChange(
+                                                    client,
+                                                    event.target.value
+                                                  )
+                                                }
+                                                disabled={
+                                                  savingClientIds[client.id] === true
+                                                }
+                                                className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm normal-case text-[#332820] outline-none transition focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd] disabled:cursor-wait disabled:bg-[#f7efe7] disabled:text-[#8a6f5d]"
+                                              >
+                                                {closureReasonOptions.map((option) => (
+                                                  <option
+                                                    key={option || 'empty-reason'}
+                                                    value={option}
+                                                  >
+                                                    {option || 'Aucun motif sélectionné'}
+                                                  </option>
+                                                ))}
+                                              </select>
+                                            </label>
+                                          )}
+                                        </>
                                       )}
                                       {savingClientIds[client.id] === true && (
                                         <p className="mt-2 text-xs text-[#7a6859]">

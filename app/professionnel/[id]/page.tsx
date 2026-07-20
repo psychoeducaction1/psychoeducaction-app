@@ -31,11 +31,17 @@ import {
 } from "@/lib/assignmentEmailTemplates";
 import { isSuperAdmin } from "@/lib/superAdmin";
 import {
+  closureReasonOptions,
+  getAssignedClientStatus,
+  getAssignedClientStatusMeta,
   getAssignmentRequestMetrics,
+  getFieldsForAssignedClientStatus,
   getServiceTakenCount,
   getUsedAssignmentCount,
+  hasNonServiceReason,
   logAudit,
   logAssignedClientStatusChange,
+  type AssignedClientStatus,
 } from "../shared";
 
 type Profile = {
@@ -387,22 +393,19 @@ function sortWaitingClientsByPriority(
   );
 }
 
-function getServiceStatus(client: AssignedClient): {
-  label: string;
-  tone: BadgeTone;
-} {
-  if (client.is_active === true) {
-    return { label: "Service pris", tone: "success" };
-  }
+const statusBadgeShapeClass =
+  "inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium leading-5";
 
-  if (client.is_active === false) {
-    return { label: "Service non pris", tone: "danger" };
-  }
-
-  return { label: "En attente", tone: "warning" };
+function renderAssignedClientStatusBadge(client: AssignedClient) {
+  const meta = getAssignedClientStatusMeta(getAssignedClientStatus(client));
+  return (
+    <span className={`${statusBadgeShapeClass} ${meta.className}`}>{meta.label}</span>
+  );
 }
 
-function getAuditStatusLabel(value: boolean | null): string {
+// Libellé 3-états conservé uniquement pour l'historique brut (assigned_client_status_history),
+// qui ne stocke que is_active (booléen), pas contacted.
+function getIsActiveLabel(value: boolean | null): string {
   if (value === true) return "Service pris";
   if (value === false) return "Service non pris";
   return "En attente";
@@ -1777,10 +1780,17 @@ export default function ProfessionnelDetailPage() {
 
   const handleAssignmentStatusChange = async (
     client: AssignedClient,
-    nextStatus: string,
+    nextStatus: AssignedClientStatus,
   ) => {
-    const nextIsActive =
-      nextStatus === "true" ? true : nextStatus === "false" ? false : null;
+    if (nextStatus === "not_taken" && !hasNonServiceReason(client.closure_reason)) {
+      setClientError(
+        "Veuillez indiquer le motif avant de classer ce client comme service non pris.",
+      );
+      return;
+    }
+
+    const { contacted: nextContacted, is_active: nextIsActive } =
+      getFieldsForAssignedClientStatus(nextStatus);
     const nextWaitingListStatus =
       nextIsActive === true
         ? "active"
@@ -1794,7 +1804,7 @@ export default function ProfessionnelDetailPage() {
     try {
       const { error: updateAssignmentError } = await supabase
         .from("assigned_clients")
-        .update({ is_active: nextIsActive })
+        .update({ contacted: nextContacted, is_active: nextIsActive })
         .eq("id", client.id);
 
       if (updateAssignmentError) throw updateAssignmentError;
@@ -1810,7 +1820,7 @@ export default function ProfessionnelDetailPage() {
 
       const updateClient = (currentClient: AssignedClient) =>
         currentClient.id === client.id
-          ? { ...currentClient, is_active: nextIsActive }
+          ? { ...currentClient, contacted: nextContacted, is_active: nextIsActive }
           : currentClient;
 
       if (client.assignment_request_id) {
@@ -1870,20 +1880,26 @@ export default function ProfessionnelDetailPage() {
           actor: auditActor,
         });
 
-        if (client.is_active !== nextIsActive) {
+        const previousStatus = getAssignedClientStatus(client);
+
+        if (previousStatus !== nextStatus) {
           void logAudit({
             supabase,
             actor: auditActor,
             action: "assignment_status_changed",
             entityType: "assigned_client",
             entityId: client.id,
-            description: `${getAuditStatusLabel(client.is_active)} → ${getAuditStatusLabel(nextIsActive)}`,
+            description: `${getAssignedClientStatusMeta(previousStatus).label} → ${getAssignedClientStatusMeta(nextStatus).label}`,
             metadata: {
               client_name: `${client.first_name} ${client.last_name}`.trim(),
               professional_name: professionalName,
               professional_id: professionalId,
-              previous_status: client.is_active,
-              new_status: nextIsActive,
+              previous_status: previousStatus,
+              new_status: nextStatus,
+              previous_contacted: client.contacted,
+              new_contacted: nextContacted,
+              previous_is_active: client.is_active,
+              new_is_active: nextIsActive,
             },
           });
 
@@ -1916,16 +1932,47 @@ export default function ProfessionnelDetailPage() {
     }
   };
 
+  const handleClosureReasonChange = async (
+    client: AssignedClient,
+    nextClosureReason: string,
+  ) => {
+    setClientMessage(null);
+    setClientError(null);
+
+    try {
+      const { error: updateError } = await supabase
+        .from("assigned_clients")
+        .update({ closure_reason: nextClosureReason || null })
+        .eq("id", client.id);
+
+      if (updateError) throw updateError;
+
+      const updateClient = (currentClient: AssignedClient) =>
+        currentClient.id === client.id
+          ? { ...currentClient, closure_reason: nextClosureReason || null }
+          : currentClient;
+
+      setHistoricalClients((currentClients) => currentClients.map(updateClient));
+      setAssignedClients((currentClients) => currentClients.map(updateClient));
+      setClientMessage("Motif mis à jour.");
+    } catch (caughtError: unknown) {
+      setClientError(getErrorMessage(caughtError));
+    }
+  };
+
   const activeRequestClients = assignmentRequest
     ? assignedClients.filter(
         (client) => client.assignment_request_id === assignmentRequest.id,
       )
     : [];
   const clientsWithService = activeRequestClients.filter(
-    (client) => client.is_active === true,
+    (client) => getAssignedClientStatus(client) === "taken",
   );
   const clientsPendingService = activeRequestClients.filter(
-    (client) => client.is_active === null,
+    (client) => getAssignedClientStatus(client) === "pending",
+  );
+  const clientsNotContacted = activeRequestClients.filter(
+    (client) => getAssignedClientStatus(client) === "not_contacted",
   );
   const occupiedRequestClientsCount = getUsedAssignmentCount(activeRequestClients);
   const requestMetrics = getAssignmentRequestMetrics({
@@ -2223,7 +2270,11 @@ export default function ProfessionnelDetailPage() {
                       {clientsWithService.length > 1 ? "s" : ""} pris
                     </Badge>
                     <Badge tone="warning">
-                      {clientsPendingService.length} en attente
+                      {clientsPendingService.length} en attente d&apos;une réponse
+                    </Badge>
+                    <Badge tone="muted">
+                      {clientsNotContacted.length} pas encore contacté
+                      {clientsNotContacted.length > 1 ? "s" : ""}
                     </Badge>
                   </div>
                 </div>
@@ -2363,7 +2414,6 @@ export default function ProfessionnelDetailPage() {
                 ) : (
                   <div className="grid gap-4 xl:grid-cols-2">
                     {paginatedAssignedClients.map((client) => {
-                      const serviceStatus = getServiceStatus(client);
                       const statusHistory = statusHistoryByClientId[client.id] ?? [];
 
                       return (
@@ -2384,9 +2434,7 @@ export default function ProfessionnelDetailPage() {
                               </p>
                             </div>
                             <div className="flex flex-wrap gap-2">
-                              <Badge tone={serviceStatus.tone}>
-                                {serviceStatus.label}
-                              </Badge>
+                              {renderAssignedClientStatusBadge(client)}
                               <Badge
                                 tone={client.dossier_closed ? "neutral" : "muted"}
                               >
@@ -2400,27 +2448,45 @@ export default function ProfessionnelDetailPage() {
                               <label className="block text-sm font-medium text-[#8a6f5d]">
                                 Statut du service
                                 <select
-                                  value={
-                                    client.is_active === true
-                                      ? "true"
-                                      : client.is_active === false
-                                        ? "false"
-                                        : "pending"
-                                  }
+                                  value={getAssignedClientStatus(client)}
                                   onChange={(event) =>
                                     void handleAssignmentStatusChange(
                                       client,
-                                      event.target.value,
+                                      event.target.value as AssignedClientStatus,
                                     )
                                   }
                                   className="mt-1 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none transition focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                                 >
-                                  <option value="pending">En attente</option>
-                                  <option value="true">Service pris</option>
-                                  <option value="false">Service non pris</option>
+                                  <option value="not_contacted">Pas encore contacté</option>
+                                  <option value="pending">En attente d&apos;une réponse</option>
+                                  <option value="taken">Service pris</option>
+                                  <option value="not_taken">Service non pris</option>
                                 </select>
                               </label>
                             </div>
+                            {getAssignedClientStatus(client) === "not_taken" && (
+                              <div className="sm:col-span-2">
+                                <label className="block text-sm font-medium text-[#8a6f5d]">
+                                  Motif de non-prise de service
+                                  <select
+                                    value={client.closure_reason ?? ""}
+                                    onChange={(event) =>
+                                      void handleClosureReasonChange(
+                                        client,
+                                        event.target.value,
+                                      )
+                                    }
+                                    className="mt-1 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none transition focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                                  >
+                                    {closureReasonOptions.map((option) => (
+                                      <option key={option || "empty-reason"} value={option}>
+                                        {option || "Aucun motif sélectionné"}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                              </div>
+                            )}
                             <div>
                               <dt className="text-sm font-medium text-[#8a6f5d]">
                                 Courriel
@@ -2489,11 +2555,11 @@ export default function ProfessionnelDetailPage() {
                                       )
                                     </p>
                                     <p className="mt-1 text-[#7a6859]">
-                                      {getAuditStatusLabel(
+                                      {getIsActiveLabel(
                                         historyRow.previous_status,
                                       )}{" "}
                                       →{" "}
-                                      {getAuditStatusLabel(historyRow.new_status)}
+                                      {getIsActiveLabel(historyRow.new_status)}
                                     </p>
                                   </li>
                                 ))}
@@ -2660,9 +2726,7 @@ export default function ProfessionnelDetailPage() {
                           </div>
 
                           <div className="flex flex-wrap gap-2">
-                            <Badge tone={getServiceStatus(client).tone}>
-                              {getServiceStatus(client).label}
-                            </Badge>
+                            {renderAssignedClientStatusBadge(client)}
                           </div>
                         </div>
 

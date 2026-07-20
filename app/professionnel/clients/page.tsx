@@ -3,29 +3,25 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppNav } from '@/components/AppNav'
-import {
-  Badge,
-  EmptyState,
-  tableBodyClass,
-  tableHeaderClass,
-  tableRowClass,
-  tableShellClass,
-} from '@/components/ui/index'
+import { EmptyState } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
 import {
   closureReasonOptions,
+  getAssignedClientStatus,
+  getAssignedClientStatusMeta,
   getAssignmentRequestMetrics,
+  getFieldsForAssignedClientStatus,
   getRemainingAssignmentCount,
   getServiceTakenCount,
   getUsedAssignmentCount,
+  hasNonServiceReason,
   logAudit,
   logAssignedClientStatusChange,
   nullableText,
   type AssignedClient,
+  type AssignedClientStatus,
   type EditableClientField,
 } from '../shared'
-
-type ServiceStatus = 'pending' | 'yes' | 'no'
 
 type AssignmentRequestSummary = {
   id: string
@@ -37,21 +33,8 @@ type AssignmentRequestSummary = {
 
 const AUTO_SAVE_DEBOUNCE_MS = 700
 
-function getServiceStatus(isActive: boolean | null): ServiceStatus {
-  if (isActive === null) return 'pending'
-  return isActive ? 'yes' : 'no'
-}
-
-function serviceStatusToIsActive(status: ServiceStatus): boolean | null {
-  if (status === 'pending') return null
-  return status === 'yes'
-}
-
-function getAuditStatusLabel(isActive: boolean | null): string {
-  if (isActive === true) return 'Service pris'
-  if (isActive === false) return 'Service non pris'
-  return 'En attente'
-}
+const statusBadgeShapeClass =
+  'inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium leading-5'
 
 export default function ProfessionnelClientsPage() {
   const router = useRouter()
@@ -66,7 +49,7 @@ export default function ProfessionnelClientsPage() {
   const [clientErrors, setClientErrors] = useState<Record<string, string>>({})
   const autoSaveTimersRef = useRef<Record<string, number>>({})
   const latestClientsRef = useRef<AssignedClient[]>([])
-  const persistedStatusByClientIdRef = useRef<Record<string, boolean | null>>({})
+  const persistedStatusByClientIdRef = useRef<Record<string, AssignedClientStatus>>({})
   const requestSummariesRef = useRef<Map<string, AssignmentRequestSummary>>(new Map())
 
   useEffect(() => {
@@ -201,7 +184,7 @@ export default function ProfessionnelClientsPage() {
       requestSummariesRef.current = requestSummariesById
       setClients(loadedClients.filter(shouldDisplayClient))
       persistedStatusByClientIdRef.current = Object.fromEntries(
-        loadedClients.map((client) => [client.id, client.is_active])
+        loadedClients.map((client) => [client.id, getAssignedClientStatus(client)])
       )
       setLoading(false)
     }
@@ -218,9 +201,6 @@ export default function ProfessionnelClientsPage() {
     []
   )
 
-
-  const hasNonServiceReason = (client: AssignedClient) =>
-    Boolean(client.closure_reason?.trim())
 
   const shouldKeepClientVisible = (client: AssignedClient) => {
     if (!client.assignment_request_id) return false
@@ -276,7 +256,10 @@ export default function ProfessionnelClientsPage() {
       return
     }
 
-    if (client.is_active === false && !hasNonServiceReason(client)) {
+    if (
+      getAssignedClientStatus(client) === 'not_taken' &&
+      !hasNonServiceReason(client.closure_reason)
+    ) {
       setClientErrors((currentErrors) => ({
         ...currentErrors,
         [client.id]:
@@ -293,6 +276,7 @@ export default function ProfessionnelClientsPage() {
     const { error: updateError } = await supabase
       .from('assigned_clients')
       .update({
+        contacted: client.contacted,
         is_active: client.is_active,
         closure_reason: nullableText(client.closure_reason),
       })
@@ -314,14 +298,17 @@ export default function ProfessionnelClientsPage() {
 
     const waitingListSyncError = await syncWaitingListStatus(client)
 
-    const previousPersistedStatus =
-      persistedStatusByClientIdRef.current[client.id] ?? null
+    const previousStatus =
+      persistedStatusByClientIdRef.current[client.id] ?? 'not_contacted'
+    const nextStatus = getAssignedClientStatus(client)
 
-    if (previousPersistedStatus !== client.is_active) {
+    if (previousStatus !== nextStatus) {
+      const previousFields = getFieldsForAssignedClientStatus(previousStatus)
+
       void logAssignedClientStatusChange({
         supabase,
         assignedClientId: client.id,
-        previousStatus: previousPersistedStatus,
+        previousStatus: previousFields.is_active,
         newStatus: client.is_active,
         actor: {
           id: currentUserId,
@@ -339,23 +326,28 @@ export default function ProfessionnelClientsPage() {
         action: 'assignment_status_changed',
         entityType: 'assigned_client',
         entityId: client.id,
-        description: `${getAuditStatusLabel(previousPersistedStatus)} → ${getAuditStatusLabel(client.is_active)}`,
+        description: `${getAssignedClientStatusMeta(previousStatus).label} → ${getAssignedClientStatusMeta(nextStatus).label}`,
         metadata: {
           client_name: `${client.first_name} ${client.last_name}`.trim(),
           requester_name: client.requester_name,
           client_email: client.email,
           assignment_request_id: client.assignment_request_id,
-          previous_status: previousPersistedStatus,
-          new_status: client.is_active,
+          previous_status: previousStatus,
+          new_status: nextStatus,
+          previous_contacted: previousFields.contacted,
+          new_contacted: client.contacted,
+          previous_is_active: previousFields.is_active,
+          new_is_active: client.is_active,
         },
       })
     }
-    persistedStatusByClientIdRef.current[client.id] = client.is_active
+    persistedStatusByClientIdRef.current[client.id] = nextStatus
 
     const updatedClients = latestClientsRef.current.map((currentClient) =>
       currentClient.id === client.id
         ? {
             ...currentClient,
+            contacted: client.contacted,
             is_active: client.is_active,
             closure_reason: nullableText(client.closure_reason),
           }
@@ -482,10 +474,11 @@ export default function ProfessionnelClientsPage() {
     scheduleAutoSave(nextClient)
   }
 
-  const updateClientServiceStatus = (client: AssignedClient, status: ServiceStatus) => {
-    const nextIsActive = serviceStatusToIsActive(status)
-
-    if (nextIsActive === false && !hasNonServiceReason(client)) {
+  const updateClientServiceStatus = (
+    client: AssignedClient,
+    status: AssignedClientStatus
+  ) => {
+    if (status === 'not_taken' && !hasNonServiceReason(client.closure_reason)) {
       setClientErrors((currentErrors) => ({
         ...currentErrors,
         [client.id]:
@@ -494,12 +487,33 @@ export default function ProfessionnelClientsPage() {
       return
     }
 
-    updateClientField(client.id, 'is_active', nextIsActive)
+    const currentClient = latestClientsRef.current.find((c) => c.id === client.id)
+    if (!currentClient) return
+
+    const fields = getFieldsForAssignedClientStatus(status)
+    const nextClient = { ...currentClient, ...fields }
+
+    latestClientsRef.current = latestClientsRef.current.map((c) =>
+      c.id === client.id ? nextClient : c
+    )
+    setClients((currentClients) =>
+      currentClients.map((c) => (c.id === client.id ? nextClient : c))
+    )
+    scheduleAutoSave(nextClient)
   }
 
-  const clientsToProcess = clients.filter((client) => client.is_active === null)
-  const activeClients = clients.filter((client) => client.is_active === true)
-  const noResponseClients = clients.filter((client) => client.is_active === false)
+  const notContactedClients = clients.filter(
+    (client) => getAssignedClientStatus(client) === 'not_contacted'
+  )
+  const clientsToProcess = clients.filter(
+    (client) => getAssignedClientStatus(client) === 'pending'
+  )
+  const activeClients = clients.filter(
+    (client) => getAssignedClientStatus(client) === 'taken'
+  )
+  const noResponseClients = clients.filter(
+    (client) => getAssignedClientStatus(client) === 'not_taken'
+  )
 
   const renderSaveStatus = (client: AssignedClient) => (
     <div className="text-sm">
@@ -557,17 +571,15 @@ export default function ProfessionnelClientsPage() {
     )
   }
 
-  const renderServiceBadge = (client: AssignedClient) =>
-    client.is_active === true ? (
-      <Badge tone="success">Service pris</Badge>
-    ) : client.is_active === false ? (
-      <Badge tone="danger">Service non pris</Badge>
-    ) : (
-      <Badge tone="warning">En attente</Badge>
+  const renderServiceBadge = (client: AssignedClient) => {
+    const meta = getAssignedClientStatusMeta(getAssignedClientStatus(client))
+    return (
+      <span className={`${statusBadgeShapeClass} ${meta.className}`}>{meta.label}</span>
     )
+  }
 
   const renderNonServiceReason = (client: AssignedClient) =>
-    client.is_active !== true ? (
+    getAssignedClientStatus(client) === 'not_taken' ? (
       <div className="space-y-2">
         <label className="block text-xs font-medium text-[#5d4a3d]">
           Motif de non-prise de service
@@ -655,18 +667,19 @@ export default function ProfessionnelClientsPage() {
                       À mettre à jour après le contact avec le client.
                     </span>
                     <select
-                      value={getServiceStatus(client.is_active)}
+                      value={getAssignedClientStatus(client)}
                       onChange={(event) =>
                         updateClientServiceStatus(
                           client,
-                          event.target.value as ServiceStatus
+                          event.target.value as AssignedClientStatus
                         )
                       }
                       className="mt-3 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm font-medium text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                     >
-                      <option value="pending">En attente</option>
-                      <option value="yes">Oui</option>
-                      <option value="no">Non</option>
+                      <option value="not_contacted">Pas encore contacté</option>
+                      <option value="pending">En attente d&apos;une réponse</option>
+                      <option value="taken">Service pris</option>
+                      <option value="not_taken">Service non pris</option>
                     </select>
                   </label>
                 </div>
@@ -683,86 +696,6 @@ export default function ProfessionnelClientsPage() {
             </article>
           ))
         )}
-      </div>
-
-      <div className={`${tableShellClass} hidden`}>
-        <table className="w-full min-w-[760px] table-fixed divide-y divide-[#eadfd2] text-sm">
-        <colgroup>
-          <col className="w-[9%]" />
-          <col className="w-[9%]" />
-          <col className="w-[17%]" />
-          <col className="w-[12%]" />
-          <col className="w-[13%]" />
-          <col className="w-[10%]" />
-          <col />
-          <col className="w-[9rem]" />
-          <col className="w-[18rem]" />
-        </colgroup>
-        <thead className={tableHeaderClass}>
-          <tr>
-            <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#5d4a3d]">Prénom</th>
-            <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#5d4a3d]">Nom</th>
-            <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#5d4a3d]">Courriel</th>
-            <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#5d4a3d]">Téléphone</th>
-            <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#5d4a3d]">Requérant</th>
-            <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#5d4a3d]">Date</th>
-            <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#5d4a3d]">Motif de consultation</th>
-            <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#5d4a3d]">Service</th>
-            <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#5d4a3d]">Motif de non-prise</th>
-          </tr>
-        </thead>
-        <tbody className={tableBodyClass}>
-          {sectionClients.length === 0 ? (
-            <tr>
-              <td colSpan={9} className="p-6">
-                <EmptyState title={emptyMessage} />
-              </td>
-            </tr>
-          ) : (
-            sectionClients.map((client) => (
-              <tr key={client.id} className={tableRowClass}>
-                <td className="break-words px-3 py-3 align-top font-medium text-[#332820]">
-                  {client.first_name}
-                </td>
-                <td className="break-words px-3 py-3 align-top font-medium text-[#332820]">
-                  {client.last_name}
-                </td>
-                <td className="break-words px-3 py-3 align-top text-[#6c5a4d]">{client.email || '-'}</td>
-                <td className="break-words px-3 py-3 align-top text-[#6c5a4d]">{client.phone || '-'}</td>
-                <td className="break-words px-3 py-3 align-top text-[#6c5a4d]">{client.requester_name || '-'}</td>
-                <td className="break-words px-3 py-3 align-top text-[#6c5a4d]">{client.assigned_date}</td>
-                <td className="px-3 py-3 align-top">
-                  {renderConsultationMotif(client)}
-                </td>
-                <td className="px-3 py-3 align-top text-[#6c5a4d]">
-                  <select
-                    value={getServiceStatus(client.is_active)}
-                    onChange={(event) =>
-                      updateClientServiceStatus(
-                        client,
-                        event.target.value as ServiceStatus
-                      )
-                    }
-                    className="w-28 rounded-xl border border-[#dfd0bf] bg-white px-2 py-1 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
-                  >
-                    <option value="pending">En attente</option>
-                    <option value="yes">Oui</option>
-                    <option value="no">Non</option>
-                  </select>
-                </td>
-                <td className="px-3 py-3 align-top">
-                  {renderNonServiceReason(client)}
-                  {(savingClientIds[client.id] ||
-                    clientMessages[client.id] ||
-                    clientErrors[client.id]) && (
-                    <div className="mt-2">{renderSaveStatus(client)}</div>
-                  )}
-                </td>
-              </tr>
-            ))
-          )}
-        </tbody>
-        </table>
       </div>
     </>
   )
@@ -796,13 +729,23 @@ export default function ProfessionnelClientsPage() {
 
           {!loading && !error && (
             <div className="space-y-8">
+              <section className="rounded-2xl border border-[#eadfd2] bg-[#fbf6ef] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.05)]">
+                <h2 className="mb-3 text-lg font-semibold text-[#5d4a3d]">
+                  Clients pas encore contactés
+                </h2>
+                {renderClientsTable(
+                  notContactedClients,
+                  'Aucun client à contacter.'
+                )}
+              </section>
+
               <section className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.05)]">
                 <h2 className="mb-3 text-lg font-semibold text-[#332820]">
-                  Assignations à traiter
+                  En attente d&apos;une réponse
                 </h2>
                 {renderClientsTable(
                   clientsToProcess,
-                  'Aucune assignation à traiter.'
+                  "Aucune assignation en attente d'une réponse."
                 )}
               </section>
 

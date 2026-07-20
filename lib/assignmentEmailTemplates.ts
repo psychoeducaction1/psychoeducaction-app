@@ -68,18 +68,6 @@ export type ProfessionalPendingReminderEmailTemplateInput = {
   pendingClients: PendingReminderClient[]
 }
 
-function formatAssignedDateFr(value: string): string {
-  const date = new Date(`${value}T00:00:00`)
-
-  if (Number.isNaN(date.getTime())) return value
-
-  return new Intl.DateTimeFormat('fr-CA', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  }).format(date)
-}
-
 export function buildProfessionalPendingReminderEmailTemplate({
   professionalName,
   professionalEmail,
@@ -94,8 +82,8 @@ export function buildProfessionalPendingReminderEmailTemplate({
   return {
     to: cleanText(professionalEmail),
     subject: plural
-      ? 'Rappel : clients en attente de contact'
-      : 'Rappel : client en attente de contact',
+      ? "Petit rappel – quelques clients n'ont pas encore été contactés"
+      : "Petit rappel – un client n'a pas encore été contacté",
     message: [
       `Bonjour ${normalizedName},`,
       '',
@@ -105,23 +93,22 @@ export function buildProfessionalPendingReminderEmailTemplate({
           : 'une assignation qui vous a été transmise'
       } il y a quelques jours.`,
       '',
-      `${
-        plural ? 'Les dossiers suivants apparaissent' : 'Le dossier suivant apparaît'
-      } toujours en attente dans la plateforme :`,
+      `Selon les informations actuellement inscrites dans la plateforme, ${
+        plural
+          ? 'les clients ci-dessous sont toujours identifiés comme n\'ayant pas encore été contactés'
+          : 'le client ci-dessous est toujours identifié comme n\'ayant pas encore été contacté'
+      } :`,
       '',
-      ...pendingClients.map(
-        (client) =>
-          `${client.firstName} ${client.lastName} — assigné le ${formatAssignedDateFr(client.assignedDate)}`
-      ),
+      ...pendingClients.map((client) => `- ${client.firstName} ${client.lastName}`),
       '',
-      `Ce message est simplement un rappel concernant ${
-        plural ? 'ces dossiers' : 'ce dossier'
-      }. Aucune action de votre part n'est requise si un suivi est déjà en cours.`,
+      "Si vous avez déjà communiqué avec l'un de ces clients, il est possible que son statut n'ait simplement pas encore été mis à jour dans la plateforme.",
+      '',
+      'Dans le cas contraire, nous vous invitons à communiquer avec lui lorsque vous en aurez l\'occasion.',
       '',
       'Accéder à la plateforme :',
       appUrl.replace(/\/$/, ''),
       '',
-      'Merci et bonne journée,',
+      'Merci et bonne journée !',
       '',
       'Clinique PsychoÉducAction',
     ].join('\n'),
