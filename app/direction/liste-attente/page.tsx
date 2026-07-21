@@ -552,6 +552,9 @@ export default function DirectionListeAttentePage() {
   const [assignedPage, setAssignedPage] = useState(0)
   const [historyPage, setHistoryPage] = useState(0)
   const [searchQuery, setSearchQuery] = useState('')
+  const [serviceFilter, setServiceFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [modalityFilter, setModalityFilter] = useState('all')
   const [expandedMotifIds, setExpandedMotifIds] = useState<Record<string, boolean>>({})
   const [notifyProfessional, setNotifyProfessional] = useState(false)
   const [notifyClient, setNotifyClient] = useState(false)
@@ -1640,10 +1643,24 @@ export default function DirectionListeAttentePage() {
     'w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] shadow-sm outline-none transition duration-200 placeholder:text-[#b09c8a] focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]'
 
   const normalizedSearchQuery = searchQuery.trim().toLowerCase()
-  const filteredClients = normalizedSearchQuery
-    ? clients.filter((client) => clientMatchesSearch(client, normalizedSearchQuery))
-    : clients
-  const hasSearchQuery = normalizedSearchQuery.length > 0
+  const hasActiveFilters =
+    serviceFilter !== 'all' || statusFilter !== 'all' || modalityFilter !== 'all'
+  const filteredClients = clients.filter((client) => {
+    if (normalizedSearchQuery && !clientMatchesSearch(client, normalizedSearchQuery)) {
+      return false
+    }
+    if (serviceFilter !== 'all' && client.service_requested !== serviceFilter) {
+      return false
+    }
+    if (statusFilter !== 'all' && client.status !== statusFilter) {
+      return false
+    }
+    if (modalityFilter !== 'all' && client.meeting_modality !== modalityFilter) {
+      return false
+    }
+    return true
+  })
+  const hasSearchQuery = normalizedSearchQuery.length > 0 || hasActiveFilters
   const emptySearchMessage = 'Aucun client ne correspond à cette recherche.'
   const waitingClients = sortWaitingClients(
     filteredClients.filter((client) => client.status === 'waiting')
@@ -2351,6 +2368,89 @@ export default function DirectionListeAttentePage() {
                     className={`${inputClass} mt-2`}
                   />
                 </label>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <label className="block text-sm font-medium text-[#5d4a3d]">
+                    Service demandé
+                    <select
+                      value={serviceFilter}
+                      onChange={(event) => {
+                        setServiceFilter(event.target.value)
+                        setWaitingPage(0)
+                        setAssignedPage(0)
+                        setHistoryPage(0)
+                      }}
+                      className={`${inputClass} mt-2`}
+                    >
+                      <option value="all">Tous les services</option>
+                      {serviceOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="block text-sm font-medium text-[#5d4a3d]">
+                    Statut
+                    <select
+                      value={statusFilter}
+                      onChange={(event) => {
+                        setStatusFilter(event.target.value)
+                        setWaitingPage(0)
+                        setAssignedPage(0)
+                        setHistoryPage(0)
+                      }}
+                      className={`${inputClass} mt-2`}
+                    >
+                      <option value="all">Tous les statuts</option>
+                      {statusOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {statusLabels[option] ?? option}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="block text-sm font-medium text-[#5d4a3d]">
+                    Modalité de rencontre
+                    <select
+                      value={modalityFilter}
+                      onChange={(event) => {
+                        setModalityFilter(event.target.value)
+                        setWaitingPage(0)
+                        setAssignedPage(0)
+                        setHistoryPage(0)
+                      }}
+                      className={`${inputClass} mt-2`}
+                    >
+                      <option value="all">Toutes les modalités</option>
+                      {meetingModalityOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                {hasActiveFilters && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setServiceFilter('all')
+                      setStatusFilter('all')
+                      setModalityFilter('all')
+                      setWaitingPage(0)
+                      setAssignedPage(0)
+                      setHistoryPage(0)
+                    }}
+                    className="mt-3 text-sm font-semibold text-[#8a5633] underline decoration-[#d9b591] underline-offset-2 hover:decoration-[#9b6a3d]"
+                  >
+                    Réinitialiser les filtres
+                  </button>
+                )}
+
                 {hasSearchQuery && filteredClients.length === 0 && (
                   <p className="mt-3 rounded-xl border border-[#eadfd2] bg-[#f7efe7] px-4 py-3 text-sm text-[#7a6859]">
                     {emptySearchMessage}
