@@ -5,6 +5,7 @@ import { buildClientAssignmentEmailTemplate } from '@/lib/assignmentEmailTemplat
 type NotificationBody = {
   assignedClientId?: unknown
   to?: unknown
+  cc?: unknown
   subject?: unknown
   message?: unknown
 }
@@ -56,12 +57,32 @@ function getRequiredEnv(name: string) {
   return value
 }
 
+function normalizeCcList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .filter((item): item is string => typeof item === 'string')
+      .map((item) => item.trim())
+      .filter(Boolean)
+  }
+
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+  }
+
+  return []
+}
+
 async function sendEmail({
   to,
+  cc,
   subject,
   text,
 }: {
   to: string
+  cc?: string[]
   subject: string
   text: string
 }) {
@@ -79,6 +100,7 @@ async function sendEmail({
     body: JSON.stringify({
       from: fromEmail,
       to: [to],
+      ...(cc && cc.length > 0 ? { cc } : {}),
       subject,
       text,
     }),
@@ -263,6 +285,9 @@ export async function POST(request: NextRequest) {
   })
   const subject = normalizeText(body.subject) || defaultEmail.subject
   const text = normalizeText(body.message) || defaultEmail.message
+  const cc = normalizeCcList(body.cc).length > 0
+    ? normalizeCcList(body.cc)
+    : defaultEmail.cc ?? []
 
   if (!subject) {
     return jsonResponse({ error: 'Le sujet est requis.' }, 400)
@@ -273,7 +298,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    await sendEmail({ to: recipientEmail, subject, text })
+    await sendEmail({ to: recipientEmail, cc, subject, text })
   } catch (error) {
     console.error(
       "[client-assignment-notification] Erreur d'envoi courriel:",

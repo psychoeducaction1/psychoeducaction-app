@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDirectionContext } from '@/lib/directionServer'
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
+import { buildClientAssignmentEmailTemplate } from '@/lib/assignmentEmailTemplates'
 
 type NotificationBody = {
   assignedClientId?: unknown
@@ -42,12 +43,6 @@ function getRequiredEnv(name: string) {
   return value
 }
 
-function formatOptionalLine(label: string, value: string | null) {
-  const normalizedValue = value?.trim()
-
-  return normalizedValue ? `${label} : ${normalizedValue}` : null
-}
-
 function getClientName(client: AssignedClientRow) {
   return [client.first_name, client.last_name]
     .map((part) => part?.trim())
@@ -57,10 +52,12 @@ function getClientName(client: AssignedClientRow) {
 
 async function sendEmail({
   to,
+  cc,
   subject,
   text,
 }: {
   to: string
+  cc?: string[]
   subject: string
   text: string
 }) {
@@ -78,6 +75,7 @@ async function sendEmail({
     body: JSON.stringify({
       from: fromEmail,
       to: [to],
+      ...(cc && cc.length > 0 ? { cc } : {}),
       subject,
       text,
     }),
@@ -177,47 +175,18 @@ export async function POST(request: NextRequest) {
 
   const professionalName =
     professionalProfile.full_name?.trim() || 'votre professionnel'
-  const professionalTitle = professionalProfile.professional_title?.trim()
-  const professionalNameWithTitle = professionalTitle
-    ? `${professionalName}, ${professionalTitle}`
-    : professionalName
-  const contactLines = [
-    formatOptionalLine('Courriel', professionalProfile.email),
-    formatOptionalLine('Téléphone', professionalProfile.professional_phone),
-    formatOptionalLine(
-      'Numéro de permis',
-      professionalProfile.professional_license_number
-    ),
-  ].filter(Boolean)
-
-  const subject = 'Assignation de votre dossier - Clinique PsychoÉducAction'
-  const text = [
-    'Bonjour,',
-    '',
-    'Nous espérons que vous allez bien.',
-    '',
-    `Nous avons le plaisir de vous informer que votre demande auprès de la Clinique PsychoÉducAction a été assignée à ${professionalNameWithTitle}.`,
-    '',
-    `${professionalName} communiquera avec vous par courriel ou par téléphone dans les prochains jours afin de convenir d'une première rencontre.`,
-    '',
-    'Coordonnées du professionnel',
-    '',
-    ...contactLines,
-    '',
-    "Si vous avez des questions, n'hésitez pas à nous écrire par courriel ou à communiquer avec la clinique.",
-    '',
-    'Bien cordialement,',
-    '',
-    'Fatima Zahra Benlahcen',
-    'Agente administrative',
-    'Clinique PsychoÉducAction',
-    'T : (438) 500-1388',
-    'C : contact@psychoeducaction.com',
-    'www.psychoeducaction.com',
-  ].join('\n')
+  const defaultEmail = buildClientAssignmentEmailTemplate({
+    professionalName,
+    professionalEmail: professionalProfile.email,
+    professionalTitle: professionalProfile.professional_title,
+    professionalPhone: professionalProfile.professional_phone,
+    professionalLicenseNumber: professionalProfile.professional_license_number,
+  })
+  const subject = defaultEmail.subject
+  const text = defaultEmail.message
 
   try {
-    await sendEmail({ to: recipientEmail, subject, text })
+    await sendEmail({ to: recipientEmail, cc: defaultEmail.cc, subject, text })
   } catch (error) {
     return jsonResponse(
       {

@@ -950,6 +950,7 @@ export default function DirectionListeAttentePage() {
           body: JSON.stringify({
             assignedClientId,
             to: email?.to,
+            cc: email?.cc,
             subject: email?.subject,
             message: email?.message,
           }),
@@ -1267,6 +1268,7 @@ export default function DirectionListeAttentePage() {
         enabled: enableClient,
         fromLabel: getComposerFromLabel(),
         to: getContactEmails(client)[0] ?? '',
+        cc: clientEmail.cc?.join(', ') ?? '',
         subject: clientEmail.subject,
         message: clientEmail.message,
       },

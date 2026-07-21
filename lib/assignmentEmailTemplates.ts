@@ -16,7 +16,14 @@ export type AssignmentEmailTemplate = {
   to: string
   subject: string
   message: string
+  cc?: string[]
 }
+
+// Cas particulier : Rim El Bassit pratique sous supervision clinique — sa
+// superviseure doit être en copie conforme du courriel envoyé au client, avec
+// un texte mentionnant explicitement cette supervision.
+const RIM_EL_BASSIT_EMAIL = 'rim.elbassit.pea@outlook.com'
+const RIM_EL_BASSIT_SUPERVISOR_CC = 'nancy.alkayal.pea@outlook.com'
 
 function cleanText(value?: string | null) {
   return value?.trim() ?? ''
@@ -122,6 +129,27 @@ export function buildClientAssignmentEmailTemplate({
   professionalPhone,
   professionalLicenseNumber,
 }: ClientAssignmentEmailTemplateInput): AssignmentEmailTemplate {
+  if (cleanText(professionalEmail).toLowerCase() === RIM_EL_BASSIT_EMAIL) {
+    return {
+      to: '',
+      subject: 'Assignation de votre dossier - Clinique PsychoÉducAction',
+      cc: [RIM_EL_BASSIT_SUPERVISOR_CC],
+      message: [
+        'Bonjour,',
+        '',
+        'Nous espérons que vous allez bien.',
+        '',
+        "Nous avons le plaisir de vous informer que votre demande auprès de la Clinique PsychoÉducAction a été assignée à Rim El Bassit, clinicienne et praticienne en psychologie.",
+        '',
+        'Rim El Bassit offrira les services sous la supervision clinique de Nancy Al Kayal, psychologue et psychothérapeute.',
+        '',
+        "Rim communiquera avec vous par courriel ou par téléphone dans les prochains jours afin de convenir d'une première rencontre.",
+        '',
+        'Au plaisir,',
+      ].join('\n'),
+    }
+  }
+
   const normalizedProfessionalName =
     cleanText(professionalName) || 'votre professionnel'
   const normalizedProfessionalTitle = cleanText(professionalTitle)

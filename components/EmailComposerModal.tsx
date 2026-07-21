@@ -7,6 +7,7 @@ export type EmailComposerSection = {
   enabled: boolean
   fromLabel: string
   to: string
+  cc?: string
   subject: string
   message: string
 }
@@ -83,6 +84,16 @@ function EmailSection({
             value={section.to}
             disabled={!section.enabled || disabled}
             onChange={(event) => onChange({ ...section, to: event.target.value })}
+            className={inputClass}
+          />
+        </label>
+
+        <label className="block text-sm font-medium text-[#5d4a3d]">
+          Cc (copie conforme, optionnel)
+          <input
+            value={section.cc ?? ''}
+            disabled={!section.enabled || disabled}
+            onChange={(event) => onChange({ ...section, cc: event.target.value })}
             className={inputClass}
           />
         </label>
