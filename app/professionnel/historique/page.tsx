@@ -808,7 +808,7 @@ export default function ProfessionnelHistoriquePage() {
                                               </option>
                                             </select>
                                           </label>
-                                          {clientStatus === 'not_taken' && (
+                                          {clientStatus !== 'taken' && (
                                             <label
                                               htmlFor={`closure-reason-${client.id}`}
                                               className="mt-3 block text-xs font-medium uppercase text-[#8a6f5d]"

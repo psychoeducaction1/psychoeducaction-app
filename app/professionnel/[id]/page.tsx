@@ -2464,7 +2464,7 @@ export default function ProfessionnelDetailPage() {
                                 </select>
                               </label>
                             </div>
-                            {getAssignedClientStatus(client) === "not_taken" && (
+                            {getAssignedClientStatus(client) !== "taken" && (
                               <div className="sm:col-span-2">
                                 <label className="block text-sm font-medium text-[#8a6f5d]">
                                   Motif de non-prise de service

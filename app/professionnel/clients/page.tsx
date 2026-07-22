@@ -579,7 +579,7 @@ export default function ProfessionnelClientsPage() {
   }
 
   const renderNonServiceReason = (client: AssignedClient) =>
-    getAssignedClientStatus(client) === 'not_taken' ? (
+    getAssignedClientStatus(client) !== 'taken' ? (
       <div className="space-y-2">
         <label className="block text-xs font-medium text-[#5d4a3d]">
           Motif de non-prise de service
