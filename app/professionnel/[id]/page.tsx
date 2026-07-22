@@ -1804,7 +1804,11 @@ export default function ProfessionnelDetailPage() {
     try {
       const { error: updateAssignmentError } = await supabase
         .from("assigned_clients")
-        .update({ contacted: nextContacted, is_active: nextIsActive })
+        .update({
+          contacted: nextContacted,
+          is_active: nextIsActive,
+          closure_reason: client.closure_reason ?? null,
+        })
         .eq("id", client.id);
 
       if (updateAssignmentError) throw updateAssignmentError;
@@ -1820,7 +1824,12 @@ export default function ProfessionnelDetailPage() {
 
       const updateClient = (currentClient: AssignedClient) =>
         currentClient.id === client.id
-          ? { ...currentClient, contacted: nextContacted, is_active: nextIsActive }
+          ? {
+              ...currentClient,
+              contacted: nextContacted,
+              is_active: nextIsActive,
+              closure_reason: client.closure_reason ?? null,
+            }
           : currentClient;
 
       if (client.assignment_request_id) {
@@ -1936,6 +1945,20 @@ export default function ProfessionnelDetailPage() {
     client: AssignedClient,
     nextClosureReason: string,
   ) => {
+    // Choisir un motif implique que le service n'a pas été pris — bascule le
+    // statut automatiquement pour éviter de devoir re-sélectionner le statut
+    // une seconde fois après avoir indiqué le motif.
+    if (
+      nextClosureReason.trim() &&
+      getAssignedClientStatus(client) !== "not_taken"
+    ) {
+      await handleAssignmentStatusChange(
+        { ...client, closure_reason: nextClosureReason },
+        "not_taken",
+      );
+      return;
+    }
+
     setClientMessage(null);
     setClientError(null);
 

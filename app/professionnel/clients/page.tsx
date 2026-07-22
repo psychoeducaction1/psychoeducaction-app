@@ -20,7 +20,6 @@ import {
   nullableText,
   type AssignedClient,
   type AssignedClientStatus,
-  type EditableClientField,
 } from '../shared'
 
 type AssignmentRequestSummary = {
@@ -449,31 +448,6 @@ export default function ProfessionnelClientsPage() {
     }, AUTO_SAVE_DEBOUNCE_MS)
   }
 
-  const updateClientField = <Field extends EditableClientField>(
-    clientId: string,
-    field: Field,
-    value: AssignedClient[Field]
-  ) => {
-    const currentClient = latestClientsRef.current.find((client) => client.id === clientId)
-
-    if (!currentClient) return
-
-    const nextClient = { ...currentClient, [field]: value } as AssignedClient
-
-    if (field === 'closure_reason' && typeof value === 'string' && value.trim()) {
-      setClientErrors((currentErrors) => ({ ...currentErrors, [clientId]: '' }))
-    }
-
-    latestClientsRef.current = latestClientsRef.current.map((client) =>
-      client.id === clientId ? nextClient : client
-    )
-
-    setClients((currentClients) =>
-      currentClients.map((client) => (client.id === clientId ? nextClient : client))
-    )
-    scheduleAutoSave(nextClient)
-  }
-
   const updateClientServiceStatus = (
     client: AssignedClient,
     status: AssignedClientStatus
@@ -492,6 +466,31 @@ export default function ProfessionnelClientsPage() {
 
     const fields = getFieldsForAssignedClientStatus(status)
     const nextClient = { ...currentClient, ...fields }
+
+    latestClientsRef.current = latestClientsRef.current.map((c) =>
+      c.id === client.id ? nextClient : c
+    )
+    setClients((currentClients) =>
+      currentClients.map((c) => (c.id === client.id ? nextClient : c))
+    )
+    scheduleAutoSave(nextClient)
+  }
+
+  const updateClientClosureReason = (client: AssignedClient, reason: string) => {
+    const currentClient = latestClientsRef.current.find((c) => c.id === client.id)
+    if (!currentClient) return
+
+    // Choisir un motif implique que le service n'a pas été pris — bascule le
+    // statut automatiquement pour éviter de devoir re-sélectionner le statut
+    // une seconde fois après avoir indiqué le motif.
+    const statusFields = reason.trim()
+      ? getFieldsForAssignedClientStatus('not_taken')
+      : {}
+    const nextClient = { ...currentClient, closure_reason: reason, ...statusFields }
+
+    if (reason.trim()) {
+      setClientErrors((currentErrors) => ({ ...currentErrors, [client.id]: '' }))
+    }
 
     latestClientsRef.current = latestClientsRef.current.map((c) =>
       c.id === client.id ? nextClient : c
@@ -586,7 +585,7 @@ export default function ProfessionnelClientsPage() {
           <select
             value={client.closure_reason ?? ''}
             onChange={(event) =>
-              updateClientField(client.id, 'closure_reason', event.target.value)
+              updateClientClosureReason(client, event.target.value)
             }
             className="mt-1 w-full rounded-xl border border-[#dfd0bf] bg-white px-2 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
           >

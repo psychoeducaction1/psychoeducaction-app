@@ -427,7 +427,11 @@ export default function ProfessionnelHistoriquePage() {
 
     const { error: assignedClientError } = await supabase
       .from('assigned_clients')
-      .update({ contacted: nextContacted, is_active: nextIsActive })
+      .update({
+        contacted: nextContacted,
+        is_active: nextIsActive,
+        closure_reason: client.closure_reason ?? null,
+      })
       .eq('id', client.id)
       .eq('professional_id', currentUserId)
 
@@ -505,7 +509,12 @@ export default function ProfessionnelHistoriquePage() {
 
     const nextClients = clients.map((currentClient) =>
       currentClient.id === client.id
-        ? { ...currentClient, contacted: nextContacted, is_active: nextIsActive }
+        ? {
+            ...currentClient,
+            contacted: nextContacted,
+            is_active: nextIsActive,
+            closure_reason: client.closure_reason ?? null,
+          }
         : currentClient
     )
 
@@ -528,6 +537,20 @@ export default function ProfessionnelHistoriquePage() {
         ...currentErrors,
         [client.id]: 'Utilisateur introuvable. Veuillez recharger la page.',
       }))
+      return
+    }
+
+    // Choisir un motif implique que le service n'a pas été pris — bascule le
+    // statut automatiquement pour éviter de devoir re-sélectionner le statut
+    // une seconde fois après avoir indiqué le motif.
+    if (
+      nextClosureReason.trim() &&
+      getAssignedClientStatus(client) !== 'not_taken'
+    ) {
+      await handleServiceStatusChange(
+        { ...client, closure_reason: nextClosureReason },
+        'not_taken'
+      )
       return
     }
 
