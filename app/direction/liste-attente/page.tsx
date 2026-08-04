@@ -46,7 +46,7 @@ type WaitingListClient = {
   second_requester_name: string | null
   birth_date: string | null
   city: string | null
-  meeting_modality: string | null
+  meeting_modality: string[] | null
   meeting_type: string | null
   availability: string | null
   contact_email: string | null
@@ -106,7 +106,7 @@ type WaitingListForm = {
   second_requester_name: string
   birth_date: string
   address: string
-  meeting_modality: string
+  meeting_modality: string[]
   availability: string
   contact_email: string
   contact_phone: string
@@ -172,7 +172,6 @@ const meetingModalityOptions = [
   'Présentiel — bureau de Montréal',
   'Visioconférence',
   'À domicile',
-  'Hybride (présentiel + visioconférence)',
 ]
 
 const emptyWaitingListForm: WaitingListForm = {
@@ -185,7 +184,7 @@ const emptyWaitingListForm: WaitingListForm = {
   second_requester_name: '',
   birth_date: '',
   address: '',
-  meeting_modality: meetingModalityOptions[0],
+  meeting_modality: [],
   availability: '',
   contact_email: '',
   contact_phone: '',
@@ -230,6 +229,27 @@ function getContactPhones(client: WaitingListClient): string[] {
     client.contact_phone,
     ...(client.contact_phones ?? []),
   ])
+}
+
+// Défensif : tant que la migration SQL (single texte -> tableau) n'est pas
+// exécutée, la colonne peut encore renvoyer une simple chaîne.
+function getMeetingModalities(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter(
+      (item): item is string => typeof item === 'string' && item.trim().length > 0
+    )
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    return [value.trim()]
+  }
+
+  return []
+}
+
+function formatModalities(value: unknown): string {
+  const modalities = getMeetingModalities(value)
+  return modalities.length > 0 ? modalities.join(', ') : '-'
 }
 
 async function recalculateAssignmentRequest(requestId: string): Promise<void> {
@@ -429,7 +449,7 @@ function clientMatchesSearch(
     ...getContactPhones(client),
     client.city,
     client.service_requested,
-    client.meeting_modality,
+    ...getMeetingModalities(client.meeting_modality),
   ]
     .map(normalizeSearchValue)
     .some((value) => value.includes(normalizedSearchQuery))
@@ -478,9 +498,8 @@ function clientToForm(client: WaitingListClient): WaitingListForm {
     second_requester_name: client.second_requester_name ?? '',
     birth_date: client.birth_date ?? '',
     address: client.city ?? '',
-    meeting_modality: normalizeOption(
-      client.meeting_modality,
-      meetingModalityOptions
+    meeting_modality: getMeetingModalities(client.meeting_modality).filter(
+      (modality) => meetingModalityOptions.includes(modality)
     ),
     availability: client.availability ?? '',
     contact_email: getContactEmails(client)[0] ?? '',
@@ -508,7 +527,7 @@ function buildPayload(form: WaitingListForm) {
     second_requester_name: nullableText(form.second_requester_name),
     birth_date: nullableText(form.birth_date),
     city: nullableText(form.address),
-    meeting_modality: form.meeting_modality,
+    meeting_modality: form.meeting_modality.length > 0 ? form.meeting_modality : null,
     availability: nullableText(form.availability),
     contact_email: contactEmails[0] ?? null,
     contact_phone: contactPhones[0] ?? null,
@@ -554,7 +573,7 @@ export default function DirectionListeAttentePage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [serviceFilter, setServiceFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
-  const [modalityFilter, setModalityFilter] = useState('all')
+  const [modalityFilter, setModalityFilter] = useState<string[]>([])
   const [expandedMotifIds, setExpandedMotifIds] = useState<Record<string, boolean>>({})
   const [notifyProfessional, setNotifyProfessional] = useState(false)
   const [notifyClient, setNotifyClient] = useState(false)
@@ -1515,7 +1534,9 @@ export default function DirectionListeAttentePage() {
         phone: getContactPhones(client)[0] ?? null,
         requester_name: requesterName,
         short_comment: nullableText(client.consultation_reason ?? ''),
-        meeting_modality: nullableText(client.meeting_modality ?? ''),
+        meeting_modality: nullableText(
+          getMeetingModalities(client.meeting_modality).join(', ')
+        ),
         service_address: nullableText(client.city ?? ''),
         assigned_date: getTodayDate(),
         contacted: false,
@@ -1646,7 +1667,7 @@ export default function DirectionListeAttentePage() {
 
   const normalizedSearchQuery = searchQuery.trim().toLowerCase()
   const hasActiveFilters =
-    serviceFilter !== 'all' || statusFilter !== 'all' || modalityFilter !== 'all'
+    serviceFilter !== 'all' || statusFilter !== 'all' || modalityFilter.length > 0
   const filteredClients = clients.filter((client) => {
     if (normalizedSearchQuery && !clientMatchesSearch(client, normalizedSearchQuery)) {
       return false
@@ -1657,8 +1678,12 @@ export default function DirectionListeAttentePage() {
     if (statusFilter !== 'all' && client.status !== statusFilter) {
       return false
     }
-    if (modalityFilter !== 'all' && client.meeting_modality !== modalityFilter) {
-      return false
+    if (modalityFilter.length > 0) {
+      const clientModalities = getMeetingModalities(client.meeting_modality)
+      const hasMatchingModality = modalityFilter.some((modality) =>
+        clientModalities.includes(modality)
+      )
+      if (!hasMatchingModality) return false
     }
     return true
   })
@@ -1917,7 +1942,7 @@ export default function DirectionListeAttentePage() {
                     {formatText(client.city)}
                   </td>
                   <td className="px-3 py-2 align-top text-[#6c5a4d]">
-                    {formatText(client.meeting_modality)}
+                    {formatModalities(client.meeting_modality)}
                   </td>
                   <td className="px-3 py-2 align-top text-[#6c5a4d]">
                     {formatText(client.availability)}
@@ -2189,20 +2214,30 @@ export default function DirectionListeAttentePage() {
             className={`${inputClass} mt-1`}
           />
         </label>
-        <label className="text-sm font-medium text-[#5d4a3d]">
+        <div className="text-sm font-medium text-[#5d4a3d]">
           Modalité de rencontre
-          <select
-            value={currentForm.meeting_modality}
-            onChange={(event) => onChange('meeting_modality', event.target.value)}
-            className={`${inputClass} mt-1`}
-          >
+          <div className="mt-1 space-y-2 rounded-xl border border-[#dfd0bf] bg-white px-3 py-2.5 shadow-sm">
             {meetingModalityOptions.map((modality) => (
-              <option key={modality} value={modality}>
+              <label
+                key={modality}
+                className="flex items-center gap-2 text-sm font-normal text-[#332820]"
+              >
+                <input
+                  type="checkbox"
+                  checked={currentForm.meeting_modality.includes(modality)}
+                  onChange={(event) => {
+                    const nextModalities = event.target.checked
+                      ? [...currentForm.meeting_modality, modality]
+                      : currentForm.meeting_modality.filter((m) => m !== modality)
+                    onChange('meeting_modality', nextModalities)
+                  }}
+                  className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
+                />
                 {modality}
-              </option>
+              </label>
             ))}
-          </select>
-        </label>
+          </div>
+        </div>
         <div className="space-y-2 text-sm font-medium text-[#5d4a3d]">
           <p>Courriel</p>
           {currentForm.contact_emails.map((email, index) => (
@@ -2371,7 +2406,7 @@ export default function DirectionListeAttentePage() {
                   />
                 </label>
 
-                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   <label className="block text-sm font-medium text-[#5d4a3d]">
                     Service demandé
                     <select
@@ -2414,26 +2449,37 @@ export default function DirectionListeAttentePage() {
                     </select>
                   </label>
 
-                  <label className="block text-sm font-medium text-[#5d4a3d]">
+                </div>
+
+                <div className="mt-4">
+                  <p className="block text-sm font-medium text-[#5d4a3d]">
                     Modalité de rencontre
-                    <select
-                      value={modalityFilter}
-                      onChange={(event) => {
-                        setModalityFilter(event.target.value)
-                        setWaitingPage(0)
-                        setAssignedPage(0)
-                        setHistoryPage(0)
-                      }}
-                      className={`${inputClass} mt-2`}
-                    >
-                      <option value="all">Toutes les modalités</option>
-                      {meetingModalityOptions.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2 rounded-xl border border-[#dfd0bf] bg-white px-3 py-2.5 shadow-sm">
+                    {meetingModalityOptions.map((option) => (
+                      <label
+                        key={option}
+                        className="flex items-center gap-2 text-sm font-normal text-[#332820]"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={modalityFilter.includes(option)}
+                          onChange={(event) => {
+                            setModalityFilter((current) =>
+                              event.target.checked
+                                ? [...current, option]
+                                : current.filter((modality) => modality !== option)
+                            )
+                            setWaitingPage(0)
+                            setAssignedPage(0)
+                            setHistoryPage(0)
+                          }}
+                          className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
+                        />
+                        {option}
+                      </label>
+                    ))}
+                  </div>
                 </div>
 
                 {hasActiveFilters && (
@@ -2442,7 +2488,7 @@ export default function DirectionListeAttentePage() {
                     onClick={() => {
                       setServiceFilter('all')
                       setStatusFilter('all')
-                      setModalityFilter('all')
+                      setModalityFilter([])
                       setWaitingPage(0)
                       setAssignedPage(0)
                       setHistoryPage(0)
@@ -2779,7 +2825,7 @@ export default function DirectionListeAttentePage() {
                           </td>
                           <td className={tableCellClass}>{formatText(client.city)}</td>
                           <td className={tableCellClass}>
-                            {formatText(client.meeting_modality)}
+                            {formatModalities(client.meeting_modality)}
                           </td>
                           <td className={tableCellClass}>
                             {formatText(client.availability)}
