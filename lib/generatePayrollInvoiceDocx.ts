@@ -24,20 +24,25 @@ export type InvoicePeriod = {
   dueDate: string // YYYY-MM-DD
 }
 
+export type PayrollInvoiceOptions = {
+  invoiceNumber?: string
+}
+
 const CLINIC_NAME = 'Clinique PsychoÉducAction'
 const CLINIC_ADDRESS = '401, Chemin du Coteau-Rouge'
 const CLINIC_CITY = 'Longueuil, J4J 1X5'
 const CLINIC_PHONE = 'Tél : (438) 500-1388'
 const CLINIC_BUSINESS_NUMBER = 'N° entreprise : 9523-0991 QUEBEC INC'
 
-const COLOR_DARK = '252423'
-const COLOR_PANEL = '312B22'
-const COLOR_PANEL_ALT = '3B3328'
+const COLOR_PAGE = 'FFFFFF'
+const COLOR_DARK = '332820'
+const COLOR_PANEL = 'F8F3EC'
+const COLOR_PANEL_ALT = 'FFFDF9'
 const COLOR_GOLD = '5B4A1F'
 const COLOR_GOLD_LINE = 'A78343'
 const COLOR_BLUSH = 'E9C8B8'
-const COLOR_TEXT = 'F8EFE5'
-const COLOR_MUTED = 'D8C2AA'
+const COLOR_TEXT = '332820'
+const COLOR_MUTED = '7A6859'
 const COLOR_ACCENT = 'D95C2B'
 const COLOR_WHITE = 'FFFFFF'
 
@@ -71,24 +76,35 @@ function formatQuantity(value: number): string {
 
 export function buildPayrollInvoiceNumber(
   result: ProfessionalPayrollResult,
-  period: InvoicePeriod
+  invoiceNumber: string
 ): string {
   const initials =
     result.professional.fullName
       .split(/\s+/)
       .map((part) => part[0]?.toUpperCase() ?? '')
       .join('') || 'XX'
-  const periodCode = period.endDate.replace(/-/g, '')
-  return `CMPEA-${initials}-${periodCode}`
+  const invoiceDigits = invoiceNumber.replace(/\D/g, '').padStart(3, '0')
+
+  return `PEA-${initials}-${invoiceDigits}`
+}
+
+export function buildPayrollInvoiceShortNumber(invoiceNumber: string): string {
+  const invoiceDigits = invoiceNumber.replace(/\D/g, '').padStart(3, '0')
+
+  return invoiceDigits.slice(-2)
 }
 
 export function buildPayrollInvoiceFileName(
   result: ProfessionalPayrollResult,
-  period: InvoicePeriod
+  period: InvoicePeriod,
+  options?: PayrollInvoiceOptions
 ): string {
   const safeName = result.professional.fullName.replace(/[^a-z0-9]+/gi, '-')
+  const invoicePart = options?.invoiceNumber
+    ? buildPayrollInvoiceNumber(result, options.invoiceNumber)
+    : period.endDate
 
-  return `Facture-${safeName}-${period.endDate}.docx`
+  return `Facture-${safeName}-${invoicePart}.docx`
 }
 
 function run(
@@ -150,7 +166,7 @@ function cell(
   })
 }
 
-function emptyLine(fill = COLOR_DARK) {
+function emptyLine(fill = COLOR_PAGE) {
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
     rows: [
@@ -220,7 +236,8 @@ function buildInfoBox(title: string, lines: string[]): Table {
 function buildHeaderTable(
   result: ProfessionalPayrollResult,
   period: InvoicePeriod,
-  logoData: Uint8Array | null
+  logoData: Uint8Array | null,
+  options?: PayrollInvoiceOptions
 ): Table {
   const logoChildren = logoData
     ? [
@@ -234,21 +251,21 @@ function buildHeaderTable(
           ],
         }),
       ]
-    : [paragraph([run(CLINIC_NAME, { bold: true, color: COLOR_BLUSH, size: 30 })])]
+    : [paragraph([run(CLINIC_NAME, { bold: true, color: COLOR_GOLD, size: 30 })])]
 
   return new Table({
     width: { size: TABLE_WIDTH, type: WidthType.DXA },
     rows: [
       new TableRow({
         children: [
-          cell(logoChildren, { fill: COLOR_DARK, width: 5200 }),
+          cell(logoChildren, { fill: COLOR_PAGE, width: 5200 }),
           cell(
             [
-              paragraph([run('FACTURE', { bold: true, color: COLOR_BLUSH, size: 30 })], {
+              paragraph([run('FACTURE', { bold: true, color: COLOR_GOLD, size: 30 })], {
                 alignment: AlignmentType.RIGHT,
                 spacingAfter: 120,
               }),
-              paragraph([run(`N° ${buildPayrollInvoiceNumber(result, period)}`, { color: COLOR_ACCENT })], {
+              paragraph([run(`N° ${buildPayrollInvoiceNumber(result, options?.invoiceNumber ?? '')}`, { color: COLOR_ACCENT })], {
                 alignment: AlignmentType.RIGHT,
                 spacingAfter: 40,
               }),
@@ -268,7 +285,7 @@ function buildHeaderTable(
                 { alignment: AlignmentType.RIGHT, spacingAfter: 0 }
               ),
             ],
-            { fill: COLOR_DARK, width: 5000 }
+            { fill: COLOR_PAGE, width: 5000 }
           ),
         ],
       }),
@@ -301,10 +318,10 @@ function buildPartyTable(result: ProfessionalPayrollResult): Table {
                 CLINIC_BUSINESS_NUMBER,
               ]),
             ],
-            { fill: COLOR_DARK, width: TABLE_WIDTH / 2 }
+            { fill: COLOR_PAGE, width: TABLE_WIDTH / 2 }
           ),
           cell([buildInfoBox('FOURNISSEUR', supplierLines)], {
-            fill: COLOR_DARK,
+            fill: COLOR_PAGE,
             width: TABLE_WIDTH / 2,
           }),
         ],
@@ -556,7 +573,7 @@ function buildSignatureSection(result: ProfessionalPayrollResult, period: Invoic
               }),
               paragraph([run(professional.fullName, { color: COLOR_MUTED })], { spacingAfter: 0 }),
             ],
-            { fill: COLOR_DARK, width: TABLE_WIDTH / 2 }
+            { fill: COLOR_PAGE, width: TABLE_WIDTH / 2 }
           ),
           cell(
             [
@@ -569,7 +586,7 @@ function buildSignatureSection(result: ProfessionalPayrollResult, period: Invoic
               }),
               paragraph([run(title, { color: COLOR_MUTED })], { spacingAfter: 0 }),
             ],
-            { fill: COLOR_DARK, width: TABLE_WIDTH / 2 }
+            { fill: COLOR_PAGE, width: TABLE_WIDTH / 2 }
           ),
         ],
       }),
@@ -632,12 +649,13 @@ async function loadLogoImage(): Promise<Uint8Array | null> {
 export function generatePayrollInvoiceDocument(
   result: ProfessionalPayrollResult,
   period: InvoicePeriod,
-  logoData: Uint8Array | null
+  logoData: Uint8Array | null,
+  options?: PayrollInvoiceOptions
 ): Document {
   const extrasTable = buildExtrasTable(result)
 
   return new Document({
-    background: { color: COLOR_DARK },
+    background: { color: COLOR_PAGE },
     sections: [
       {
         properties: {
@@ -647,7 +665,7 @@ export function generatePayrollInvoiceDocument(
           },
         },
         children: [
-          buildHeaderTable(result, period, logoData),
+          buildHeaderTable(result, period, logoData, options),
           emptyLine(),
           buildPartyTable(result),
           ...result.rateGroups.flatMap((group) => buildRateSection(group)),
@@ -681,24 +699,26 @@ export function generatePayrollInvoiceDocument(
 
 export async function createPayrollInvoiceBlob(
   result: ProfessionalPayrollResult,
-  period: InvoicePeriod
+  period: InvoicePeriod,
+  options?: PayrollInvoiceOptions
 ): Promise<Blob> {
   const logoData = await loadLogoImage()
-  const doc = generatePayrollInvoiceDocument(result, period, logoData)
+  const doc = generatePayrollInvoiceDocument(result, period, logoData, options)
 
   return Packer.toBlob(doc)
 }
 
 export async function downloadPayrollInvoice(
   result: ProfessionalPayrollResult,
-  period: InvoicePeriod
+  period: InvoicePeriod,
+  options?: PayrollInvoiceOptions
 ): Promise<void> {
-  const blob = await createPayrollInvoiceBlob(result, period)
+  const blob = await createPayrollInvoiceBlob(result, period, options)
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
 
   link.href = url
-  link.download = buildPayrollInvoiceFileName(result, period)
+  link.download = buildPayrollInvoiceFileName(result, period, options)
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)

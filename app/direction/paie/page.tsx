@@ -19,6 +19,7 @@ import {
 import {
   buildPayrollInvoiceFileName,
   buildPayrollInvoiceNumber,
+  buildPayrollInvoiceShortNumber,
   createPayrollInvoiceBlob,
   downloadPayrollInvoice,
   type InvoicePeriod,
@@ -48,10 +49,11 @@ function getFirstName(fullName: string): string {
 
 function buildPayrollEmailMessage(
   professionalResult: ProfessionalPayrollResult,
-  period: InvoicePeriod
+  period: InvoicePeriod,
+  invoiceNumber: string
 ): string {
   const firstName = getFirstName(professionalResult.professional.fullName)
-  const invoiceNumber = buildPayrollInvoiceNumber(professionalResult, period)
+  const invoiceShortNumber = buildPayrollInvoiceShortNumber(invoiceNumber)
   const paymentDate = formatDateFr(period.dueDate)
 
   return [
@@ -59,7 +61,7 @@ function buildPayrollEmailMessage(
     '',
     "J'espère que tu vas bien.",
     '',
-    `Tu trouveras ci-joint ta facture ${invoiceNumber}.`,
+    `Tu trouveras ci-joint ta facture #${invoiceShortNumber}.`,
     '',
     `Merci de bien vouloir vérifier les informations, la signer puis me la renvoyer. Le paiement sera effectué le ${paymentDate}.`,
     '',
@@ -107,6 +109,9 @@ export default function DirectionPaiePage() {
   const [downloadingId, setDownloadingId] = useState('')
   const [sendingId, setSendingId] = useState('')
   const [invoiceMessage, setInvoiceMessage] = useState('')
+  const [invoiceNumbersByProfessionalId, setInvoiceNumbersByProfessionalId] = useState<
+    Record<string, string>
+  >({})
 
   useEffect(() => {
     const loadData = async () => {
@@ -261,6 +266,17 @@ export default function DirectionPaiePage() {
   }
 
   const handleDownload = async (professionalResult: ProfessionalPayrollResult) => {
+    setInvoiceMessage('')
+
+    const invoiceNumber = invoiceNumbersByProfessionalId[professionalResult.professional.id]?.trim()
+
+    if (!invoiceNumber) {
+      setInvoiceMessage(
+        `Veuillez inscrire le numéro de facture pour ${professionalResult.professional.fullName}.`
+      )
+      return
+    }
+
     const period: InvoicePeriod = {
       startDate: periodStart,
       endDate: periodEnd,
@@ -270,7 +286,7 @@ export default function DirectionPaiePage() {
     setDownloadingId(professionalResult.professional.id)
 
     try {
-      await downloadPayrollInvoice(professionalResult, period)
+      await downloadPayrollInvoice(professionalResult, period, { invoiceNumber })
     } finally {
       setDownloadingId('')
     }
@@ -284,6 +300,16 @@ export default function DirectionPaiePage() {
     if (!recipientEmail) {
       setInvoiceMessage(
         `Impossible d'envoyer la facture à ${professionalResult.professional.fullName} : aucun courriel professionnel n'est configuré.`
+      )
+      return
+    }
+
+    const invoiceNumberInput =
+      invoiceNumbersByProfessionalId[professionalResult.professional.id]?.trim()
+
+    if (!invoiceNumberInput) {
+      setInvoiceMessage(
+        `Veuillez inscrire le numéro de facture pour ${professionalResult.professional.fullName}.`
       )
       return
     }
@@ -302,15 +328,19 @@ export default function DirectionPaiePage() {
       endDate: periodEnd,
       dueDate: periodDue,
     }
-    const invoiceNumber = buildPayrollInvoiceNumber(professionalResult, period)
-    const attachmentFileName = buildPayrollInvoiceFileName(professionalResult, period)
+    const invoiceNumber = buildPayrollInvoiceNumber(professionalResult, invoiceNumberInput)
+    const attachmentFileName = buildPayrollInvoiceFileName(professionalResult, period, {
+      invoiceNumber: invoiceNumberInput,
+    })
     const subject = `Facture ${invoiceNumber} - Clinique PsychoÉducAction`
-    const message = buildPayrollEmailMessage(professionalResult, period)
+    const message = buildPayrollEmailMessage(professionalResult, period, invoiceNumberInput)
 
     setSendingId(professionalResult.professional.id)
 
     try {
-      const invoiceBlob = await createPayrollInvoiceBlob(professionalResult, period)
+      const invoiceBlob = await createPayrollInvoiceBlob(professionalResult, period, {
+        invoiceNumber: invoiceNumberInput,
+      })
       const attachmentBase64 = await blobToBase64(invoiceBlob)
       const response = await fetch('/api/direction/payroll-invoice-email', {
         method: 'POST',
@@ -559,7 +589,26 @@ export default function DirectionPaiePage() {
                               }`}
                           </p>
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                          <label className="flex items-center gap-2 text-xs font-medium text-[#5d4a3d]">
+                            N° facture
+                            <input
+                              value={
+                                invoiceNumbersByProfessionalId[
+                                  professionalResult.professional.id
+                                ] ?? ''
+                              }
+                              onChange={(event) =>
+                                setInvoiceNumbersByProfessionalId((current) => ({
+                                  ...current,
+                                  [professionalResult.professional.id]: event.target.value,
+                                }))
+                              }
+                              placeholder="12"
+                              inputMode="numeric"
+                              className="w-20 rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] shadow-sm outline-none transition duration-200 focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                            />
+                          </label>
                           <Badge tone="success">
                             {formatCurrency(professionalResult.grandTotal)}
                           </Badge>

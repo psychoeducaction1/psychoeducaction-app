@@ -128,6 +128,18 @@ function normalizeName(value: string): string {
     .replace(/[\u0300-\u036f]/g, '')
 }
 
+function normalizeSearchText(value: string): string {
+  return normalizeName(value).replace(/[-_]+/g, ' ')
+}
+
+function rowHasNonBillableMention(row: unknown[]): boolean {
+  return row.some(
+    (cell) =>
+      typeof cell === 'string' &&
+      normalizeSearchText(cell).includes('non facturable')
+  )
+}
+
 function parseAmount(raw: unknown): number {
   if (typeof raw === 'number') return raw
   if (typeof raw !== 'string') return 0
@@ -259,6 +271,7 @@ export function calculatePayroll(
     const professionalNameRaw = typeof row[1] === 'string' ? row[1].trim() : ''
 
     if (!professionalNameRaw) return
+    if (rowHasNonBillableMention(row)) return
 
     const professional = professionalsByName.get(normalizeName(professionalNameRaw))
 
