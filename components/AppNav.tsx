@@ -9,6 +9,7 @@ import {
   History,
   LayoutDashboard,
   ListChecks,
+  MessageSquare,
   Settings,
   UserCheck,
   Users,
@@ -16,6 +17,10 @@ import {
 } from 'lucide-react'
 import { buttonClass } from '@/components/Ui'
 import { supabase } from '@/lib/supabaseClient'
+import {
+  getUnreadCountForDirection,
+  getUnreadCountForProfessional,
+} from '@/lib/internalMessages'
 
 type UserRole = 'direction' | 'professionnel' | null
 type NavLink = {
@@ -29,6 +34,7 @@ export function AppNav() {
   const router = useRouter()
   const [role, setRole] = useState<UserRole>(null)
   const [profileName, setProfileName] = useState('')
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -47,9 +53,19 @@ export function AppNav() {
         .limit(1)
         .maybeSingle()
 
+      if (cancelled) return
+
+      const resolvedRole = data?.role === 'direction' ? 'direction' : 'professionnel'
+      setRole(resolvedRole)
+      setProfileName(data?.full_name?.trim() || data?.email?.trim() || '')
+
+      const unreadCount =
+        resolvedRole === 'direction'
+          ? await getUnreadCountForDirection(supabase)
+          : await getUnreadCountForProfessional(supabase, user.id)
+
       if (!cancelled) {
-        setRole(data?.role === 'direction' ? 'direction' : 'professionnel')
-        setProfileName(data?.full_name?.trim() || data?.email?.trim() || '')
+        setUnreadMessageCount(unreadCount)
       }
     }
 
@@ -72,6 +88,7 @@ export function AppNav() {
           { href: '/direction/assignations', label: 'Assignations', icon: ClipboardList },
           { href: '/direction/liste-attente', label: "Liste d'attente", icon: ListChecks },
           { href: '/direction/professionnels', label: 'Professionnels', icon: Users },
+          { href: '/direction/messages', label: 'Messages', icon: MessageSquare },
           { href: '/direction/journal-audit', label: "Journal d'audit", icon: History },
           { href: '/direction/parametres', label: 'Paramètres', icon: Settings },
         ]
@@ -80,6 +97,7 @@ export function AppNav() {
             { href: '/professionnel', label: 'Tableau de bord', icon: LayoutDashboard },
             { href: '/professionnel/clients', label: 'Mes assignations', icon: UserCheck },
             { href: '/professionnel/demande', label: 'Ma demande', icon: ClipboardList },
+            { href: '/professionnel/messages', label: 'Messages', icon: MessageSquare },
             { href: '/professionnel/historique', label: 'Historique', icon: History },
             { href: '/professionnel/preferences', label: 'Mes préférences', icon: Settings },
           ]
@@ -107,12 +125,15 @@ export function AppNav() {
               : link.href === '/direction/professionnels'
                 ? pathname?.startsWith('/direction/professionnels') ||
                   pathname?.startsWith('/professionnel/')
+                : link.href === '/direction/messages'
+                  ? pathname?.startsWith('/direction/messages')
                 : link.href === '/direction/journal-audit'
                   ? pathname?.startsWith('/direction/journal-audit')
                 : pathname?.startsWith('/direction/parametres')
           : link.href === '/professionnel'
             ? pathname === '/professionnel'
             : pathname?.startsWith(link.href)
+      const showUnreadBadge = link.href.endsWith('/messages') && unreadMessageCount > 0
 
       return (
         <Link
@@ -126,6 +147,11 @@ export function AppNav() {
         >
           <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
           {link.label}
+          {showUnreadBadge && (
+            <span className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-[#c14545] px-1.5 text-xs font-semibold text-white">
+              {unreadMessageCount}
+            </span>
+          )}
         </Link>
       )
     })
