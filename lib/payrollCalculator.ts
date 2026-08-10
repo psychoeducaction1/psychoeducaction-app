@@ -61,8 +61,15 @@ function getServiceTypeLabel(amount: number): string {
   return RATE_TO_SERVICE_TYPE[amount] ?? 'Rencontre'
 }
 
-// Toujours exclue du calcul, peu importe ce qui apparaît sous son nom dans le fichier —
-// identifiée par courriel de compte plutôt que par le texte du nom (plus fiable).
+function formatRateAmount(value: number): string {
+  return new Intl.NumberFormat('fr-CA', {
+    style: 'currency',
+    currency: 'CAD',
+  }).format(value)
+}
+
+// Toujours exclue du calcul, peu importe ce qui apparaît sous son nom dans le fichier.
+// Elle est identifiée par courriel de compte plutôt que par le texte du nom.
 const NANCY_AL_KAYAL_EMAIL = 'nancy.alkayal.pea@outlook.com'
 
 export type ProfessionalPayrollInfo = {
@@ -84,9 +91,18 @@ export type InvoiceLineItem = {
   totalPay: number
 }
 
+export type PayrollRateGroup = {
+  label: string
+  rate: number
+  isFlatRate: boolean
+  lineItems: InvoiceLineItem[]
+  totalPay: number
+}
+
 export type ProfessionalPayrollResult = {
   professional: ProfessionalPayrollInfo
   lineItems: InvoiceLineItem[]
+  rateGroups: PayrollRateGroup[]
   meetingCount: number
   travelFeesTotal: number
   cancellationCount: number
@@ -109,7 +125,7 @@ function normalizeName(value: string): string {
     .trim()
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
 }
 
 function parseAmount(raw: unknown): number {
@@ -209,7 +225,7 @@ export function calculatePayroll(
     warnings.push({
       type: 'unclassified_row',
       message:
-        "Impossible de trouver la ligne d'en-tête (colonne \"DATE\") dans le fichier — vérifiez qu'il s'agit bien d'un export \"Activités détaillées\".",
+        'Impossible de trouver la ligne d’en-tête (colonne "DATE") dans le fichier - vérifiez qu’il s’agit bien d’un export "Activités détaillées".',
     })
     return { professionalResults: [], warnings }
   }
@@ -252,7 +268,7 @@ export function calculatePayroll(
         unmatchedNamesWarned.add(key)
         warnings.push({
           type: 'unmatched_professional',
-          message: `Professionnel "${professionalNameRaw}" du fichier introuvable sur la plateforme (ligne ${rowNumber} et possiblement d'autres) — ignoré du calcul.`,
+          message: `Professionnel "${professionalNameRaw}" du fichier introuvable sur la plateforme (ligne ${rowNumber} et possiblement d’autres) - ignoré du calcul.`,
         })
       }
       return
@@ -274,7 +290,7 @@ export function calculatePayroll(
       if (!parsedDate) {
         warnings.push({
           type: 'unreadable_date',
-          message: `Date illisible pour une rencontre de ${professionalNameRaw} (ligne ${rowNumber}) — ignorée du calcul.`,
+          message: `Date illisible pour une rencontre de ${professionalNameRaw} (ligne ${rowNumber}) - ignorée du calcul.`,
         })
         return
       }
@@ -303,7 +319,7 @@ export function calculatePayroll(
       type: 'unclassified_row',
       message: `Ligne non reconnue pour ${professionalNameRaw} (description : "${
         description || '-'
-      }", détail : "${detail || '-'}"), ligne ${rowNumber} — ignorée du calcul.`,
+      }", détail : "${detail || '-'}"), ligne ${rowNumber} - ignorée du calcul.`,
     })
   })
 
@@ -315,7 +331,7 @@ export function calculatePayroll(
     if (!professional.payrollCategory) {
       warnings.push({
         type: 'missing_category',
-        message: `Catégorie de paie non définie pour ${professional.fullName} — ce professionnel a été ignoré du calcul. Définissez sa catégorie ci-dessus puis relancez le calcul.`,
+        message: `Catégorie de paie non définie pour ${professional.fullName} - ce professionnel a été ignoré du calcul. Définissez sa catégorie ci-dessus puis relancez le calcul.`,
       })
       return
     }
@@ -349,7 +365,7 @@ export function calculatePayroll(
       lineItemsMap.set(key, {
         label: rates.isFlatRate
           ? 'Rencontre'
-          : `${getServiceTypeLabel(meeting.amount)} — Rencontre (${meeting.amount} $)`,
+          : `${getServiceTypeLabel(meeting.amount)} - Rencontre (${meeting.amount} $)`,
         amount: meeting.amount,
         rate,
         isFlatRate: rates.isFlatRate,
@@ -359,6 +375,32 @@ export function calculatePayroll(
     })
 
     const lineItems = Array.from(lineItemsMap.values())
+    const rateGroups = Array.from(
+      lineItems.reduce((groups, item) => {
+        const key = item.isFlatRate ? `flat-${item.rate}` : `percent-${item.rate}`
+        const existing = groups.get(key)
+        const label = item.isFlatRate
+          ? `${formatRateAmount(item.rate)} / h`
+          : `${Math.round(item.rate * 100)} %`
+
+        if (existing) {
+          existing.lineItems.push(item)
+          existing.totalPay += item.totalPay
+        } else {
+          groups.set(key, {
+            label,
+            rate: item.rate,
+            isFlatRate: item.isFlatRate,
+            lineItems: [item],
+            totalPay: item.totalPay,
+          })
+        }
+
+        return groups
+      }, new Map<string, PayrollRateGroup>())
+    )
+      .map(([, group]) => group)
+      .sort((a, b) => a.rate - b.rate)
     const cancellationFeesTotal = cancellationCount * rates.cancellationFee
     const meetingsPay = lineItems.reduce((sum, item) => sum + item.totalPay, 0)
     const grandTotal = meetingsPay + travelFeesTotal + cancellationFeesTotal
@@ -366,6 +408,7 @@ export function calculatePayroll(
     professionalResults.push({
       professional,
       lineItems,
+      rateGroups,
       meetingCount: rencontres.length,
       travelFeesTotal,
       cancellationCount,

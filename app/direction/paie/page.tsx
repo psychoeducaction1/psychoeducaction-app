@@ -16,13 +16,73 @@ import {
   type ProfessionalPayrollInfo,
   type ProfessionalPayrollResult,
 } from '@/lib/payrollCalculator'
-import { downloadPayrollInvoice, type InvoicePeriod } from '@/lib/generatePayrollInvoiceDocx'
+import {
+  buildPayrollInvoiceFileName,
+  buildPayrollInvoiceNumber,
+  createPayrollInvoiceBlob,
+  downloadPayrollInvoice,
+  type InvoicePeriod,
+} from '@/lib/generatePayrollInvoiceDocx'
 
 const inputClass =
   'w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] shadow-sm outline-none transition duration-200 focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]'
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat('fr-CA', { style: 'currency', currency: 'CAD' }).format(value)
+}
+
+function formatDateFr(value: string): string {
+  const date = new Date(`${value}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return value
+
+  return new Intl.DateTimeFormat('fr-CA', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(date)
+}
+
+function getFirstName(fullName: string): string {
+  return fullName.trim().split(/\s+/)[0] || 'à vous'
+}
+
+function buildPayrollEmailMessage(
+  professionalResult: ProfessionalPayrollResult,
+  period: InvoicePeriod
+): string {
+  const firstName = getFirstName(professionalResult.professional.fullName)
+  const invoiceNumber = buildPayrollInvoiceNumber(professionalResult, period)
+  const paymentDate = formatDateFr(period.dueDate)
+
+  return [
+    `Bonjour ${firstName},`,
+    '',
+    "J'espère que tu vas bien.",
+    '',
+    `Tu trouveras ci-joint ta facture ${invoiceNumber}.`,
+    '',
+    `Merci de bien vouloir vérifier les informations, la signer puis me la renvoyer. Le paiement sera effectué le ${paymentDate}.`,
+    '',
+    'Merci et excellente fin de journée,',
+    '',
+    'Fatima Zahra Benlahcen, Agente administrative',
+    'Clinique PsychoÉducAction',
+    'T: (438) 500-1388',
+    'C: psych.educ.action@outlook.com',
+    'www.psychoeducaction.com',
+  ].join('\n')
+}
+
+async function blobToBase64(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer())
+  const chunkSize = 0x8000
+  let binary = ''
+
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize))
+  }
+
+  return window.btoa(binary)
 }
 
 export default function DirectionPaiePage() {
@@ -45,6 +105,8 @@ export default function DirectionPaiePage() {
   const [calculationError, setCalculationError] = useState('')
   const [result, setResult] = useState<PayrollCalculationResult | null>(null)
   const [downloadingId, setDownloadingId] = useState('')
+  const [sendingId, setSendingId] = useState('')
+  const [invoiceMessage, setInvoiceMessage] = useState('')
 
   useEffect(() => {
     const loadData = async () => {
@@ -169,7 +231,7 @@ export default function DirectionPaiePage() {
     }
 
     if (!periodStart || !periodEnd || !periodDue) {
-      setCalculationError('Veuillez indiquer la période et la date d’échéance.')
+      setCalculationError("Veuillez indiquer la période et la date d'échéance.")
       return
     }
 
@@ -214,6 +276,82 @@ export default function DirectionPaiePage() {
     }
   }
 
+  const handleSendInvoice = async (professionalResult: ProfessionalPayrollResult) => {
+    setInvoiceMessage('')
+
+    const recipientEmail = professionalResult.professional.email?.trim()
+
+    if (!recipientEmail) {
+      setInvoiceMessage(
+        `Impossible d'envoyer la facture à ${professionalResult.professional.fullName} : aucun courriel professionnel n'est configuré.`
+      )
+      return
+    }
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+
+    if (!session?.access_token) {
+      router.push('/login')
+      return
+    }
+
+    const period: InvoicePeriod = {
+      startDate: periodStart,
+      endDate: periodEnd,
+      dueDate: periodDue,
+    }
+    const invoiceNumber = buildPayrollInvoiceNumber(professionalResult, period)
+    const attachmentFileName = buildPayrollInvoiceFileName(professionalResult, period)
+    const subject = `Facture ${invoiceNumber} - Clinique PsychoÉducAction`
+    const message = buildPayrollEmailMessage(professionalResult, period)
+
+    setSendingId(professionalResult.professional.id)
+
+    try {
+      const invoiceBlob = await createPayrollInvoiceBlob(professionalResult, period)
+      const attachmentBase64 = await blobToBase64(invoiceBlob)
+      const response = await fetch('/api/direction/payroll-invoice-email', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          to: recipientEmail,
+          subject,
+          message,
+          attachmentBase64,
+          attachmentFileName,
+          professionalId: professionalResult.professional.id,
+          professionalName: professionalResult.professional.fullName,
+          invoiceNumber,
+          paymentDate: period.dueDate,
+        }),
+      })
+      const responseBody = (await response.json().catch(() => ({}))) as {
+        error?: string
+      }
+
+      if (!response.ok) {
+        throw new Error(responseBody.error ?? "Erreur pendant l'envoi de la facture.")
+      }
+
+      setInvoiceMessage(
+        `Facture envoyée à ${professionalResult.professional.fullName} (${recipientEmail}).`
+      )
+    } catch (caughtError) {
+      setInvoiceMessage(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Erreur inconnue pendant l'envoi de la facture."
+      )
+    } finally {
+      setSendingId('')
+    }
+  }
+
   if (loading) {
     return (
       <>
@@ -251,13 +389,11 @@ export default function DirectionPaiePage() {
           <section className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.05)]">
             <h2 className="text-base font-semibold text-[#332820]">Catégories de paie</h2>
             <p className="mt-1 text-sm text-[#7a6859]">
-              À définir une fois par professionnel — détermine le pourcentage/taux appliqué
-              lors du calcul. Visible seulement sur cette page.
+              À définir une fois par professionnel - détermine le pourcentage/taux appliqué lors
+              du calcul. Visible seulement sur cette page.
             </p>
 
-            {configMessage && (
-              <p className="mt-3 text-sm text-red-700">{configMessage}</p>
-            )}
+            {configMessage && <p className="mt-3 text-sm text-red-700">{configMessage}</p>}
 
             <div className="mt-4 space-y-3">
               {professionals.map((professional) => (
@@ -364,9 +500,7 @@ export default function DirectionPaiePage() {
               <p className="mt-2 text-xs text-[#8a6f5d]">Fichier sélectionné : {fileName}</p>
             )}
 
-            {calculationError && (
-              <p className="mt-3 text-sm text-red-700">{calculationError}</p>
-            )}
+            {calculationError && <p className="mt-3 text-sm text-red-700">{calculationError}</p>}
 
             <button
               type="button"
@@ -391,6 +525,12 @@ export default function DirectionPaiePage() {
                 </div>
               )}
 
+              {invoiceMessage && (
+                <div className="rounded-2xl border border-[#ead2bd] bg-[#fbf1e7] p-4 text-sm text-[#8a5633]">
+                  {invoiceMessage}
+                </div>
+              )}
+
               {result.professionalResults.length === 0 ? (
                 <EmptyState title="Aucun professionnel calculable dans ce fichier." />
               ) : (
@@ -411,10 +551,10 @@ export default function DirectionPaiePage() {
                                   professionalResult.professional.payrollCategory
                                 ]
                               : ''}{' '}
-                            · {professionalResult.meetingCount} rencontre
+                            - {professionalResult.meetingCount} rencontre
                             {professionalResult.meetingCount > 1 ? 's' : ''}
                             {professionalResult.cancellationCount > 0 &&
-                              ` · ${professionalResult.cancellationCount} annulation${
+                              ` - ${professionalResult.cancellationCount} annulation${
                                 professionalResult.cancellationCount > 1 ? 's' : ''
                               }`}
                           </p>
@@ -432,6 +572,16 @@ export default function DirectionPaiePage() {
                             {downloadingId === professionalResult.professional.id
                               ? 'Génération...'
                               : 'Télécharger la facture'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSendInvoice(professionalResult)}
+                            disabled={sendingId === professionalResult.professional.id}
+                            className={buttonClass('primary')}
+                          >
+                            {sendingId === professionalResult.professional.id
+                              ? 'Envoi...'
+                              : 'Envoyer la facture'}
                           </button>
                         </div>
                       </div>

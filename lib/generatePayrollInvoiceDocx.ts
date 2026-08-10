@@ -1,7 +1,8 @@
 import {
   AlignmentType,
+  BorderStyle,
   Document,
-  HeadingLevel,
+  ImageRun,
   Packer,
   Paragraph,
   ShadingType,
@@ -11,7 +12,11 @@ import {
   TextRun,
   WidthType,
 } from 'docx'
-import type { ProfessionalPayrollResult } from '@/lib/payrollCalculator'
+import type {
+  InvoiceLineItem,
+  PayrollRateGroup,
+  ProfessionalPayrollResult,
+} from '@/lib/payrollCalculator'
 
 export type InvoicePeriod = {
   startDate: string // YYYY-MM-DD
@@ -25,8 +30,22 @@ const CLINIC_CITY = 'Longueuil, J4J 1X5'
 const CLINIC_PHONE = 'Tél : (438) 500-1388'
 const CLINIC_BUSINESS_NUMBER = 'N° entreprise : 9523-0991 QUEBEC INC'
 
-const TABLE_COLUMN_WIDTHS = [4500, 1400, 1700, 1700]
+const COLOR_DARK = '252423'
+const COLOR_PANEL = '312B22'
+const COLOR_PANEL_ALT = '3B3328'
+const COLOR_GOLD = '5B4A1F'
+const COLOR_GOLD_LINE = 'A78343'
+const COLOR_BLUSH = 'E9C8B8'
+const COLOR_TEXT = 'F8EFE5'
+const COLOR_MUTED = 'D8C2AA'
+const COLOR_ACCENT = 'D95C2B'
+const COLOR_WHITE = 'FFFFFF'
+
+const TABLE_COLUMN_WIDTHS = [5600, 1000, 1800, 1800]
 const TABLE_WIDTH = TABLE_COLUMN_WIDTHS.reduce((sum, width) => sum + width, 0)
+const LOGO_SRC = '/psychoeducaction-logo.svg'
+
+type ParagraphAlignment = (typeof AlignmentType)[keyof typeof AlignmentType]
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat('fr-CA', {
@@ -50,7 +69,10 @@ function formatQuantity(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(2)
 }
 
-function buildInvoiceNumber(result: ProfessionalPayrollResult, period: InvoicePeriod): string {
+export function buildPayrollInvoiceNumber(
+  result: ProfessionalPayrollResult,
+  period: InvoicePeriod
+): string {
   const initials =
     result.professional.fullName
       .split(/\s+/)
@@ -60,61 +82,316 @@ function buildInvoiceNumber(result: ProfessionalPayrollResult, period: InvoicePe
   return `CMPEA-${initials}-${periodCode}`
 }
 
-function cellParagraph(
+export function buildPayrollInvoiceFileName(
+  result: ProfessionalPayrollResult,
+  period: InvoicePeriod
+): string {
+  const safeName = result.professional.fullName.replace(/[^a-z0-9]+/gi, '-')
+
+  return `Facture-${safeName}-${period.endDate}.docx`
+}
+
+function run(
   text: string,
-  options?: { bold?: boolean; alignment?: (typeof AlignmentType)[keyof typeof AlignmentType] }
+  options?: {
+    bold?: boolean
+    color?: string
+    size?: number
+    italics?: boolean
+  }
+) {
+  return new TextRun({
+    text,
+    bold: options?.bold,
+    color: options?.color ?? COLOR_TEXT,
+    size: options?.size ?? 18,
+    italics: options?.italics,
+  })
+}
+
+function paragraph(
+  children: TextRun[],
+  options?: {
+    alignment?: ParagraphAlignment
+    spacingAfter?: number
+    spacingBefore?: number
+  }
 ) {
   return new Paragraph({
     alignment: options?.alignment,
-    children: [new TextRun({ text, bold: options?.bold })],
+    spacing: {
+      before: options?.spacingBefore ?? 0,
+      after: options?.spacingAfter ?? 80,
+    },
+    children,
   })
 }
 
-function headerCell(text: string) {
+function cell(
+  children: (Paragraph | Table)[],
+  options?: {
+    fill?: string
+    width?: number
+    columnSpan?: number
+  }
+) {
   return new TableCell({
-    width: { size: 0, type: WidthType.DXA },
-    shading: { type: ShadingType.CLEAR, fill: 'EFE1D2', color: 'auto' },
-    children: [cellParagraph(text, { bold: true })],
+    width: options?.width ? { size: options.width, type: WidthType.DXA } : undefined,
+    columnSpan: options?.columnSpan,
+    shading: { type: ShadingType.CLEAR, fill: options?.fill ?? COLOR_PANEL, color: 'auto' },
+    margins: { top: 110, bottom: 110, left: 140, right: 140 },
+    borders: {
+      top: { style: BorderStyle.SINGLE, size: 1, color: COLOR_GOLD_LINE },
+      bottom: { style: BorderStyle.SINGLE, size: 1, color: COLOR_GOLD_LINE },
+      left: { style: BorderStyle.SINGLE, size: 1, color: COLOR_GOLD_LINE },
+      right: { style: BorderStyle.SINGLE, size: 1, color: COLOR_GOLD_LINE },
+    },
+    children,
   })
 }
 
-function bodyCell(text: string, alignment?: (typeof AlignmentType)[keyof typeof AlignmentType]) {
-  return new TableCell({
-    width: { size: 0, type: WidthType.DXA },
-    children: [cellParagraph(text, { alignment })],
+function emptyLine(fill = COLOR_DARK) {
+  return new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    rows: [
+      new TableRow({
+        children: [
+          cell([new Paragraph({ text: '' })], {
+            fill,
+            width: TABLE_WIDTH,
+          }),
+        ],
+      }),
+    ],
   })
 }
 
-function buildLineItemsTable(result: ProfessionalPayrollResult): Table {
+function headerCell(text: string, width: number) {
+  return cell([paragraph([run(text, { bold: true, color: COLOR_DARK, size: 16 })])], {
+    fill: COLOR_BLUSH,
+    width,
+  })
+}
+
+function bodyCell(
+  text: string,
+  width: number,
+  options?: {
+    alignment?: ParagraphAlignment
+    bold?: boolean
+    color?: string
+    fill?: string
+  }
+) {
+  return cell(
+    [
+      paragraph([run(text, { bold: options?.bold, color: options?.color ?? COLOR_TEXT })], {
+        alignment: options?.alignment,
+      }),
+    ],
+    { fill: options?.fill ?? COLOR_PANEL, width }
+  )
+}
+
+function buildInfoBox(title: string, lines: string[]): Table {
+  return new Table({
+    width: { size: TABLE_WIDTH / 2 - 220, type: WidthType.DXA },
+    rows: [
+      new TableRow({
+        children: [
+          cell([paragraph([run(title, { bold: true, color: COLOR_DARK, size: 16 })])], {
+            fill: COLOR_BLUSH,
+            width: TABLE_WIDTH / 2 - 220,
+          }),
+        ],
+      }),
+      new TableRow({
+        children: [
+          cell(
+            lines.map((line) => paragraph([run(line, { color: COLOR_TEXT })], { spacingAfter: 35 })),
+            { fill: COLOR_PANEL, width: TABLE_WIDTH / 2 - 220 }
+          ),
+        ],
+      }),
+    ],
+  })
+}
+
+function buildHeaderTable(
+  result: ProfessionalPayrollResult,
+  period: InvoicePeriod,
+  logoData: Uint8Array | null
+): Table {
+  const logoChildren = logoData
+    ? [
+        new Paragraph({
+          children: [
+            new ImageRun({
+              type: 'png',
+              data: logoData,
+              transformation: { width: 205, height: 82 },
+            }),
+          ],
+        }),
+      ]
+    : [paragraph([run(CLINIC_NAME, { bold: true, color: COLOR_BLUSH, size: 30 })])]
+
+  return new Table({
+    width: { size: TABLE_WIDTH, type: WidthType.DXA },
+    rows: [
+      new TableRow({
+        children: [
+          cell(logoChildren, { fill: COLOR_DARK, width: 5200 }),
+          cell(
+            [
+              paragraph([run('FACTURE', { bold: true, color: COLOR_BLUSH, size: 30 })], {
+                alignment: AlignmentType.RIGHT,
+                spacingAfter: 120,
+              }),
+              paragraph([run(`N° ${buildPayrollInvoiceNumber(result, period)}`, { color: COLOR_ACCENT })], {
+                alignment: AlignmentType.RIGHT,
+                spacingAfter: 40,
+              }),
+              paragraph(
+                [
+                  run(
+                    `Période : Du ${formatDateFr(period.startDate)} au ${formatDateFr(
+                      period.endDate
+                    )}`,
+                    { color: COLOR_MUTED }
+                  ),
+                ],
+                { alignment: AlignmentType.RIGHT, spacingAfter: 40 }
+              ),
+              paragraph(
+                [run(`Date d'échéance : ${formatDateFr(period.dueDate)}`, { color: COLOR_ACCENT })],
+                { alignment: AlignmentType.RIGHT, spacingAfter: 0 }
+              ),
+            ],
+            { fill: COLOR_DARK, width: 5000 }
+          ),
+        ],
+      }),
+    ],
+  })
+}
+
+function buildPartyTable(result: ProfessionalPayrollResult): Table {
+  const { professional } = result
+  const supplierLines = [
+    professional.fullName,
+    ...(professional.professionalAddress ? [professional.professionalAddress] : []),
+    ...(professional.professionalPhone ? [`Tél : ${professional.professionalPhone}`] : []),
+    ...(professional.email ? [professional.email] : []),
+    ...(professional.professionalTitle ? [professional.professionalTitle] : []),
+  ]
+
+  return new Table({
+    width: { size: TABLE_WIDTH, type: WidthType.DXA },
+    rows: [
+      new TableRow({
+        children: [
+          cell(
+            [
+              buildInfoBox('FACTURÉ À', [
+                CLINIC_NAME,
+                CLINIC_ADDRESS,
+                CLINIC_CITY,
+                CLINIC_PHONE,
+                CLINIC_BUSINESS_NUMBER,
+              ]),
+            ],
+            { fill: COLOR_DARK, width: TABLE_WIDTH / 2 }
+          ),
+          cell([buildInfoBox('FOURNISSEUR', supplierLines)], {
+            fill: COLOR_DARK,
+            width: TABLE_WIDTH / 2,
+          }),
+        ],
+      }),
+    ],
+  })
+}
+
+function buildRateTable(group: PayrollRateGroup): Table {
   const headerRow = new TableRow({
     children: ['Description du service', 'Qté', 'Prix unitaire (CAD)', 'Total (CAD)'].map(
-      (text) => headerCell(text)
+      (text, index) => headerCell(text, TABLE_COLUMN_WIDTHS[index])
     ),
   })
 
-  const itemRows = result.lineItems.map((item) => {
+  const itemRows = group.lineItems.map((item: InvoiceLineItem) => {
     const unitPrice = item.isFlatRate ? item.rate : item.amount * item.rate
 
     return new TableRow({
       children: [
-        bodyCell(item.label),
-        bodyCell(formatQuantity(item.totalHours), AlignmentType.CENTER),
-        bodyCell(formatCurrency(unitPrice), AlignmentType.RIGHT),
-        bodyCell(formatCurrency(item.totalPay), AlignmentType.RIGHT),
+        bodyCell(item.label, TABLE_COLUMN_WIDTHS[0], { bold: true }),
+        bodyCell(formatQuantity(item.totalHours), TABLE_COLUMN_WIDTHS[1], {
+          alignment: AlignmentType.CENTER,
+        }),
+        bodyCell(formatCurrency(unitPrice), TABLE_COLUMN_WIDTHS[2], {
+          alignment: AlignmentType.RIGHT,
+        }),
+        bodyCell(formatCurrency(item.totalPay), TABLE_COLUMN_WIDTHS[3], {
+          alignment: AlignmentType.RIGHT,
+          bold: true,
+        }),
       ],
     })
   })
 
-  const extraRows: TableRow[] = []
+  const totalRow = new TableRow({
+    children: [
+      bodyCell('TOTAL', TABLE_COLUMN_WIDTHS[0] + TABLE_COLUMN_WIDTHS[1] + TABLE_COLUMN_WIDTHS[2], {
+        alignment: AlignmentType.RIGHT,
+        bold: true,
+        color: COLOR_WHITE,
+        fill: COLOR_GOLD,
+      }),
+      bodyCell(formatCurrency(group.totalPay), TABLE_COLUMN_WIDTHS[3], {
+        alignment: AlignmentType.RIGHT,
+        bold: true,
+        color: COLOR_WHITE,
+        fill: COLOR_GOLD,
+      }),
+    ],
+  })
+
+  return new Table({
+    width: { size: TABLE_WIDTH, type: WidthType.DXA },
+    columnWidths: TABLE_COLUMN_WIDTHS,
+    rows: [headerRow, ...itemRows, totalRow],
+  })
+}
+
+function buildRateSection(group: PayrollRateGroup): (Paragraph | Table)[] {
+  const wording = group.isFlatRate
+    ? `Les rencontres ci-dessous sont rémunérées à ${group.label}.`
+    : `Les rencontres ci-dessous sont rémunérées à ${group.label}.`
+
+  return [
+    paragraph([run(wording, { bold: true, color: COLOR_MUTED })], {
+      spacingBefore: 240,
+      spacingAfter: 120,
+    }),
+    buildRateTable(group),
+  ]
+}
+
+function buildExtrasTable(result: ProfessionalPayrollResult): Table | null {
+  const rows: TableRow[] = []
 
   if (result.travelFeesTotal > 0) {
-    extraRows.push(
+    rows.push(
       new TableRow({
         children: [
-          bodyCell('Frais de déplacement'),
-          bodyCell('', AlignmentType.CENTER),
-          bodyCell('', AlignmentType.RIGHT),
-          bodyCell(formatCurrency(result.travelFeesTotal), AlignmentType.RIGHT),
+          bodyCell('Frais de déplacement', TABLE_COLUMN_WIDTHS[0], { bold: true }),
+          bodyCell('-', TABLE_COLUMN_WIDTHS[1], { alignment: AlignmentType.CENTER }),
+          bodyCell('-', TABLE_COLUMN_WIDTHS[2], { alignment: AlignmentType.RIGHT }),
+          bodyCell(formatCurrency(result.travelFeesTotal), TABLE_COLUMN_WIDTHS[3], {
+            alignment: AlignmentType.RIGHT,
+            bold: true,
+          }),
         ],
       })
     )
@@ -123,109 +400,305 @@ function buildLineItemsTable(result: ProfessionalPayrollResult): Table {
   if (result.cancellationCount > 0) {
     const perCancellation = result.cancellationFeesTotal / result.cancellationCount
 
-    extraRows.push(
+    rows.push(
       new TableRow({
         children: [
-          bodyCell("Frais d'annulation de rencontre"),
-          bodyCell(String(result.cancellationCount), AlignmentType.CENTER),
-          bodyCell(formatCurrency(perCancellation), AlignmentType.RIGHT),
-          bodyCell(formatCurrency(result.cancellationFeesTotal), AlignmentType.RIGHT),
+          bodyCell("Frais d'annulation de rencontre", TABLE_COLUMN_WIDTHS[0], { bold: true }),
+          bodyCell(String(result.cancellationCount), TABLE_COLUMN_WIDTHS[1], {
+            alignment: AlignmentType.CENTER,
+          }),
+          bodyCell(formatCurrency(perCancellation), TABLE_COLUMN_WIDTHS[2], {
+            alignment: AlignmentType.RIGHT,
+          }),
+          bodyCell(formatCurrency(result.cancellationFeesTotal), TABLE_COLUMN_WIDTHS[3], {
+            alignment: AlignmentType.RIGHT,
+            bold: true,
+          }),
         ],
       })
     )
   }
 
+  if (rows.length === 0) return null
+
+  const totalExtras = result.travelFeesTotal + result.cancellationFeesTotal
+
   return new Table({
     width: { size: TABLE_WIDTH, type: WidthType.DXA },
     columnWidths: TABLE_COLUMN_WIDTHS,
-    rows: [headerRow, ...itemRows, ...extraRows],
+    rows: [
+      new TableRow({
+        children: ['Description du service', 'Qté', 'Prix unitaire (CAD)', 'Total (CAD)'].map(
+          (text, index) => headerCell(text, TABLE_COLUMN_WIDTHS[index])
+        ),
+      }),
+      ...rows,
+      new TableRow({
+        children: [
+          bodyCell(
+            'TOTAL',
+            TABLE_COLUMN_WIDTHS[0] + TABLE_COLUMN_WIDTHS[1] + TABLE_COLUMN_WIDTHS[2],
+            {
+              alignment: AlignmentType.RIGHT,
+              bold: true,
+              color: COLOR_WHITE,
+              fill: COLOR_GOLD,
+            }
+          ),
+          bodyCell(formatCurrency(totalExtras), TABLE_COLUMN_WIDTHS[3], {
+            alignment: AlignmentType.RIGHT,
+            bold: true,
+            color: COLOR_WHITE,
+            fill: COLOR_GOLD,
+          }),
+        ],
+      }),
+    ],
   })
+}
+
+function buildPaymentSummary(result: ProfessionalPayrollResult, period: InvoicePeriod): Table {
+  const totalLines = result.rateGroups.map((group) =>
+    paragraph(
+      [
+        run(`${group.label} : `, { bold: true, color: COLOR_TEXT }),
+        run(formatCurrency(group.totalPay), { bold: true, color: COLOR_ACCENT }),
+      ],
+      { spacingAfter: 40 }
+    )
+  )
+
+  if (result.travelFeesTotal > 0) {
+    totalLines.push(
+      paragraph(
+        [
+          run('Frais de déplacement : ', { bold: true, color: COLOR_TEXT }),
+          run(formatCurrency(result.travelFeesTotal), { bold: true, color: COLOR_ACCENT }),
+        ],
+        { spacingAfter: 40 }
+      )
+    )
+  }
+
+  if (result.cancellationFeesTotal > 0) {
+    totalLines.push(
+      paragraph(
+        [
+          run("Frais d'annulation : ", { bold: true, color: COLOR_TEXT }),
+          run(formatCurrency(result.cancellationFeesTotal), { bold: true, color: COLOR_ACCENT }),
+        ],
+        { spacingAfter: 40 }
+      )
+    )
+  }
+
+  return new Table({
+    width: { size: TABLE_WIDTH, type: WidthType.DXA },
+    rows: [
+      new TableRow({
+        children: [
+          cell([paragraph([run('INFORMATIONS DE PAIEMENT', { bold: true, color: COLOR_DARK })])], {
+            fill: COLOR_BLUSH,
+            width: TABLE_WIDTH,
+            columnSpan: 2,
+          }),
+        ],
+      }),
+      new TableRow({
+        children: [
+          cell(
+            [
+              ...totalLines,
+              paragraph([run('Méthode : ', { bold: true }), run('Virement bancaire')], {
+                spacingAfter: 40,
+              }),
+              paragraph([run('Échéance : ', { bold: true }), run(formatDateFr(period.dueDate))], {
+                spacingAfter: 0,
+              }),
+            ],
+            { fill: COLOR_PANEL, width: 5600 }
+          ),
+          cell(
+            [
+              paragraph([run('TOTAL GÉNÉRAL', { bold: true, color: COLOR_WHITE, size: 18 })], {
+                alignment: AlignmentType.RIGHT,
+                spacingAfter: 60,
+              }),
+              paragraph([run(formatCurrency(result.grandTotal), { bold: true, color: COLOR_ACCENT, size: 26 })], {
+                alignment: AlignmentType.RIGHT,
+                spacingAfter: 0,
+              }),
+            ],
+            { fill: COLOR_PANEL_ALT, width: 4600 }
+          ),
+        ],
+      }),
+    ],
+  })
+}
+
+function buildSignatureSection(result: ProfessionalPayrollResult, period: InvoicePeriod): Table {
+  const { professional } = result
+  const title = professional.professionalTitle ?? 'Professionnel'
+
+  return new Table({
+    width: { size: TABLE_WIDTH, type: WidthType.DXA },
+    rows: [
+      new TableRow({
+        children: [
+          cell(
+            [
+              paragraph([run('Signature :', { bold: true, color: COLOR_MUTED })], {
+                spacingAfter: 260,
+              }),
+              paragraph([run('__________________________________', { color: COLOR_GOLD_LINE })], {
+                spacingAfter: 40,
+              }),
+              paragraph([run(professional.fullName, { color: COLOR_MUTED })], { spacingAfter: 0 }),
+            ],
+            { fill: COLOR_DARK, width: TABLE_WIDTH / 2 }
+          ),
+          cell(
+            [
+              paragraph(
+                [run('Date : ', { bold: true, color: COLOR_MUTED }), run(formatDateFr(period.endDate))],
+                { spacingAfter: 260 }
+              ),
+              paragraph([run('__________________________________', { color: COLOR_GOLD_LINE })], {
+                spacingAfter: 40,
+              }),
+              paragraph([run(title, { color: COLOR_MUTED })], { spacingAfter: 0 }),
+            ],
+            { fill: COLOR_DARK, width: TABLE_WIDTH / 2 }
+          ),
+        ],
+      }),
+    ],
+  })
+}
+
+function dataUrlToBytes(dataUrl: string): Uint8Array {
+  const base64 = dataUrl.split(',')[1] ?? ''
+  const binary = window.atob(base64)
+  const bytes = new Uint8Array(binary.length)
+
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index)
+  }
+
+  return bytes
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('Logo introuvable.'))
+    image.src = src
+  })
+}
+
+async function loadLogoImage(): Promise<Uint8Array | null> {
+  let objectUrl = ''
+
+  try {
+    const response = await fetch(LOGO_SRC)
+    if (!response.ok) return null
+
+    const svgText = await response.text()
+    const svgBlob = new Blob([svgText], { type: 'image/svg+xml' })
+    objectUrl = URL.createObjectURL(svgBlob)
+    const image = await loadImage(objectUrl)
+    const canvas = document.createElement('canvas')
+    const width = image.naturalWidth || 949
+    const height = image.naturalHeight || 408
+    canvas.width = width
+    canvas.height = height
+
+    const context = canvas.getContext('2d')
+    if (!context) return null
+
+    context.clearRect(0, 0, width, height)
+    context.drawImage(image, 0, 0, width, height)
+
+    return dataUrlToBytes(canvas.toDataURL('image/png'))
+  } catch {
+    return null
+  } finally {
+    if (objectUrl) URL.revokeObjectURL(objectUrl)
+  }
 }
 
 export function generatePayrollInvoiceDocument(
   result: ProfessionalPayrollResult,
-  period: InvoicePeriod
+  period: InvoicePeriod,
+  logoData: Uint8Array | null
 ): Document {
-  const { professional, grandTotal } = result
-  const professionalTitleLine = professional.professionalTitle
-    ? [new Paragraph({ text: professional.professionalTitle })]
-    : []
+  const extrasTable = buildExtrasTable(result)
 
   return new Document({
+    background: { color: COLOR_DARK },
     sections: [
       {
         properties: {
-          page: { size: { width: 12240, height: 15840 } },
+          page: {
+            size: { width: 12240, height: 15840 },
+            margin: { top: 620, right: 620, bottom: 620, left: 620 },
+          },
         },
         children: [
-          new Paragraph({ text: 'FACTURE', heading: HeadingLevel.HEADING_1 }),
-          new Paragraph({ text: `N° ${buildInvoiceNumber(result, period)}` }),
-          new Paragraph({
-            text: `Période : Du ${formatDateFr(period.startDate)} au ${formatDateFr(period.endDate)}`,
-          }),
-          new Paragraph({ text: `Date d'échéance : ${formatDateFr(period.dueDate)}` }),
-          new Paragraph({ text: '' }),
-
-          new Paragraph({ text: 'FACTURÉ À', heading: HeadingLevel.HEADING_3 }),
-          new Paragraph({ text: CLINIC_NAME }),
-          new Paragraph({ text: CLINIC_ADDRESS }),
-          new Paragraph({ text: CLINIC_CITY }),
-          new Paragraph({ text: CLINIC_PHONE }),
-          new Paragraph({ text: CLINIC_BUSINESS_NUMBER }),
-          new Paragraph({ text: '' }),
-
-          new Paragraph({ text: 'FOURNISSEUR', heading: HeadingLevel.HEADING_3 }),
-          new Paragraph({ text: professional.fullName }),
-          ...(professional.professionalAddress
-            ? [new Paragraph({ text: professional.professionalAddress })]
+          buildHeaderTable(result, period, logoData),
+          emptyLine(),
+          buildPartyTable(result),
+          ...result.rateGroups.flatMap((group) => buildRateSection(group)),
+          ...(extrasTable
+            ? [
+                paragraph([run('Frais additionnels', { bold: true, color: COLOR_MUTED })], {
+                  spacingBefore: 240,
+                  spacingAfter: 120,
+                }),
+                extrasTable,
+              ]
             : []),
-          ...(professional.professionalPhone
-            ? [new Paragraph({ text: `Tél : ${professional.professionalPhone}` })]
-            : []),
-          ...professionalTitleLine,
-          new Paragraph({ text: '' }),
-
-          buildLineItemsTable(result),
-          new Paragraph({ text: '' }),
-          new Paragraph({
-            children: [
-              new TextRun({ text: `TOTAL GÉNÉRAL : ${formatCurrency(grandTotal)}`, bold: true, size: 28 }),
+          emptyLine(),
+          buildPaymentSummary(result, period),
+          emptyLine(),
+          buildSignatureSection(result, period),
+          paragraph(
+            [
+              run(`${CLINIC_NAME} - ${CLINIC_ADDRESS}, ${CLINIC_CITY} - ${CLINIC_PHONE}`, {
+                color: COLOR_MUTED,
+                size: 14,
+              }),
             ],
-          }),
-          new Paragraph({ text: '' }),
-
-          new Paragraph({ text: 'INFORMATIONS DE PAIEMENT', heading: HeadingLevel.HEADING_3 }),
-          new Paragraph({ text: 'Méthode : Virement bancaire' }),
-          new Paragraph({ text: `Échéance : ${formatDateFr(period.dueDate)}` }),
-          new Paragraph({ text: '' }),
-          new Paragraph({ text: '' }),
-
-          new Paragraph({ text: 'Signature :' }),
-          new Paragraph({ text: '' }),
-          new Paragraph({ text: '__________________________________' }),
-          new Paragraph({
-            text: professional.professionalTitle
-              ? `${professional.fullName}, ${professional.professionalTitle}`
-              : professional.fullName,
-          }),
+            { alignment: AlignmentType.CENTER, spacingBefore: 260, spacingAfter: 0 }
+          ),
         ],
       },
     ],
   })
 }
 
+export async function createPayrollInvoiceBlob(
+  result: ProfessionalPayrollResult,
+  period: InvoicePeriod
+): Promise<Blob> {
+  const logoData = await loadLogoImage()
+  const doc = generatePayrollInvoiceDocument(result, period, logoData)
+
+  return Packer.toBlob(doc)
+}
+
 export async function downloadPayrollInvoice(
   result: ProfessionalPayrollResult,
   period: InvoicePeriod
 ): Promise<void> {
-  const doc = generatePayrollInvoiceDocument(result, period)
-  const blob = await Packer.toBlob(doc)
+  const blob = await createPayrollInvoiceBlob(result, period)
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
-  const safeName = result.professional.fullName.replace(/[^a-z0-9]+/gi, '-')
 
   link.href = url
-  link.download = `Facture-${safeName}-${period.endDate}.docx`
+  link.download = buildPayrollInvoiceFileName(result, period)
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
