@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   ClipboardList,
+  DollarSign,
   History,
   LayoutDashboard,
   ListChecks,
@@ -21,6 +22,7 @@ import {
   getUnreadCountForDirection,
   getUnreadCountForProfessional,
 } from '@/lib/internalMessages'
+import { isPayrollAuthorized } from '@/lib/payrollAccess'
 
 type UserRole = 'direction' | 'professionnel' | null
 type NavLink = {
@@ -35,6 +37,7 @@ export function AppNav() {
   const [role, setRole] = useState<UserRole>(null)
   const [profileName, setProfileName] = useState('')
   const [unreadMessageCount, setUnreadMessageCount] = useState(0)
+  const [payrollAuthorized, setPayrollAuthorized] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -58,6 +61,7 @@ export function AppNav() {
       const resolvedRole = data?.role === 'direction' ? 'direction' : 'professionnel'
       setRole(resolvedRole)
       setProfileName(data?.full_name?.trim() || data?.email?.trim() || '')
+      setPayrollAuthorized(isPayrollAuthorized({ email: user.email }, data))
 
       const unreadCount =
         resolvedRole === 'direction'
@@ -89,6 +93,9 @@ export function AppNav() {
           { href: '/direction/liste-attente', label: "Liste d'attente", icon: ListChecks },
           { href: '/direction/professionnels', label: 'Professionnels', icon: Users },
           { href: '/direction/messages', label: 'Messages', icon: MessageSquare },
+          ...(payrollAuthorized
+            ? [{ href: '/direction/paie', label: 'Paie', icon: DollarSign }]
+            : []),
           { href: '/direction/journal-audit', label: "Journal d'audit", icon: History },
           { href: '/direction/parametres', label: 'Paramètres', icon: Settings },
         ]
@@ -127,6 +134,8 @@ export function AppNav() {
                   pathname?.startsWith('/professionnel/')
                 : link.href === '/direction/messages'
                   ? pathname?.startsWith('/direction/messages')
+                : link.href === '/direction/paie'
+                  ? pathname?.startsWith('/direction/paie')
                 : link.href === '/direction/journal-audit'
                   ? pathname?.startsWith('/direction/journal-audit')
                 : pathname?.startsWith('/direction/parametres')
