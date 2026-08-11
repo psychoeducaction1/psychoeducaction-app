@@ -565,6 +565,8 @@ export default function DirectionListeAttentePage() {
     useState('')
   const [restoringWaitingListClientId, setRestoringWaitingListClientId] =
     useState('')
+  const [markingOffPlatformClientId, setMarkingOffPlatformClientId] =
+    useState('')
   const [formMessage, setFormMessage] = useState('')
   const [formError, setFormError] = useState('')
   const [waitingPage, setWaitingPage] = useState(0)
@@ -1241,6 +1243,91 @@ export default function DirectionListeAttentePage() {
       )
     )
     setFormMessage("Client remis dans la liste d'attente.")
+  }
+
+  const handleMarkOffPlatformClient = async (client: WaitingListClient) => {
+    const confirmed = window.confirm(
+      [
+        'Marquer ce client comme pris en charge hors plateforme ?',
+        '',
+        "Le client sera retiré des clients en attente et restera accessible dans l'historique.",
+        '',
+        'Aucune assignation ne sera créée.',
+      ].join('\n')
+    )
+
+    if (!confirmed) return
+
+    setFormMessage('')
+    setFormError('')
+    setMarkingOffPlatformClientId(client.id)
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+
+    if (!session?.access_token) {
+      setFormError('Session introuvable.')
+      setMarkingOffPlatformClientId('')
+      return
+    }
+
+    const response = await fetch(
+      `/api/direction/waiting-list-clients/${client.id}/mark-off-platform`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      }
+    )
+    const result = (await response.json().catch(() => null)) as
+      | { error?: string; skipped?: boolean; message?: string }
+      | null
+
+    setMarkingOffPlatformClientId('')
+
+    if (!response.ok) {
+      setFormError(
+        result?.error ??
+          'Impossible de marquer ce client comme pris en charge hors plateforme.'
+      )
+      return
+    }
+
+    if (result?.skipped) {
+      setFormMessage(result.message ?? 'Ce client est déjà retiré de la liste active.')
+      return
+    }
+
+    setClients((currentClients) =>
+      sortClientsByContactDate(
+        currentClients.map((currentClient) =>
+          currentClient.id === client.id
+            ? {
+                ...currentClient,
+                status: 'closed',
+                assigned_professional_id: null,
+                assigned_at: null,
+              }
+            : currentClient
+        )
+      )
+    )
+
+    if (assigningClientId === client.id) {
+      setAssigningClientId(null)
+      setSelectedProfessionalId('')
+      setNotifyProfessional(false)
+      setNotifyClient(false)
+    }
+
+    if (editingClientId === client.id) {
+      setEditingClientId(null)
+      setEditForm(emptyWaitingListForm)
+    }
+
+    setFormMessage('Client marqué comme pris en charge hors plateforme.')
   }
 
   const getComposerFromLabel = () =>
@@ -1963,6 +2050,18 @@ export default function DirectionListeAttentePage() {
                       >
                         Modifier
                       </button>
+                      {allowAssignment && client.status === 'waiting' && (
+                        <button
+                          type="button"
+                          className="inline-flex !min-h-8 !w-full items-center justify-center whitespace-normal rounded-xl border border-[#d6a436] bg-[#fff4c7] px-2 py-1 text-center text-xs font-semibold text-[#6b4a00] shadow-sm transition duration-200 hover:border-[#b88719] hover:bg-[#ffe79a] disabled:cursor-not-allowed disabled:opacity-60"
+                          disabled={markingOffPlatformClientId === client.id}
+                          onClick={() => void handleMarkOffPlatformClient(client)}
+                        >
+                          {markingOffPlatformClientId === client.id
+                            ? 'Traitement...'
+                            : 'Hors plateforme'}
+                        </button>
+                      )}
                       {canUseSuperAdminActions && (
                         <button
                           type="button"
