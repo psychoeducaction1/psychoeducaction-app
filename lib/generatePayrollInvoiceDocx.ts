@@ -17,6 +17,7 @@ import type {
   PayrollRateGroup,
   ProfessionalPayrollResult,
 } from '@/lib/payrollCalculator'
+import { TRAVEL_FEE_RATE_PER_KM } from '@/lib/payrollCalculator'
 
 export type InvoicePeriod = {
   startDate: string // YYYY-MM-DD
@@ -403,8 +404,12 @@ function buildExtrasTable(result: ProfessionalPayrollResult): Table | null {
       new TableRow({
         children: [
           bodyCell('Frais de déplacement', TABLE_COLUMN_WIDTHS[0], { bold: true }),
-          bodyCell('-', TABLE_COLUMN_WIDTHS[1], { alignment: AlignmentType.CENTER }),
-          bodyCell('-', TABLE_COLUMN_WIDTHS[2], { alignment: AlignmentType.RIGHT }),
+          bodyCell(formatQuantity(result.travelKilometersTotal), TABLE_COLUMN_WIDTHS[1], {
+            alignment: AlignmentType.CENTER,
+          }),
+          bodyCell(formatCurrency(TRAVEL_FEE_RATE_PER_KM), TABLE_COLUMN_WIDTHS[2], {
+            alignment: AlignmentType.RIGHT,
+          }),
           bodyCell(formatCurrency(result.travelFeesTotal), TABLE_COLUMN_WIDTHS[3], {
             alignment: AlignmentType.RIGHT,
             bold: true,

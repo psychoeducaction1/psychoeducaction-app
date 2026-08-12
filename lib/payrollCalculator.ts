@@ -46,6 +46,7 @@ const PAYROLL_CATEGORY_RATES: Record<PayrollCategory, CategoryRates> = {
 }
 
 const WEEKLY_THRESHOLD = 10
+export const TRAVEL_FEE_RATE_PER_KM = 0.64
 
 // Confirmé avec l'utilisateur : le montant réclamé au client indique lui-même le type de
 // suivi, puisque le fichier Excel source n'a pas de colonne dédiée pour ça.
@@ -105,6 +106,7 @@ export type ProfessionalPayrollResult = {
   rateGroups: PayrollRateGroup[]
   meetingCount: number
   travelFeesTotal: number
+  travelKilometersTotal: number
   cancellationCount: number
   cancellationFeesTotal: number
   grandTotal: number
@@ -126,10 +128,62 @@ function normalizeName(value: string): string {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[’'`´]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ')
 }
 
 function normalizeSearchText(value: string): string {
   return normalizeName(value).replace(/[-_]+/g, ' ')
+}
+
+function normalizeProfessionalName(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '')
+}
+
+function getProfessionalNameTokens(value: string): string[] {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+}
+
+function namesLikelyReferToSameProfessional(
+  fileName: string,
+  profileName: string
+): boolean {
+  const fileTokens = getProfessionalNameTokens(fileName)
+  const profileTokens = getProfessionalNameTokens(profileName)
+
+  if (fileTokens.length === 0 || profileTokens.length === 0) return false
+  if (fileTokens[0] !== profileTokens[0]) return false
+
+  const fileSurnameTokens = fileTokens.slice(1).filter((token) => token.length >= 3)
+  const profileSurnameTokens = profileTokens.slice(1).filter((token) => token.length >= 3)
+
+  if (fileSurnameTokens.length === 0 || profileSurnameTokens.length === 0) {
+    return false
+  }
+
+  return fileSurnameTokens.every((fileToken) =>
+    profileSurnameTokens.some(
+      (profileToken) =>
+        profileToken === fileToken ||
+        profileToken.includes(fileToken) ||
+        fileToken.includes(profileToken)
+    )
+  )
 }
 
 function rowHasNonBillableMention(row: unknown[]): boolean {
@@ -246,8 +300,28 @@ export function calculatePayroll(
 
   const professionalsByName = new Map<string, ProfessionalPayrollInfo>()
   professionals.forEach((professional) => {
-    professionalsByName.set(normalizeName(professional.fullName), professional)
+    professionalsByName.set(
+      normalizeProfessionalName(professional.fullName),
+      professional
+    )
   })
+
+  const findProfessional = (professionalNameRaw: string) => {
+    const exactMatch = professionalsByName.get(
+      normalizeProfessionalName(professionalNameRaw)
+    )
+
+    if (exactMatch) return exactMatch
+
+    const fuzzyMatches = professionals.filter((professional) =>
+      namesLikelyReferToSameProfessional(
+        professionalNameRaw,
+        professional.fullName
+      )
+    )
+
+    return fuzzyMatches.length === 1 ? fuzzyMatches[0] : null
+  }
 
   const buckets = new Map<string, ProfessionalBucket>()
   const unmatchedNamesWarned = new Set<string>()
@@ -273,10 +347,10 @@ export function calculatePayroll(
     if (!professionalNameRaw) return
     if (rowHasNonBillableMention(row)) return
 
-    const professional = professionalsByName.get(normalizeName(professionalNameRaw))
+    const professional = findProfessional(professionalNameRaw)
 
     if (!professional) {
-      const key = normalizeName(professionalNameRaw)
+      const key = normalizeProfessionalName(professionalNameRaw)
       if (!unmatchedNamesWarned.has(key)) {
         unmatchedNamesWarned.add(key)
         warnings.push({
@@ -424,6 +498,7 @@ export function calculatePayroll(
       rateGroups,
       meetingCount: rencontres.length,
       travelFeesTotal,
+      travelKilometersTotal: travelFeesTotal / TRAVEL_FEE_RATE_PER_KM,
       cancellationCount,
       cancellationFeesTotal,
       grandTotal,

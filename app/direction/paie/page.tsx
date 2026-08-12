@@ -604,7 +604,7 @@ export default function DirectionPaiePage() {
                                   [professionalResult.professional.id]: event.target.value,
                                 }))
                               }
-                              placeholder="12"
+                              placeholder="#"
                               inputMode="numeric"
                               className="w-20 rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] shadow-sm outline-none transition duration-200 focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                             />
@@ -655,7 +655,9 @@ export default function DirectionPaiePage() {
                             {professionalResult.travelFeesTotal > 0 && (
                               <tr className="border-t border-[#eadfd2]">
                                 <td className="py-1 pr-2">Frais de déplacement</td>
-                                <td className="py-1 pr-2">-</td>
+                                <td className="py-1 pr-2">
+                                  {professionalResult.travelKilometersTotal.toFixed(2)} km à 0,64 $
+                                </td>
                                 <td className="py-1 pr-2">
                                   {formatCurrency(professionalResult.travelFeesTotal)}
                                 </td>
