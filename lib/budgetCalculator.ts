@@ -40,6 +40,12 @@ export type BudgetPeriod = {
   endDate: string
 }
 
+export type BudgetDetectedPeriod = {
+  startDate: string | null
+  endDate: string | null
+  monthKeys: string[]
+}
+
 export type BudgetLineType =
   | 'rencontre'
   | 'annulation'
@@ -96,6 +102,7 @@ export type BudgetCalculationWarning = {
 export type BudgetCalculationResult = {
   professionalResults: ProfessionalBudgetResult[]
   monthlyResults: MonthlyBudgetResult[]
+  detectedPeriod: BudgetDetectedPeriod
   totals: Omit<MonthlyBudgetResult, 'monthKey'> & {
     meetingCount: number
   }
@@ -264,6 +271,37 @@ function getMonthKey(date: string | null, period?: BudgetPeriod): string {
   return sourceDate.slice(0, 7)
 }
 
+export function inferBudgetPeriod(rawRows: unknown[][]): BudgetDetectedPeriod {
+  const headerRowIndex = rawRows.findIndex(
+    (row) => typeof row[0] === 'string' && row[0].trim().toUpperCase() === 'DATE'
+  )
+
+  if (headerRowIndex === -1) {
+    return {
+      startDate: null,
+      endDate: null,
+      monthKeys: [],
+    }
+  }
+
+  const dates = rawRows
+    .slice(headerRowIndex + 1)
+    .filter((row) => !rowHasNonBillableMention(row))
+    .map((row) => parseDateCell(row[0])?.date ?? null)
+    .filter((date): date is string => Boolean(date))
+    .sort((a, b) => a.localeCompare(b))
+
+  const monthKeys = Array.from(new Set(dates.map((date) => date.slice(0, 7)))).sort(
+    (a, b) => a.localeCompare(b)
+  )
+
+  return {
+    startDate: dates[0] ?? null,
+    endDate: dates[dates.length - 1] ?? null,
+    monthKeys,
+  }
+}
+
 function getProfessionalNameKey(professional: ProfessionalPayrollInfo): string {
   return normalizeProfessionalName(professional.fullName)
 }
@@ -407,6 +445,15 @@ export function calculateBudget(
   period?: BudgetPeriod
 ): BudgetCalculationResult {
   const warnings: BudgetCalculationWarning[] = []
+  const detectedPeriod = period
+    ? {
+        startDate: period.startDate,
+        endDate: period.endDate,
+        monthKeys: Array.from(
+          new Set([period.startDate.slice(0, 7), period.endDate.slice(0, 7)])
+        ).sort((a, b) => a.localeCompare(b)),
+      }
+    : inferBudgetPeriod(rawRows)
   const headerRowIndex = rawRows.findIndex(
     (row) => typeof row[0] === 'string' && row[0].trim().toUpperCase() === 'DATE'
   )
@@ -430,6 +477,7 @@ export function calculateBudget(
         cancellationRevenue: 0,
         meetingCount: 0,
       },
+      detectedPeriod,
       warnings,
     }
   }
@@ -690,6 +738,7 @@ export function calculateBudget(
     monthlyResults: Array.from(monthlyMap.values()).sort((a, b) =>
       a.monthKey.localeCompare(b.monthKey)
     ),
+    detectedPeriod,
     totals,
     warnings,
   }
