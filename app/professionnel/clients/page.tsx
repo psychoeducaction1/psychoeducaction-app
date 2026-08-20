@@ -18,6 +18,7 @@ import {
   logAudit,
   logAssignedClientStatusChange,
   nullableText,
+  unreachableFollowupClosureReason,
   type AssignedClient,
   type AssignedClientStatus,
 } from '../shared'
@@ -243,6 +244,57 @@ export default function ProfessionnelClientsPage() {
     return syncError?.message ?? null
   }
 
+  const sendUnreachableFollowupNotification = async (client: AssignedClient) => {
+    if (
+      client.is_active !== false ||
+      client.closure_reason !== unreachableFollowupClosureReason
+    ) {
+      return
+    }
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+
+    if (!session?.access_token) return
+
+    try {
+      const response = await fetch(
+        '/api/assigned-clients/unreachable-followup-notification',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ assignedClientId: client.id }),
+        }
+      )
+
+      if (!response.ok) {
+        const result = (await response.json().catch(() => null)) as
+          | { error?: string; skipped?: boolean; reason?: string }
+          | null
+
+        console.warn('[unreachable-followup-notification] Envoi ignore:', {
+          assignedClientId: client.id,
+          status: response.status,
+          error: result?.error ?? null,
+          skipped: result?.skipped ?? false,
+          reason: result?.reason ?? null,
+        })
+      }
+    } catch (caughtError) {
+      console.warn('[unreachable-followup-notification] Erreur reseau:', {
+        assignedClientId: client.id,
+        message:
+          caughtError instanceof Error
+            ? caughtError.message
+            : 'Erreur inconnue pendant l’envoi du suivi.',
+      })
+    }
+  }
+
   const handleSaveClient = async (client: AssignedClient) => {
     setClientMessages((currentMessages) => ({ ...currentMessages, [client.id]: '' }))
     setClientErrors((currentErrors) => ({ ...currentErrors, [client.id]: '' }))
@@ -296,6 +348,7 @@ export default function ProfessionnelClientsPage() {
     }
 
     const waitingListSyncError = await syncWaitingListStatus(client)
+    void sendUnreachableFollowupNotification(client)
 
     const previousStatus =
       persistedStatusByClientIdRef.current[client.id] ?? 'not_contacted'

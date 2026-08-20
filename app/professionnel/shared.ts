@@ -50,9 +50,12 @@ export type EditableClientField =
   | 'is_active'
   | 'closure_reason'
 
+export const unreachableFollowupClosureReason =
+  'Aucune réponse après les tentatives de contact'
+
 export const closureReasonOptions = [
   '',
-  'Aucune réponse après les tentatives de contact',
+  unreachableFollowupClosureReason,
   'Client non intéressé par le service',
   'Client a trouvé un autre service',
   'Coordonnées invalides',
@@ -323,4 +326,3 @@ export function isRecentDate(value: string): boolean {
 
   return assignedDate >= sevenDaysAgo
 }
-
