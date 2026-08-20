@@ -29,6 +29,7 @@ export type AssignmentRequest = {
 }
 
 export type ProfessionalPreferences = {
+  pref_languages: string
   pref_client_types: string
   pref_modalities: string
   pref_followup_types: string
@@ -39,6 +40,7 @@ export type PreferenceField = keyof ProfessionalPreferences
 
 export type ProfilePreferencesRow = {
   role: string | null
+  pref_languages: string[] | null
   pref_client_types: string[] | null
   pref_modalities: string[] | null
   pref_followup_types: string[] | null
@@ -53,14 +55,20 @@ export type EditableClientField =
 export const unreachableFollowupClosureReason =
   'Aucune réponse après les tentatives de contact'
 
+export const otherClosureReason = 'Autre'
+
 export const closureReasonOptions = [
   '',
   unreachableFollowupClosureReason,
   'Client non intéressé par le service',
   'Client a trouvé un autre service',
   'Coordonnées invalides',
-  'Autre',
+  otherClosureReason,
 ]
+
+export const frenchLanguagePreference = 'Français'
+export const englishLanguagePreference = 'Anglais'
+export const otherLanguagePreference = 'Autre'
 
 export type AssignedClientStatus = 'not_contacted' | 'pending' | 'taken' | 'not_taken'
 
@@ -111,8 +119,60 @@ export function getFieldsForAssignedClientStatus(
   }
 }
 
+export function getClosureReasonBase(
+  closureReason: string | null | undefined
+): string {
+  const trimmedReason = closureReason?.trim() ?? ''
+  if (trimmedReason.startsWith(`${otherClosureReason} :`)) {
+    return otherClosureReason
+  }
+  return trimmedReason
+}
+
+export function getClosureReasonDetails(
+  closureReason: string | null | undefined
+): string {
+  const trimmedReason = closureReason?.trim() ?? ''
+  if (!trimmedReason.startsWith(`${otherClosureReason} :`)) {
+    return ''
+  }
+  return trimmedReason.slice(`${otherClosureReason} :`.length).trim()
+}
+
+export function buildClosureReason(baseReason: string, details: string): string {
+  const trimmedBaseReason = baseReason.trim()
+  const trimmedDetails = details.trim()
+
+  if (trimmedBaseReason !== otherClosureReason) {
+    return trimmedBaseReason
+  }
+
+  return trimmedDetails
+    ? `${otherClosureReason} : ${trimmedDetails}`
+    : otherClosureReason
+}
+
+export function getNonServiceReasonError(
+  closureReason: string | null | undefined
+): string {
+  const baseReason = getClosureReasonBase(closureReason)
+
+  if (!baseReason) {
+    return 'Veuillez indiquer le motif avant de classer ce client comme service non pris.'
+  }
+
+  if (
+    baseReason === otherClosureReason &&
+    !getClosureReasonDetails(closureReason)
+  ) {
+    return 'Veuillez préciser le motif avant de classer ce client comme service non pris.'
+  }
+
+  return ''
+}
+
 export function hasNonServiceReason(closureReason: string | null | undefined): boolean {
-  return Boolean(closureReason?.trim())
+  return getNonServiceReasonError(closureReason) === ''
 }
 
 export function nullableText(value: string | null): string | null {

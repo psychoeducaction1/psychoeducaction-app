@@ -7,14 +7,18 @@ import { Badge, buttonClass, EmptyState, PageHeader } from '@/components/ui/inde
 import { supabase } from '@/lib/supabaseClient'
 import {
   closureReasonOptions,
+  buildClosureReason,
+  getClosureReasonBase,
+  getClosureReasonDetails,
   getAssignedClientStatus,
   getAssignedClientStatusMeta,
   getFieldsForAssignedClientStatus,
   getRemainingAssignmentCount,
+  getNonServiceReasonError,
   getUsedAssignmentCount,
-  hasNonServiceReason,
   logAudit,
   logAssignedClientStatusChange,
+  otherClosureReason,
   type AssignedClientStatus,
 } from '../shared'
 
@@ -406,11 +410,15 @@ export default function ProfessionnelHistoriquePage() {
       return
     }
 
-    if (status === 'not_taken' && !hasNonServiceReason(client.closure_reason)) {
+    const nonServiceReasonError =
+      status === 'not_taken'
+        ? getNonServiceReasonError(client.closure_reason)
+        : ''
+
+    if (nonServiceReasonError) {
       setClientErrors((currentErrors) => ({
         ...currentErrors,
-        [client.id]:
-          'Veuillez indiquer le motif avant de classer ce client comme service non pris.',
+        [client.id]: nonServiceReasonError,
       }))
       return
     }
@@ -540,11 +548,33 @@ export default function ProfessionnelHistoriquePage() {
       return
     }
 
+    const isIncompleteOtherReason =
+      getClosureReasonBase(nextClosureReason) === otherClosureReason &&
+      !getClosureReasonDetails(nextClosureReason)
+    const updateClosureReasonInState = (
+      currentClient: AssignedClientHistoryRow
+    ) =>
+      currentClient.id === client.id
+        ? { ...currentClient, closure_reason: nextClosureReason || null }
+        : currentClient
+
+    if (isIncompleteOtherReason) {
+      setClients((currentClients) =>
+        currentClients.map(updateClosureReasonInState)
+      )
+      setClientErrors((currentErrors) => ({
+        ...currentErrors,
+        [client.id]:
+          'Veuillez préciser le motif avant de classer ce client comme service non pris.',
+      }))
+      return
+    }
+
     // Choisir un motif implique que le service n'a pas été pris — bascule le
     // statut automatiquement pour éviter de devoir re-sélectionner le statut
     // une seconde fois après avoir indiqué le motif.
     if (
-      nextClosureReason.trim() &&
+      getNonServiceReasonError(nextClosureReason) === '' &&
       getAssignedClientStatus(client) !== 'not_taken'
     ) {
       await handleServiceStatusChange(
@@ -571,11 +601,7 @@ export default function ProfessionnelHistoriquePage() {
     }
 
     setClients((currentClients) =>
-      currentClients.map((currentClient) =>
-        currentClient.id === client.id
-          ? { ...currentClient, closure_reason: nextClosureReason || null }
-          : currentClient
-      )
+      currentClients.map(updateClosureReasonInState)
     )
     setClientMessages((currentMessages) => ({
       ...currentMessages,
@@ -832,35 +858,75 @@ export default function ProfessionnelHistoriquePage() {
                                             </select>
                                           </label>
                                           {clientStatus !== 'taken' && (
-                                            <label
-                                              htmlFor={`closure-reason-${client.id}`}
-                                              className="mt-3 block text-xs font-medium uppercase text-[#8a6f5d]"
-                                            >
-                                              Motif de non-prise de service
-                                              <select
-                                                id={`closure-reason-${client.id}`}
-                                                value={client.closure_reason ?? ''}
-                                                onChange={(event) =>
-                                                  void handleClosureReasonChange(
-                                                    client,
-                                                    event.target.value
-                                                  )
-                                                }
-                                                disabled={
-                                                  savingClientIds[client.id] === true
-                                                }
-                                                className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm normal-case text-[#332820] outline-none transition focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd] disabled:cursor-wait disabled:bg-[#f7efe7] disabled:text-[#8a6f5d]"
+                                            <>
+                                              <label
+                                                htmlFor={`closure-reason-${client.id}`}
+                                                className="mt-3 block text-xs font-medium uppercase text-[#8a6f5d]"
                                               >
-                                                {closureReasonOptions.map((option) => (
-                                                  <option
-                                                    key={option || 'empty-reason'}
-                                                    value={option}
-                                                  >
-                                                    {option || 'Aucun motif sélectionné'}
-                                                  </option>
-                                                ))}
-                                              </select>
-                                            </label>
+                                                Motif de non-prise de service
+                                                <select
+                                                  id={`closure-reason-${client.id}`}
+                                                  value={getClosureReasonBase(
+                                                    client.closure_reason
+                                                  )}
+                                                  onChange={(event) =>
+                                                    void handleClosureReasonChange(
+                                                      client,
+                                                      buildClosureReason(
+                                                        event.target.value,
+                                                        getClosureReasonDetails(
+                                                          client.closure_reason
+                                                        )
+                                                      )
+                                                    )
+                                                  }
+                                                  disabled={
+                                                    savingClientIds[client.id] === true
+                                                  }
+                                                  className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm normal-case text-[#332820] outline-none transition focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd] disabled:cursor-wait disabled:bg-[#f7efe7] disabled:text-[#8a6f5d]"
+                                                >
+                                                  {closureReasonOptions.map((option) => (
+                                                    <option
+                                                      key={option || 'empty-reason'}
+                                                      value={option}
+                                                    >
+                                                      {option || 'Aucun motif sélectionné'}
+                                                    </option>
+                                                  ))}
+                                                </select>
+                                              </label>
+                                              {getClosureReasonBase(
+                                                client.closure_reason
+                                              ) === otherClosureReason && (
+                                                <label
+                                                  htmlFor={`closure-reason-details-${client.id}`}
+                                                  className="mt-3 block text-xs font-medium uppercase text-[#8a6f5d]"
+                                                >
+                                                  Précision obligatoire
+                                                  <textarea
+                                                    id={`closure-reason-details-${client.id}`}
+                                                    value={getClosureReasonDetails(
+                                                      client.closure_reason
+                                                    )}
+                                                    onChange={(event) =>
+                                                      void handleClosureReasonChange(
+                                                        client,
+                                                        buildClosureReason(
+                                                          otherClosureReason,
+                                                          event.target.value
+                                                        )
+                                                      )
+                                                    }
+                                                    rows={3}
+                                                    disabled={
+                                                      savingClientIds[client.id] === true
+                                                    }
+                                                    placeholder="Préciser le motif"
+                                                    className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm normal-case text-[#332820] outline-none transition focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd] disabled:cursor-wait disabled:bg-[#f7efe7] disabled:text-[#8a6f5d]"
+                                                  />
+                                                </label>
+                                              )}
+                                            </>
                                           )}
                                         </>
                                       )}

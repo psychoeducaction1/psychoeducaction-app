@@ -7,7 +7,10 @@ import { buttonClass } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
 import {
   arrayToTextareaValue,
+  englishLanguagePreference,
+  frenchLanguagePreference,
   nullableText,
+  otherLanguagePreference,
   textareaValueToArray,
   type PreferenceField,
   type ProfessionalPreferences,
@@ -17,6 +20,7 @@ import {
 export default function ProfessionnelPreferencesPage() {
   const router = useRouter()
   const [preferences, setPreferences] = useState<ProfessionalPreferences>({
+    pref_languages: frenchLanguagePreference,
     pref_client_types: '',
     pref_modalities: '',
     pref_followup_types: '',
@@ -47,7 +51,9 @@ export default function ProfessionnelPreferencesPage() {
 
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
-        .select('role, pref_client_types, pref_modalities, pref_followup_types, pref_notes')
+        .select(
+          'role, pref_languages, pref_client_types, pref_modalities, pref_followup_types, pref_notes'
+        )
         .eq('id', user.id)
         .limit(1)
         .maybeSingle()
@@ -69,6 +75,9 @@ export default function ProfessionnelPreferencesPage() {
       }
 
       setPreferences({
+        pref_languages:
+          arrayToTextareaValue(currentPreferences.pref_languages) ||
+          frenchLanguagePreference,
         pref_client_types: arrayToTextareaValue(currentPreferences.pref_client_types),
         pref_modalities: arrayToTextareaValue(currentPreferences.pref_modalities),
         pref_followup_types: arrayToTextareaValue(
@@ -89,10 +98,69 @@ export default function ProfessionnelPreferencesPage() {
     }))
   }
 
+  const getLanguageValues = (value = preferences.pref_languages) =>
+    textareaValueToArray(value)
+
+  const getOtherLanguageDetails = (value = preferences.pref_languages) => {
+    const otherLanguage = getLanguageValues(value).find((language) =>
+      language.startsWith(`${otherLanguagePreference} :`)
+    )
+
+    return otherLanguage?.slice(`${otherLanguagePreference} :`.length).trim() ?? ''
+  }
+
+  const hasOtherLanguage = (value = preferences.pref_languages) =>
+    getLanguageValues(value).some(
+      (language) =>
+        language === otherLanguagePreference ||
+        language.startsWith(`${otherLanguagePreference} :`)
+    )
+
+  const updateLanguagePreference = (language: string, checked: boolean) => {
+    const currentLanguages = getLanguageValues().filter(
+      (currentLanguage) =>
+        currentLanguage !== language &&
+        !(
+          language === otherLanguagePreference &&
+          (currentLanguage === otherLanguagePreference ||
+            currentLanguage.startsWith(`${otherLanguagePreference} :`))
+        )
+    )
+
+    if (checked) {
+      currentLanguages.push(language)
+    }
+
+    updatePreferenceField('pref_languages', currentLanguages.join(', '))
+  }
+
+  const updateOtherLanguageDetails = (details: string) => {
+    const currentLanguages = getLanguageValues().filter(
+      (language) =>
+        language !== otherLanguagePreference &&
+        !language.startsWith(`${otherLanguagePreference} :`)
+    )
+    const trimmedDetails = details.trim()
+
+    currentLanguages.push(
+      trimmedDetails
+        ? `${otherLanguagePreference} : ${trimmedDetails}`
+        : otherLanguagePreference
+    )
+
+    updatePreferenceField('pref_languages', currentLanguages.join(', '))
+  }
+
   const handleSavePreferences = async () => {
     setSavingPreferences(true)
     setPreferencesMessage('')
     setPreferencesError('')
+
+    if (hasOtherLanguage() && !getOtherLanguageDetails()) {
+      setPreferencesError('Veuillez préciser la langue lorsque vous sélectionnez Autre.')
+      setSavingPreferences(false)
+      return
+    }
 
     try {
       const {
@@ -108,6 +176,7 @@ export default function ProfessionnelPreferencesPage() {
       const { error: saveError } = await supabase
         .from('profiles')
         .update({
+          pref_languages: textareaValueToArray(preferences.pref_languages),
           pref_client_types: textareaValueToArray(preferences.pref_client_types),
           pref_modalities: textareaValueToArray(preferences.pref_modalities),
           pref_followup_types: textareaValueToArray(preferences.pref_followup_types),
@@ -121,6 +190,9 @@ export default function ProfessionnelPreferencesPage() {
       }
 
       setPreferences((currentPreferences) => ({
+        pref_languages:
+          textareaValueToArray(currentPreferences.pref_languages).join(', ') ||
+          frenchLanguagePreference,
         pref_client_types: textareaValueToArray(
           currentPreferences.pref_client_types
         ).join(', '),
@@ -178,6 +250,74 @@ export default function ProfessionnelPreferencesPage() {
               </h2>
 
               <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <div className="rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-4 md:col-span-2">
+                  <p className="text-sm font-medium text-[#5d4a3d]">
+                    Langues d&apos;intervention
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-4">
+                    <label className="flex items-center gap-2 text-sm text-[#5d4a3d]">
+                      <input
+                        type="checkbox"
+                        checked={getLanguageValues().includes(
+                          frenchLanguagePreference
+                        )}
+                        onChange={(event) =>
+                          updateLanguagePreference(
+                            frenchLanguagePreference,
+                            event.target.checked
+                          )
+                        }
+                        className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
+                      />
+                      Français
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-[#5d4a3d]">
+                      <input
+                        type="checkbox"
+                        checked={getLanguageValues().includes(
+                          englishLanguagePreference
+                        )}
+                        onChange={(event) =>
+                          updateLanguagePreference(
+                            englishLanguagePreference,
+                            event.target.checked
+                          )
+                        }
+                        className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
+                      />
+                      Anglais
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-[#5d4a3d]">
+                      <input
+                        type="checkbox"
+                        checked={hasOtherLanguage()}
+                        onChange={(event) =>
+                          updateLanguagePreference(
+                            otherLanguagePreference,
+                            event.target.checked
+                          )
+                        }
+                        className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
+                      />
+                      Autre
+                    </label>
+                  </div>
+                  {hasOtherLanguage() && (
+                    <label className="mt-3 block text-sm font-medium text-[#5d4a3d]">
+                      Préciser la langue
+                      <input
+                        type="text"
+                        value={getOtherLanguageDetails()}
+                        onChange={(event) =>
+                          updateOtherLanguageDetails(event.target.value)
+                        }
+                        placeholder="Ex. espagnol, arabe, portugais..."
+                        className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white p-3 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                      />
+                    </label>
+                  )}
+                </div>
+
                 <label className="block text-sm font-medium text-[#5d4a3d]">
                   Clientèles souhaitées
                   <textarea
@@ -186,6 +326,7 @@ export default function ProfessionnelPreferencesPage() {
                       updatePreferenceField('pref_client_types', event.target.value)
                     }
                     rows={3}
+                    placeholder="Ex. enfants, adolescents, adultes, familles, fournisseurs CNESST, IVAC"
                     className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white p-3 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                   />
                 </label>
@@ -198,6 +339,7 @@ export default function ProfessionnelPreferencesPage() {
                       updatePreferenceField('pref_modalities', event.target.value)
                     }
                     rows={3}
+                    placeholder="Ex. présentiel, télépratique, domicile, école"
                     className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white p-3 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                   />
                 </label>
@@ -210,6 +352,7 @@ export default function ProfessionnelPreferencesPage() {
                       updatePreferenceField('pref_followup_types', event.target.value)
                     }
                     rows={3}
+                    placeholder="Ex. suivi individuel, coaching parental, évaluation, intervention familiale"
                     className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white p-3 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                   />
                 </label>
@@ -222,6 +365,7 @@ export default function ProfessionnelPreferencesPage() {
                       updatePreferenceField('pref_notes', event.target.value)
                     }
                     rows={3}
+                    placeholder="Ex. disponibilités particulières, secteurs desservis, exclusions ou limites cliniques"
                     className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white p-3 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                   />
                 </label>

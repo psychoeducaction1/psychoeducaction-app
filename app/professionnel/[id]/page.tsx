@@ -32,15 +32,22 @@ import {
 import { isSuperAdmin } from "@/lib/superAdmin";
 import {
   closureReasonOptions,
+  buildClosureReason,
+  englishLanguagePreference,
+  frenchLanguagePreference,
+  getClosureReasonBase,
+  getClosureReasonDetails,
   getAssignedClientStatus,
   getAssignedClientStatusMeta,
   getAssignmentRequestMetrics,
   getFieldsForAssignedClientStatus,
+  getNonServiceReasonError,
   getServiceTakenCount,
   getUsedAssignmentCount,
-  hasNonServiceReason,
   logAudit,
   logAssignedClientStatusChange,
+  otherLanguagePreference,
+  otherClosureReason,
   unreachableFollowupClosureReason,
   type AssignedClientStatus,
 } from "../shared";
@@ -52,6 +59,7 @@ type Profile = {
   professional_title: string | null;
   professional_phone: string | null;
   professional_license_number: string | null;
+  pref_languages: string[] | null;
   pref_client_types: string[] | null;
   pref_modalities: string[] | null;
   pref_followup_types: string[] | null;
@@ -141,6 +149,7 @@ type ProfessionalProfileForm = {
   professional_title: string;
   professional_phone: string;
   professional_license_number: string;
+  pref_languages: string;
   pref_client_types: string;
   pref_modalities: string;
   pref_followup_types: string;
@@ -170,6 +179,7 @@ const emptyProfessionalProfileForm: ProfessionalProfileForm = {
   professional_title: "",
   professional_phone: "",
   professional_license_number: "",
+  pref_languages: frenchLanguagePreference,
   pref_client_types: "",
   pref_modalities: "",
   pref_followup_types: "",
@@ -441,6 +451,22 @@ function textareaValueToArray(value: string): string[] {
     .filter((item) => item.length > 0);
 }
 
+function getOtherLanguageDetails(value: string): string {
+  const otherLanguage = textareaValueToArray(value).find((language) =>
+    language.startsWith(`${otherLanguagePreference} :`),
+  );
+
+  return otherLanguage?.slice(`${otherLanguagePreference} :`.length).trim() ?? "";
+}
+
+function hasOtherLanguage(value: string): boolean {
+  return textareaValueToArray(value).some(
+    (language) =>
+      language === otherLanguagePreference ||
+      language.startsWith(`${otherLanguagePreference} :`),
+  );
+}
+
 function getTodayDate(): string {
   const today = new Date();
   const year = today.getFullYear();
@@ -600,7 +626,7 @@ export default function ProfessionnelDetailPage() {
         const profileResponse = await supabase
           .from("profiles")
           .select(
-            "id, full_name, email, professional_title, professional_phone, professional_license_number, pref_client_types, pref_modalities, pref_followup_types, pref_notes",
+            "id, full_name, email, professional_title, professional_phone, professional_license_number, pref_languages, pref_client_types, pref_modalities, pref_followup_types, pref_notes",
           )
           .eq("id", professionalId)
           .limit(1)
@@ -718,6 +744,9 @@ export default function ProfessionnelDetailPage() {
           professional_phone: loadedProfile.professional_phone ?? "",
           professional_license_number:
             loadedProfile.professional_license_number ?? "",
+          pref_languages:
+            arrayToTextareaValue(loadedProfile.pref_languages) ||
+            frenchLanguagePreference,
           pref_client_types: arrayToTextareaValue(loadedProfile.pref_client_types),
           pref_modalities: arrayToTextareaValue(loadedProfile.pref_modalities),
           pref_followup_types: arrayToTextareaValue(
@@ -787,6 +816,58 @@ export default function ProfessionnelDetailPage() {
     }));
   };
 
+  const updateProfessionalLanguagePreference = (
+    language: string,
+    checked: boolean,
+  ) => {
+    setProfessionalProfileForm((currentForm) => {
+      const currentLanguages = textareaValueToArray(
+        currentForm.pref_languages,
+      ).filter(
+        (currentLanguage) =>
+          currentLanguage !== language &&
+          !(
+            language === otherLanguagePreference &&
+            (currentLanguage === otherLanguagePreference ||
+              currentLanguage.startsWith(`${otherLanguagePreference} :`))
+          ),
+      );
+
+      if (checked) {
+        currentLanguages.push(language);
+      }
+
+      return {
+        ...currentForm,
+        pref_languages: currentLanguages.join(", "),
+      };
+    });
+  };
+
+  const updateProfessionalOtherLanguageDetails = (details: string) => {
+    setProfessionalProfileForm((currentForm) => {
+      const currentLanguages = textareaValueToArray(
+        currentForm.pref_languages,
+      ).filter(
+        (language) =>
+          language !== otherLanguagePreference &&
+          !language.startsWith(`${otherLanguagePreference} :`),
+      );
+      const trimmedDetails = details.trim();
+
+      currentLanguages.push(
+        trimmedDetails
+          ? `${otherLanguagePreference} : ${trimmedDetails}`
+          : otherLanguagePreference,
+      );
+
+      return {
+        ...currentForm,
+        pref_languages: currentLanguages.join(", "),
+      };
+    });
+  };
+
   const handleSaveProfessionalProfile = async (
     event: FormEvent<HTMLFormElement>,
   ) => {
@@ -794,6 +875,17 @@ export default function ProfessionnelDetailPage() {
     setProfessionalProfileMessage(null);
     setProfessionalProfileError(null);
     setSavingProfessionalProfile(true);
+
+    if (
+      hasOtherLanguage(professionalProfileForm.pref_languages) &&
+      !getOtherLanguageDetails(professionalProfileForm.pref_languages)
+    ) {
+      setProfessionalProfileError(
+        "Veuillez préciser la langue lorsque vous sélectionnez Autre.",
+      );
+      setSavingProfessionalProfile(false);
+      return;
+    }
 
     try {
       const { data: updatedProfile, error: updateError } = await supabase
@@ -810,6 +902,9 @@ export default function ProfessionnelDetailPage() {
           professional_license_number: nullableText(
             professionalProfileForm.professional_license_number,
           ),
+          pref_languages: textareaValueToArray(
+            professionalProfileForm.pref_languages,
+          ),
           pref_client_types: textareaValueToArray(
             professionalProfileForm.pref_client_types,
           ),
@@ -823,7 +918,7 @@ export default function ProfessionnelDetailPage() {
         })
         .eq("id", professionalId)
         .select(
-          "id, full_name, email, professional_title, professional_phone, professional_license_number, pref_client_types, pref_modalities, pref_followup_types, pref_notes",
+          "id, full_name, email, professional_title, professional_phone, professional_license_number, pref_languages, pref_client_types, pref_modalities, pref_followup_types, pref_notes",
         )
         .limit(1)
         .maybeSingle();
@@ -842,6 +937,8 @@ export default function ProfessionnelDetailPage() {
         professional_phone: nextProfile.professional_phone ?? "",
         professional_license_number:
           nextProfile.professional_license_number ?? "",
+        pref_languages:
+          arrayToTextareaValue(nextProfile.pref_languages) || frenchLanguagePreference,
         pref_client_types: arrayToTextareaValue(nextProfile.pref_client_types),
         pref_modalities: arrayToTextareaValue(nextProfile.pref_modalities),
         pref_followup_types: arrayToTextareaValue(
@@ -1834,9 +1931,14 @@ export default function ProfessionnelDetailPage() {
     client: AssignedClient,
     nextStatus: AssignedClientStatus,
   ) => {
-    if (nextStatus === "not_taken" && !hasNonServiceReason(client.closure_reason)) {
+    const nonServiceReasonError =
+      nextStatus === "not_taken"
+        ? getNonServiceReasonError(client.closure_reason)
+        : "";
+
+    if (nonServiceReasonError) {
       setClientError(
-        "Veuillez indiquer le motif avant de classer ce client comme service non pris.",
+        nonServiceReasonError,
       );
       return;
     }
@@ -2004,11 +2106,33 @@ export default function ProfessionnelDetailPage() {
     client: AssignedClient,
     nextClosureReason: string,
   ) => {
+    const isIncompleteOtherReason =
+      getClosureReasonBase(nextClosureReason) === otherClosureReason &&
+      !getClosureReasonDetails(nextClosureReason);
+    const updateClosureReasonInState = (currentClient: AssignedClient) =>
+      currentClient.id === client.id
+        ? { ...currentClient, closure_reason: nextClosureReason || null }
+        : currentClient;
+
+    if (isIncompleteOtherReason) {
+      setHistoricalClients((currentClients) =>
+        currentClients.map(updateClosureReasonInState),
+      );
+      setAssignedClients((currentClients) =>
+        currentClients.map(updateClosureReasonInState),
+      );
+      setClientMessage(null);
+      setClientError(
+        "Veuillez préciser le motif avant de classer ce client comme service non pris.",
+      );
+      return;
+    }
+
     // Choisir un motif implique que le service n'a pas été pris — bascule le
     // statut automatiquement pour éviter de devoir re-sélectionner le statut
     // une seconde fois après avoir indiqué le motif.
     if (
-      nextClosureReason.trim() &&
+      getNonServiceReasonError(nextClosureReason) === "" &&
       getAssignedClientStatus(client) !== "not_taken"
     ) {
       await handleAssignmentStatusChange(
@@ -2029,13 +2153,12 @@ export default function ProfessionnelDetailPage() {
 
       if (updateError) throw updateError;
 
-      const updateClient = (currentClient: AssignedClient) =>
-        currentClient.id === client.id
-          ? { ...currentClient, closure_reason: nextClosureReason || null }
-          : currentClient;
-
-      setHistoricalClients((currentClients) => currentClients.map(updateClient));
-      setAssignedClients((currentClients) => currentClients.map(updateClient));
+      setHistoricalClients((currentClients) =>
+        currentClients.map(updateClosureReasonInState),
+      );
+      setAssignedClients((currentClients) =>
+        currentClients.map(updateClosureReasonInState),
+      );
       setClientMessage("Motif mis à jour.");
     } catch (caughtError: unknown) {
       setClientError(getErrorMessage(caughtError));
@@ -2551,11 +2674,14 @@ export default function ProfessionnelDetailPage() {
                                 <label className="block text-sm font-medium text-[#8a6f5d]">
                                   Motif de non-prise de service
                                   <select
-                                    value={client.closure_reason ?? ""}
+                                    value={getClosureReasonBase(client.closure_reason)}
                                     onChange={(event) =>
                                       void handleClosureReasonChange(
                                         client,
-                                        event.target.value,
+                                        buildClosureReason(
+                                          event.target.value,
+                                          getClosureReasonDetails(client.closure_reason),
+                                        ),
                                       )
                                     }
                                     className="mt-1 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none transition focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
@@ -2567,6 +2693,29 @@ export default function ProfessionnelDetailPage() {
                                     ))}
                                   </select>
                                 </label>
+                                {getClosureReasonBase(client.closure_reason) ===
+                                  otherClosureReason && (
+                                  <label className="mt-3 block text-sm font-medium text-[#8a6f5d]">
+                                    Précision obligatoire
+                                    <textarea
+                                      value={getClosureReasonDetails(
+                                        client.closure_reason,
+                                      )}
+                                      onChange={(event) =>
+                                        void handleClosureReasonChange(
+                                          client,
+                                          buildClosureReason(
+                                            otherClosureReason,
+                                            event.target.value,
+                                          ),
+                                        )
+                                      }
+                                      rows={3}
+                                      placeholder="Préciser le motif"
+                                      className="mt-1 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none transition focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                                    />
+                                  </label>
+                                )}
                               </div>
                             )}
                             <div>
@@ -2960,6 +3109,14 @@ export default function ProfessionnelDetailPage() {
                 <dl className="grid gap-4 md:grid-cols-2">
                   <div>
                     <dt className="text-sm font-medium text-[#8a6f5d]">
+                      Langues d&apos;intervention
+                    </dt>
+                    <dd className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">
+                      {formatText(profile.pref_languages)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-[#8a6f5d]">
                       Clientèles souhaitées
                     </dt>
                     <dd className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">
@@ -3079,6 +3236,80 @@ export default function ProfessionnelDetailPage() {
                       />
                     </label>
 
+                    <div className="rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-4 md:col-span-2">
+                      <p className="text-sm font-medium text-[#5d4a3d]">
+                        Langues d&apos;intervention
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-4">
+                        <label className="flex items-center gap-2 text-sm text-[#5d4a3d]">
+                          <input
+                            type="checkbox"
+                            checked={textareaValueToArray(
+                              professionalProfileForm.pref_languages,
+                            ).includes(frenchLanguagePreference)}
+                            onChange={(event) =>
+                              updateProfessionalLanguagePreference(
+                                frenchLanguagePreference,
+                                event.target.checked,
+                              )
+                            }
+                            className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
+                          />
+                          Français
+                        </label>
+                        <label className="flex items-center gap-2 text-sm text-[#5d4a3d]">
+                          <input
+                            type="checkbox"
+                            checked={textareaValueToArray(
+                              professionalProfileForm.pref_languages,
+                            ).includes(englishLanguagePreference)}
+                            onChange={(event) =>
+                              updateProfessionalLanguagePreference(
+                                englishLanguagePreference,
+                                event.target.checked,
+                              )
+                            }
+                            className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
+                          />
+                          Anglais
+                        </label>
+                        <label className="flex items-center gap-2 text-sm text-[#5d4a3d]">
+                          <input
+                            type="checkbox"
+                            checked={hasOtherLanguage(
+                              professionalProfileForm.pref_languages,
+                            )}
+                            onChange={(event) =>
+                              updateProfessionalLanguagePreference(
+                                otherLanguagePreference,
+                                event.target.checked,
+                              )
+                            }
+                            className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
+                          />
+                          Autre
+                        </label>
+                      </div>
+                      {hasOtherLanguage(professionalProfileForm.pref_languages) && (
+                        <label className="mt-3 block text-sm font-medium text-[#5d4a3d]">
+                          Préciser la langue
+                          <input
+                            type="text"
+                            value={getOtherLanguageDetails(
+                              professionalProfileForm.pref_languages,
+                            )}
+                            onChange={(event) =>
+                              updateProfessionalOtherLanguageDetails(
+                                event.target.value,
+                              )
+                            }
+                            placeholder="Ex. espagnol, arabe, portugais..."
+                            className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                          />
+                        </label>
+                      )}
+                    </div>
+
                     <label className="block text-sm font-medium text-[#5d4a3d]">
                       Clientèles souhaitées
                       <textarea
@@ -3090,6 +3321,7 @@ export default function ProfessionnelDetailPage() {
                           )
                         }
                         rows={3}
+                        placeholder="Ex. enfants, adolescents, adultes, familles, fournisseurs CNESST, IVAC"
                         className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                       />
                     </label>
@@ -3105,6 +3337,7 @@ export default function ProfessionnelDetailPage() {
                           )
                         }
                         rows={3}
+                        placeholder="Ex. présentiel, télépratique, domicile, école"
                         className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                       />
                     </label>
@@ -3120,6 +3353,7 @@ export default function ProfessionnelDetailPage() {
                           )
                         }
                         rows={3}
+                        placeholder="Ex. suivi individuel, coaching parental, évaluation, intervention familiale"
                         className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                       />
                     </label>
@@ -3135,6 +3369,7 @@ export default function ProfessionnelDetailPage() {
                           )
                         }
                         rows={3}
+                        placeholder="Ex. disponibilités particulières, secteurs desservis, exclusions ou limites cliniques"
                         className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
                       />
                     </label>

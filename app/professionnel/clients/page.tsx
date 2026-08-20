@@ -7,17 +7,21 @@ import { EmptyState } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
 import {
   closureReasonOptions,
+  buildClosureReason,
+  getClosureReasonBase,
+  getClosureReasonDetails,
   getAssignedClientStatus,
   getAssignedClientStatusMeta,
   getAssignmentRequestMetrics,
   getFieldsForAssignedClientStatus,
   getRemainingAssignmentCount,
+  getNonServiceReasonError,
   getServiceTakenCount,
   getUsedAssignmentCount,
-  hasNonServiceReason,
   logAudit,
   logAssignedClientStatusChange,
   nullableText,
+  otherClosureReason,
   unreachableFollowupClosureReason,
   type AssignedClient,
   type AssignedClientStatus,
@@ -307,14 +311,15 @@ export default function ProfessionnelClientsPage() {
       return
     }
 
-    if (
-      getAssignedClientStatus(client) === 'not_taken' &&
-      !hasNonServiceReason(client.closure_reason)
-    ) {
+    const nonServiceReasonError =
+      getAssignedClientStatus(client) === 'not_taken'
+        ? getNonServiceReasonError(client.closure_reason)
+        : ''
+
+    if (nonServiceReasonError) {
       setClientErrors((currentErrors) => ({
         ...currentErrors,
-        [client.id]:
-          'Veuillez indiquer le motif avant de classer ce client comme service non pris.',
+        [client.id]: nonServiceReasonError,
       }))
       return
     }
@@ -505,11 +510,15 @@ export default function ProfessionnelClientsPage() {
     client: AssignedClient,
     status: AssignedClientStatus
   ) => {
-    if (status === 'not_taken' && !hasNonServiceReason(client.closure_reason)) {
+    const nonServiceReasonError =
+      status === 'not_taken'
+        ? getNonServiceReasonError(client.closure_reason)
+        : ''
+
+    if (nonServiceReasonError) {
       setClientErrors((currentErrors) => ({
         ...currentErrors,
-        [client.id]:
-          'Veuillez indiquer le motif avant de classer ce client comme service non pris.',
+        [client.id]: nonServiceReasonError,
       }))
       return
     }
@@ -536,7 +545,7 @@ export default function ProfessionnelClientsPage() {
     // Choisir un motif implique que le service n'a pas été pris — bascule le
     // statut automatiquement pour éviter de devoir re-sélectionner le statut
     // une seconde fois après avoir indiqué le motif.
-    const statusFields = reason.trim()
+    const statusFields = getNonServiceReasonError(reason) === ''
       ? getFieldsForAssignedClientStatus('not_taken')
       : {}
     const nextClient = { ...currentClient, closure_reason: reason, ...statusFields }
@@ -636,9 +645,15 @@ export default function ProfessionnelClientsPage() {
         <label className="block text-xs font-medium text-[#5d4a3d]">
           Motif de non-prise de service
           <select
-            value={client.closure_reason ?? ''}
+            value={getClosureReasonBase(client.closure_reason)}
             onChange={(event) =>
-              updateClientClosureReason(client, event.target.value)
+              updateClientClosureReason(
+                client,
+                buildClosureReason(
+                  event.target.value,
+                  getClosureReasonDetails(client.closure_reason)
+                )
+              )
             }
             className="mt-1 w-full rounded-xl border border-[#dfd0bf] bg-white px-2 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
           >
@@ -649,6 +664,23 @@ export default function ProfessionnelClientsPage() {
             ))}
           </select>
         </label>
+        {getClosureReasonBase(client.closure_reason) === otherClosureReason && (
+          <label className="block text-xs font-medium text-[#5d4a3d]">
+            Précision obligatoire
+            <textarea
+              value={getClosureReasonDetails(client.closure_reason)}
+              onChange={(event) =>
+                updateClientClosureReason(
+                  client,
+                  buildClosureReason(otherClosureReason, event.target.value)
+                )
+              }
+              rows={3}
+              placeholder="Préciser le motif"
+              className="mt-1 w-full rounded-xl border border-[#dfd0bf] bg-white px-2 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+            />
+          </label>
+        )}
       </div>
     ) : null
 
