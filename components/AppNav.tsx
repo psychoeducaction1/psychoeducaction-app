@@ -5,6 +5,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
+  CalendarDays,
   ClipboardList,
   ChartPie,
   DollarSign,
@@ -100,6 +101,15 @@ export function AppNav() {
           ...(payrollAuthorized
             ? [{ href: '/direction/paie', label: 'Paie', icon: DollarSign }]
             : []),
+          ...(payrollAuthorized
+            ? [
+                {
+                  href: '/direction/paie-adjointes',
+                  label: 'Paie adjointes',
+                  icon: CalendarDays,
+                },
+              ]
+            : []),
           ...(budgetAuthorized
             ? [{ href: '/direction/budget', label: 'Budget', icon: ChartPie }]
             : []),
@@ -141,8 +151,10 @@ export function AppNav() {
                   pathname?.startsWith('/professionnel/')
                 : link.href === '/direction/messages'
                   ? pathname?.startsWith('/direction/messages')
+                : link.href === '/direction/paie-adjointes'
+                  ? pathname?.startsWith('/direction/paie-adjointes')
                 : link.href === '/direction/paie'
-                  ? pathname?.startsWith('/direction/paie')
+                  ? pathname === '/direction/paie'
                 : link.href === '/direction/budget'
                   ? pathname?.startsWith('/direction/budget')
                 : link.href === '/direction/journal-audit'
