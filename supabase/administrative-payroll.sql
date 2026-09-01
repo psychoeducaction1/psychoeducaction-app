@@ -102,6 +102,33 @@ as $$
   )
 $$;
 
+create or replace function public.is_administrative_payroll_manager()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.role = 'direction'
+      and (
+        lower(auth.jwt() ->> 'email') = 'contact@psychoeducaction.com'
+        or not exists (
+          select 1
+          from public.administrative_staff s
+          where s.is_active is true
+            and (
+              s.profile_id = auth.uid()
+              or lower(s.email) = lower(auth.jwt() ->> 'email')
+            )
+        )
+      )
+  )
+$$;
+
 create or replace function public.is_current_administrative_staff(
   target_staff_id uuid
 )
@@ -124,9 +151,13 @@ as $$
 $$;
 
 revoke all on function public.is_administrative_payroll_direction() from public;
+revoke all on function public.is_administrative_payroll_manager() from public;
 revoke all on function public.is_current_administrative_staff(uuid) from public;
 
 grant execute on function public.is_administrative_payroll_direction()
+to authenticated;
+
+grant execute on function public.is_administrative_payroll_manager()
 to authenticated;
 
 grant execute on function public.is_current_administrative_staff(uuid)
@@ -158,7 +189,7 @@ on public.administrative_staff
 for select
 to authenticated
 using (
-  public.is_administrative_payroll_direction()
+  public.is_administrative_payroll_manager()
   or profile_id = auth.uid()
   or lower(email) = lower(auth.jwt() ->> 'email')
 );
@@ -167,8 +198,8 @@ create policy "administrative_staff_write_direction"
 on public.administrative_staff
 for all
 to authenticated
-using (public.is_administrative_payroll_direction())
-with check (public.is_administrative_payroll_direction());
+using (public.is_administrative_payroll_manager())
+with check (public.is_administrative_payroll_manager());
 
 create policy "morocco_holidays_select_authenticated"
 on public.morocco_holidays
@@ -180,15 +211,15 @@ create policy "morocco_holidays_write_direction"
 on public.morocco_holidays
 for all
 to authenticated
-using (public.is_administrative_payroll_direction())
-with check (public.is_administrative_payroll_direction());
+using (public.is_administrative_payroll_manager())
+with check (public.is_administrative_payroll_manager());
 
 create policy "administrative_time_entries_select_direction_or_self"
 on public.administrative_time_entries
 for select
 to authenticated
 using (
-  public.is_administrative_payroll_direction()
+  public.is_administrative_payroll_manager()
   or public.is_current_administrative_staff(staff_id)
 );
 
@@ -197,7 +228,7 @@ on public.administrative_time_entries
 for insert
 to authenticated
 with check (
-  public.is_administrative_payroll_direction()
+  public.is_administrative_payroll_manager()
   or public.is_current_administrative_staff(staff_id)
 );
 
@@ -206,11 +237,11 @@ on public.administrative_time_entries
 for update
 to authenticated
 using (
-  public.is_administrative_payroll_direction()
+  public.is_administrative_payroll_manager()
   or public.is_current_administrative_staff(staff_id)
 )
 with check (
-  public.is_administrative_payroll_direction()
+  public.is_administrative_payroll_manager()
   or public.is_current_administrative_staff(staff_id)
 );
 
@@ -218,7 +249,7 @@ create policy "administrative_time_entries_delete_direction"
 on public.administrative_time_entries
 for delete
 to authenticated
-using (public.is_administrative_payroll_direction());
+using (public.is_administrative_payroll_manager());
 
 insert into public.administrative_staff (
   full_name,
@@ -240,7 +271,8 @@ values
       {"weekday": 2, "startTime": "08:00", "endTime": "12:00"},
       {"weekday": 3, "startTime": "08:00", "endTime": "12:00"},
       {"weekday": 4, "startTime": "08:00", "endTime": "12:00"},
-      {"weekday": 5, "startTime": "08:00", "endTime": "12:00"}
+      {"weekday": 5, "startTime": "08:00", "endTime": "12:00"},
+      {"weekday": 6, "startTime": "12:00", "endTime": "12:00"}
     ]'::jsonb
   ),
   (

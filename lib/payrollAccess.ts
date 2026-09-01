@@ -5,6 +5,11 @@ export const PAYROLL_ACCESS_EMAILS = [
   'hrahajar@gmail.com',
 ]
 
+export const ADMINISTRATIVE_PAYROLL_ACCESS_EMAILS = [
+  'contact@psychoeducaction.com',
+  'hrahajar@gmail.com',
+]
+
 export type PayrollAccessUser = {
   email?: string | null
 }
@@ -24,5 +29,16 @@ export function isPayrollAuthorized(
   return (
     PAYROLL_ACCESS_EMAILS.includes(normalizedEmail) &&
     (!profile || profile.role === 'direction')
+  )
+}
+
+export function isAdministrativePayrollAuthorized(
+  user: PayrollAccessUser | null | undefined,
+  profile?: PayrollAccessProfile | null
+): boolean {
+  if (isSuperAdmin(user, profile)) return true
+
+  return ADMINISTRATIVE_PAYROLL_ACCESS_EMAILS.includes(
+    normalizeEmail(user?.email)
   )
 }

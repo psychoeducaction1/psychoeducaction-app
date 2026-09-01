@@ -27,6 +27,7 @@ import {
   getMonthDateRange,
   getMonthKey,
   getPlannedHours,
+  getScheduleForDate,
   roundMoney,
   type AdministrativeEntryType,
   type AdministrativePayrollRow,
@@ -61,6 +62,12 @@ type TimeEntryRow = {
   entry_type: AdministrativeEntryType
   hours: number | null
   note: string | null
+}
+
+type ProfileRow = {
+  role?: string | null
+  full_name?: string | null
+  email?: string | null
 }
 
 function normalizeSchedule(value: unknown): AdministrativeStaff['default_schedule'] {
@@ -119,12 +126,13 @@ function getEntryKey(staffId: string, dateValue: string): string {
   return `${staffId}:${dateValue}`
 }
 
-function isStaffUser(
+function getStaffForUser(
   staff: AdministrativeStaff[],
   user: { id: string; email?: string | null }
-): boolean {
+): AdministrativeStaff[] {
   const userEmail = user.email?.trim().toLowerCase() ?? ''
-  return staff.some(
+
+  return staff.filter(
     (staffMember) =>
       staffMember.profile_id === user.id ||
       staffMember.email?.trim().toLowerCase() === userEmail
@@ -178,6 +186,7 @@ export default function DirectionAdministrativePayrollPage() {
     }
 
     const { startDate, endDate } = getMonthDateRange(monthKey)
+    const yearStartDate = `${monthKey.split('-')[0]}-01-01`
 
     const { data: staffData, error: staffError } = await supabase
       .from('administrative_staff')
@@ -194,22 +203,25 @@ export default function DirectionAdministrativePayrollPage() {
     }
 
     const normalizedStaff = ((staffData ?? []) as StaffRow[]).map(normalizeStaff)
-    const isDirection = profile?.role === 'direction'
-    const isAllowedStaff = isStaffUser(normalizedStaff, user)
+    const resolvedProfile = profile as ProfileRow | null
+    const isDirection = resolvedProfile?.role === 'direction'
+    const isCurrentUserSuperAdmin = isSuperAdmin(
+      { email: user.email },
+      resolvedProfile
+    )
+    const ownStaff = getStaffForUser(normalizedStaff, user)
+    const isAllowedStaff = ownStaff.length > 0
 
     if (!isDirection && !isAllowedStaff) {
       router.push('/')
       return
     }
 
-    const visibleStaff = isDirection
+    const visibleStaff = isDirection && !isAllowedStaff
       ? normalizedStaff
-      : normalizedStaff.filter(
-          (staffMember) =>
-            staffMember.profile_id === user.id ||
-            staffMember.email?.trim().toLowerCase() ===
-              user.email?.trim().toLowerCase()
-        )
+      : isCurrentUserSuperAdmin
+        ? normalizedStaff
+        : ownStaff
 
     const staffIds = visibleStaff.map((staffMember) => staffMember.id)
 
@@ -227,7 +239,7 @@ export default function DirectionAdministrativePayrollPage() {
               'id, staff_id, work_date, start_time, end_time, break_minutes, entry_type, hours, note'
             )
             .in('staff_id', staffIds)
-            .gte('work_date', startDate)
+            .gte('work_date', yearStartDate)
             .lte('work_date', endDate)
             .order('work_date')
         : Promise.resolve({ data: [], error: null }),
@@ -255,7 +267,7 @@ export default function DirectionAdministrativePayrollPage() {
         ])
       )
     )
-    setCanEditAll(isSuperAdmin({ email: user.email }, profile) || isDirection)
+    setCanEditAll(isCurrentUserSuperAdmin || (isDirection && !isAllowedStaff))
     setCurrentUserId(user.id)
     setCurrentUserEmail(user.email ?? '')
     setLoading(false)
@@ -295,6 +307,62 @@ export default function DirectionAdministrativePayrollPage() {
     return plannedHoursByStaff
   }, [monthKey, staff])
 
+  const vacationBalanceByStaffId = useMemo(() => {
+    const [yearValue] = monthKey.split('-').map(Number)
+    const year = Number.isFinite(yearValue) ? yearValue : new Date().getFullYear()
+    const { endDate } = getMonthDateRange(monthKey)
+    const yearStartDate = `${year}-01-01`
+    const yearEndDate = `${year}-12-31`
+    const yearDates = getDatesInRange(yearStartDate, yearEndDate)
+    const accruedDates = getDatesInRange(yearStartDate, endDate)
+    const entries = Object.values(entriesByKey)
+    const balances = new Map<
+      string,
+      {
+        accruedHours: number
+        usedHours: number
+        remainingHours: number
+      }
+    >()
+
+    staff.forEach((staffMember) => {
+      const annualPlannedHours = yearDates.reduce(
+        (sum, dateValue) => sum + getPlannedHours(staffMember, dateValue),
+        0
+      )
+      const annualPlannedDays = yearDates.filter(
+        (dateValue) => getPlannedHours(staffMember, dateValue) > 0
+      ).length
+      const accruedPlannedHours = accruedDates.reduce(
+        (sum, dateValue) => sum + getPlannedHours(staffMember, dateValue),
+        0
+      )
+      const averagePlannedDayHours =
+        annualPlannedDays > 0 ? annualPlannedHours / annualPlannedDays : 0
+      const annualVacationHours =
+        Number(staffMember.vacation_days_per_year ?? 0) * averagePlannedDayHours
+      const accruedHours =
+        annualPlannedHours > 0
+          ? annualVacationHours * (accruedPlannedHours / annualPlannedHours)
+          : 0
+      const usedHours = entries
+        .filter(
+          (entry) =>
+            entry.staff_id === staffMember.id &&
+            entry.entry_type === 'vacation_paid'
+        )
+        .reduce((sum, entry) => sum + Number(entry.hours ?? 0), 0)
+
+      balances.set(staffMember.id, {
+        accruedHours: roundMoney(accruedHours),
+        usedHours: roundMoney(usedHours),
+        remainingHours: roundMoney(Math.max(accruedHours - usedHours, 0)),
+      })
+    })
+
+    return balances
+  }, [entriesByKey, monthKey, staff])
+
   const effectiveHourlyRateByStaffId = useMemo(() => {
     const rates = new Map<string, number>()
 
@@ -322,11 +390,14 @@ export default function DirectionAdministrativePayrollPage() {
     staff.forEach((staffMember) => {
       dates.forEach((dateValue) => {
         const holidayName = holidaysByDate.get(dateValue) ?? null
+        const schedule = getScheduleForDate(staffMember, dateValue)
         const plannedHours = getPlannedHours(staffMember, dateValue)
         const existingEntry =
           entriesByKey[getEntryKey(staffMember.id, dateValue)] ?? null
 
-        if (!existingEntry && plannedHours <= 0 && !holidayName) return
+        if (!existingEntry && !schedule && plannedHours <= 0 && !holidayName) {
+          return
+        }
 
         const entry =
           existingEntry ??
@@ -359,7 +430,7 @@ export default function DirectionAdministrativePayrollPage() {
         workedHours: number
         payableHours: number
         amount: number
-        vacationDaysUsed: number
+        vacationHoursUsed: number
         holidaysWorked: number
       }
     >()
@@ -373,7 +444,7 @@ export default function DirectionAdministrativePayrollPage() {
           workedHours: 0,
           payableHours: 0,
           amount: 0,
-          vacationDaysUsed: 0,
+          vacationHoursUsed: 0,
           holidaysWorked: 0,
         }
 
@@ -381,29 +452,37 @@ export default function DirectionAdministrativePayrollPage() {
       current.workedHours += Number(row.hours ?? 0)
       current.payableHours += row.payableHours
       current.amount += row.amount
-      current.vacationDaysUsed += row.entry_type === 'vacation_paid' ? 1 : 0
+      current.vacationHoursUsed +=
+        row.entry_type === 'vacation_paid' ? Number(row.hours ?? 0) : 0
       current.holidaysWorked += row.entry_type === 'holiday_worked' ? 1 : 0
       byStaff.set(row.staff.id, current)
     })
 
-    return Array.from(byStaff.values()).map((total) => ({
-      ...total,
-      amount: roundMoney(total.amount),
-      vacationDaysRemaining: Math.max(
-        Number(total.staff.vacation_days_per_year ?? 0) -
-          total.vacationDaysUsed,
-        0
-      ),
-    }))
-  }, [payrollRows])
+    return Array.from(byStaff.values()).map((total) => {
+      const vacationBalance = vacationBalanceByStaffId.get(total.staff.id) ?? {
+        accruedHours: 0,
+        usedHours: 0,
+        remainingHours: 0,
+      }
+
+      return {
+        ...total,
+        amount: roundMoney(total.amount),
+        vacationHoursUsed: roundMoney(total.vacationHoursUsed),
+        vacationHoursAccruedYear: vacationBalance.accruedHours,
+        vacationHoursUsedYear: vacationBalance.usedHours,
+        vacationHoursRemaining: vacationBalance.remainingHours,
+      }
+    })
+  }, [payrollRows, vacationBalanceByStaffId])
 
   const grandTotal = totals.reduce((sum, total) => sum + total.amount, 0)
   const grandPayableHours = totals.reduce(
     (sum, total) => sum + total.payableHours,
     0
   )
-  const vacationDaysUsed = totals.reduce(
-    (sum, total) => sum + total.vacationDaysUsed,
+  const vacationHoursUsed = totals.reduce(
+    (sum, total) => sum + total.vacationHoursUsed,
     0
   )
   const payrollRowsByStaff = totals.map((total) => ({
@@ -698,9 +777,9 @@ export default function DirectionAdministrativePayrollPage() {
                   helper="Inclut les fériés travaillés à double"
                 />
                 <StatCard
-                  label="Congés utilisés"
-                  value={vacationDaysUsed}
-                  helper="Jours de vacances payées dans le mois"
+                  label="Vacances utilisées"
+                  value={`${roundMoney(vacationHoursUsed).toFixed(2)} h`}
+                  helper="Heures de vacances payées dans le mois"
                 />
               </div>
 
@@ -751,11 +830,18 @@ export default function DirectionAdministrativePayrollPage() {
                           </div>
                           <div>
                             <dt className="font-medium text-[#8a6f5d]">
+                              Vacances cumulées
+                            </dt>
+                            <dd className="mt-1 text-[#332820]">
+                              {total.vacationHoursAccruedYear.toFixed(2)} h
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="font-medium text-[#8a6f5d]">
                               Vacances utilisées
                             </dt>
                             <dd className="mt-1 text-[#332820]">
-                              {total.vacationDaysUsed} /{' '}
-                              {total.staff.vacation_days_per_year}
+                              {total.vacationHoursUsedYear.toFixed(2)} h
                             </dd>
                           </div>
                           <div>
@@ -763,7 +849,7 @@ export default function DirectionAdministrativePayrollPage() {
                               Vacances restantes
                             </dt>
                             <dd className="mt-1 text-[#332820]">
-                              {total.vacationDaysRemaining}
+                              {total.vacationHoursRemaining.toFixed(2)} h
                             </dd>
                           </div>
                         </dl>
@@ -806,8 +892,7 @@ export default function DirectionAdministrativePayrollPage() {
                               {total.payableHours.toFixed(2)} h payables
                             </Badge>
                             <Badge tone="warning">
-                              {total.vacationDaysUsed} congé
-                              {total.vacationDaysUsed > 1 ? 's' : ''}
+                              {total.vacationHoursUsed.toFixed(2)} h vacances
                             </Badge>
                           </div>
                         </div>

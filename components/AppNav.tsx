@@ -24,7 +24,10 @@ import {
   getUnreadCountForDirection,
   getUnreadCountForProfessional,
 } from '@/lib/internalMessages'
-import { isPayrollAuthorized } from '@/lib/payrollAccess'
+import {
+  isAdministrativePayrollAuthorized,
+  isPayrollAuthorized,
+} from '@/lib/payrollAccess'
 import { isSuperAdmin } from '@/lib/superAdmin'
 
 type UserRole = 'direction' | 'professionnel' | null
@@ -41,6 +44,8 @@ export function AppNav() {
   const [profileName, setProfileName] = useState('')
   const [unreadMessageCount, setUnreadMessageCount] = useState(0)
   const [payrollAuthorized, setPayrollAuthorized] = useState(false)
+  const [administrativePayrollAuthorized, setAdministrativePayrollAuthorized] =
+    useState(false)
   const [budgetAuthorized, setBudgetAuthorized] = useState(false)
 
   useEffect(() => {
@@ -66,6 +71,9 @@ export function AppNav() {
       setRole(resolvedRole)
       setProfileName(data?.full_name?.trim() || data?.email?.trim() || '')
       setPayrollAuthorized(isPayrollAuthorized({ email: user.email }, data))
+      setAdministrativePayrollAuthorized(
+        isAdministrativePayrollAuthorized({ email: user.email }, data)
+      )
       setBudgetAuthorized(isSuperAdmin({ email: user.email }, data))
 
       const unreadCount =
@@ -101,7 +109,7 @@ export function AppNav() {
           ...(payrollAuthorized
             ? [{ href: '/direction/paie', label: 'Paie', icon: DollarSign }]
             : []),
-          ...(payrollAuthorized
+          ...(administrativePayrollAuthorized
             ? [
                 {
                   href: '/direction/paie-adjointes',
@@ -124,6 +132,15 @@ export function AppNav() {
             { href: '/professionnel/messages', label: 'Messages', icon: MessageSquare },
             { href: '/professionnel/historique', label: 'Historique', icon: History },
             { href: '/professionnel/preferences', label: 'Mes préférences', icon: Settings },
+            ...(administrativePayrollAuthorized
+              ? [
+                  {
+                    href: '/direction/paie-adjointes',
+                    label: 'Paie adjointes',
+                    icon: CalendarDays,
+                  },
+                ]
+              : []),
           ]
         : []
 
