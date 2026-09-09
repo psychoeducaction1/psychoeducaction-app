@@ -537,6 +537,16 @@ export default function ProfessionnelDetailPage() {
   const [assignedClientsPage, setAssignedClientsPage] = useState(0);
   const [deletingAssignmentRequest, setDeletingAssignmentRequest] =
     useState(false);
+  const [creatingAssignmentRequest, setCreatingAssignmentRequest] =
+    useState(false);
+  const [superAdminRequestedCount, setSuperAdminRequestedCount] = useState(1);
+  const [superAdminRequestComment, setSuperAdminRequestComment] = useState("");
+  const [superAdminRequestMessage, setSuperAdminRequestMessage] = useState<
+    string | null
+  >(null);
+  const [superAdminRequestError, setSuperAdminRequestError] = useState<
+    string | null
+  >(null);
   const [deletingAssignedClientId, setDeletingAssignedClientId] = useState("");
   const [resendingProfessionalEmailId, setResendingProfessionalEmailId] =
     useState("");
@@ -1472,6 +1482,176 @@ export default function ProfessionnelDetailPage() {
       setClientError(getErrorMessage(caughtError));
     } finally {
       setDeletingAssignmentRequest(false);
+    }
+  };
+
+  const handleUpsertAssignmentRequest = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!canUseSuperAdminActions) return;
+
+    const normalizedRequestedCount = Math.max(
+      0,
+      Math.trunc(superAdminRequestedCount || 0),
+    );
+
+    if (normalizedRequestedCount <= 0) {
+      setSuperAdminRequestMessage(null);
+      setSuperAdminRequestError(
+        "Veuillez indiquer au moins une assignation demandée.",
+      );
+      return;
+    }
+
+    setSuperAdminRequestMessage(null);
+    setSuperAdminRequestError(null);
+    setCreatingAssignmentRequest(true);
+
+    try {
+      const { data: existingRequests, error: existingRequestsError } =
+        await supabase
+          .from("assignment_requests")
+          .select(
+            "id, is_active, requested_count, assigned_count, remaining_count, created_at",
+          )
+          .eq("professional_id", professionalId)
+          .eq("is_active", true)
+          .gt("requested_count", 0)
+          .order("created_at", { ascending: false });
+
+      if (existingRequestsError) throw existingRequestsError;
+
+      const existingActiveRequest =
+        assignmentRequest ??
+        ((existingRequests ?? []) as AssignmentRequest[]).find((request) => {
+          const requested = Math.max(request.requested_count ?? 0, 0);
+          const accepted = Math.max(request.assigned_count ?? 0, 0);
+
+          return requested > 0 && accepted < requested;
+        }) ?? null;
+
+      if (existingActiveRequest) {
+        const nextRequestedCount =
+          Math.max(existingActiveRequest.requested_count ?? 0, 0) +
+          normalizedRequestedCount;
+        const nextRemainingCount =
+          Math.max(existingActiveRequest.remaining_count ?? 0, 0) +
+          normalizedRequestedCount;
+        const nextComment = [
+          existingActiveRequest.request_comment?.trim(),
+          superAdminRequestComment.trim(),
+        ]
+          .filter(Boolean)
+          .join("\n");
+
+        const { data: updatedRequest, error: updateError } = await supabase
+          .from("assignment_requests")
+          .update({
+            requested_count: nextRequestedCount,
+            remaining_count: nextRemainingCount,
+            is_active: true,
+            request_comment: nextComment || null,
+          })
+          .eq("id", existingActiveRequest.id)
+          .select(
+            "id, professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment, created_at",
+          )
+          .limit(1)
+          .maybeSingle();
+
+        if (updateError) throw updateError;
+        if (!updatedRequest) {
+          throw new Error("La demande a été mise à jour, mais elle est introuvable.");
+        }
+
+        const nextRequest = updatedRequest as AssignmentRequest;
+        setAssignmentRequest(nextRequest);
+        setSuperAdminRequestedCount(1);
+        setSuperAdminRequestComment("");
+        setSuperAdminRequestMessage(
+          `${normalizedRequestedCount} assignation${
+            normalizedRequestedCount > 1 ? "s" : ""
+          } ajoutée${normalizedRequestedCount > 1 ? "s" : ""} à la demande active.`,
+        );
+
+        if (auditActor) {
+          void logAudit({
+            supabase,
+            actor: auditActor,
+            action: "assignment_request_increased_by_super_admin",
+            entityType: "assignment_request",
+            entityId: nextRequest.id,
+            description: `${normalizedRequestedCount} assignation${
+              normalizedRequestedCount > 1 ? "s" : ""
+            } ajoutée${normalizedRequestedCount > 1 ? "s" : ""} à la demande de ${professionalName}.`,
+            metadata: {
+              professional_id: professionalId,
+              professional_name: professionalName,
+              added_requested_count: normalizedRequestedCount,
+              previous_requested_count: existingActiveRequest.requested_count,
+              new_requested_count: nextRequestedCount,
+              updated_by_super_admin: true,
+            },
+          });
+        }
+
+        await loadProfessionalProfile({ showLoading: false });
+        return;
+      }
+
+      const { data: insertedRequest, error: insertError } = await supabase
+        .from("assignment_requests")
+        .insert({
+          professional_id: professionalId,
+          is_active: true,
+          requested_count: normalizedRequestedCount,
+          assigned_count: 0,
+          remaining_count: normalizedRequestedCount,
+          request_comment: superAdminRequestComment.trim() || null,
+        })
+        .select(
+          "id, professional_id, is_active, requested_count, assigned_count, remaining_count, request_comment, created_at",
+        )
+        .limit(1)
+        .maybeSingle();
+
+      if (insertError) throw insertError;
+      if (!insertedRequest) {
+        throw new Error("La demande a été créée, mais elle est introuvable.");
+      }
+
+      const createdRequest = insertedRequest as AssignmentRequest;
+      setAssignmentRequest(createdRequest);
+      setSuperAdminRequestedCount(1);
+      setSuperAdminRequestComment("");
+      setSuperAdminRequestMessage(
+        "Demande d'assignation créée pour ce professionnel.",
+      );
+
+      if (auditActor) {
+        void logAudit({
+          supabase,
+          actor: auditActor,
+          action: "assignment_request_created_by_super_admin",
+          entityType: "assignment_request",
+          entityId: createdRequest.id,
+          description: `Demande de ${normalizedRequestedCount} assignation${
+            normalizedRequestedCount > 1 ? "s" : ""
+          } créée pour ${professionalName}.`,
+          metadata: {
+            professional_id: professionalId,
+            professional_name: professionalName,
+            requested_count: normalizedRequestedCount,
+            created_by_super_admin: true,
+          },
+        });
+      }
+
+      await loadProfessionalProfile({ showLoading: false });
+    } catch (caughtError: unknown) {
+      setSuperAdminRequestError(getErrorMessage(caughtError));
+    } finally {
+      setCreatingAssignmentRequest(false);
     }
   };
 
@@ -2589,6 +2769,93 @@ export default function ProfessionnelDetailPage() {
                           : "Supprimer la demande"}
                       </button>
                     </div>
+                  </div>
+                )}
+
+                {canUseSuperAdminActions && (
+                  <div className="mt-5 rounded-2xl border border-[#d8b992] bg-[#fff8ef] p-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-[#8a5633]">
+                          Action Super administrateur
+                        </p>
+                        <h3 className="mt-1 text-base font-semibold text-[#332820]">
+                          {displayAssignmentRequest
+                            ? "Ajouter à la demande active"
+                            : "Créer une demande pour ce professionnel"}
+                        </h3>
+                        <p className="mt-1 text-sm text-[#7a6859]">
+                          {displayAssignmentRequest
+                            ? "Les assignations seront ajoutées à la demande actuelle, comme si le professionnel avait demandé plus de clients."
+                            : "La demande sera liée à ce professionnel comme si elle avait été soumise depuis son espace."}
+                        </p>
+                      </div>
+                      {displayAssignmentRequest && (
+                        <Badge tone="warning">
+                          Demande active déjà présente
+                        </Badge>
+                      )}
+                    </div>
+
+                    <form
+                      onSubmit={handleUpsertAssignmentRequest}
+                      className="mt-4 grid gap-4 lg:grid-cols-[180px_1fr_auto] lg:items-end"
+                    >
+                      <label className="block text-sm font-medium text-[#5d4a3d]">
+                        {displayAssignmentRequest
+                          ? "Assignations à ajouter"
+                          : "Assignations demandées"}
+                        <input
+                          type="number"
+                          min={1}
+                          value={superAdminRequestedCount}
+                          onChange={(event) =>
+                            setSuperAdminRequestedCount(
+                              Number(event.target.value),
+                            )
+                          }
+                          className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                        />
+                      </label>
+
+                      <label className="block text-sm font-medium text-[#5d4a3d]">
+                        Commentaire
+                        <input
+                          type="text"
+                          value={superAdminRequestComment}
+                          onChange={(event) =>
+                            setSuperAdminRequestComment(event.target.value)
+                          }
+                          maxLength={300}
+                          placeholder="Commentaire optionnel pour la demande"
+                          className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none placeholder:text-[#a89686] focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                        />
+                      </label>
+
+                      <button
+                        type="submit"
+                        disabled={creatingAssignmentRequest}
+                        className={buttonClass("primary")}
+                      >
+                        {creatingAssignmentRequest
+                          ? "Sauvegarde..."
+                          : displayAssignmentRequest
+                            ? "Ajouter à la demande"
+                            : "Créer la demande"}
+                      </button>
+                    </form>
+
+                    {superAdminRequestMessage && (
+                      <p className="mt-3 text-sm font-medium text-green-700">
+                        {superAdminRequestMessage}
+                      </p>
+                    )}
+
+                    {superAdminRequestError && (
+                      <p className="mt-3 text-sm font-medium text-red-700">
+                        {superAdminRequestError}
+                      </p>
+                    )}
                   </div>
                 )}
 
