@@ -640,7 +640,7 @@ export default function DirectionPaiePage() {
                           <thead>
                             <tr className="text-xs uppercase text-[#8a6f5d]">
                               <th className="py-1 pr-2">Description</th>
-                              <th className="py-1 pr-2">Heures</th>
+                              <th className="py-1 pr-2">Heures / quantité</th>
                               <th className="py-1 pr-2">Total</th>
                             </tr>
                           </thead>
@@ -664,15 +664,18 @@ export default function DirectionPaiePage() {
                               </tr>
                             )}
                             {professionalResult.cancellationCount > 0 && (
-                              <tr className="border-t border-[#eadfd2]">
-                                <td className="py-1 pr-2">Frais d&apos;annulation</td>
-                                <td className="py-1 pr-2">
-                                  {professionalResult.cancellationCount}
-                                </td>
-                                <td className="py-1 pr-2">
-                                  {formatCurrency(professionalResult.cancellationFeesTotal)}
-                                </td>
-                              </tr>
+                              professionalResult.cancellationLineItems.map((item) => (
+                                <tr
+                                  key={`${item.clientAmount}-${item.rate}`}
+                                  className="border-t border-[#eadfd2]"
+                                >
+                                  <td className="py-1 pr-2">{item.label}</td>
+                                  <td className="py-1 pr-2">{item.count}</td>
+                                  <td className="py-1 pr-2">
+                                    {formatCurrency(item.totalPay)}
+                                  </td>
+                                </tr>
+                              ))
                             )}
                           </tbody>
                         </table>

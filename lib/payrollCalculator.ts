@@ -1,4 +1,8 @@
-import { normalizeEmail } from '@/lib/superAdmin'
+import {
+  calculateProfessionalCompensation,
+  hasCompensationRule,
+  isNancyProfessional,
+} from '@/lib/professionalCompensation'
 
 export type PayrollCategory =
   | 'intervenant_psychoeducation'
@@ -17,35 +21,6 @@ export const PAYROLL_CATEGORY_LABELS: Record<PayrollCategory, string> = {
   psychotherapeute: 'Psychothérapeute',
 }
 
-type CategoryRates = {
-  belowThreshold: number
-  atOrAboveThreshold: number
-  cancellationFee: number
-  isFlatRate: boolean
-}
-
-const PAYROLL_CATEGORY_RATES: Record<PayrollCategory, CategoryRates> = {
-  intervenant_psychoeducation: {
-    belowThreshold: 0.5,
-    atOrAboveThreshold: 0.6,
-    cancellationFee: 36,
-    isFlatRate: false,
-  },
-  psychoeducateur_membre_ordre: {
-    belowThreshold: 0.6,
-    atOrAboveThreshold: 0.7,
-    cancellationFee: 42,
-    isFlatRate: false,
-  },
-  psychotherapeute: {
-    belowThreshold: 110,
-    atOrAboveThreshold: 110,
-    cancellationFee: 55,
-    isFlatRate: true,
-  },
-}
-
-const WEEKLY_THRESHOLD = 10
 export const TRAVEL_FEE_RATE_PER_KM = 0.64
 
 // Confirmé avec l'utilisateur : le montant réclamé au client indique lui-même le type de
@@ -71,8 +46,6 @@ function formatRateAmount(value: number): string {
 
 // Toujours exclue du calcul, peu importe ce qui apparaît sous son nom dans le fichier.
 // Elle est identifiée par courriel de compte plutôt que par le texte du nom.
-const NANCY_AL_KAYAL_EMAIL = 'nancy.alkayal.pea@outlook.com'
-
 export type ProfessionalPayrollInfo = {
   id: string
   fullName: string
@@ -100,6 +73,14 @@ export type PayrollRateGroup = {
   totalPay: number
 }
 
+export type CancellationLineItem = {
+  label: string
+  clientAmount: number
+  rate: number
+  count: number
+  totalPay: number
+}
+
 export type ProfessionalPayrollResult = {
   professional: ProfessionalPayrollInfo
   lineItems: InvoiceLineItem[]
@@ -108,12 +89,18 @@ export type ProfessionalPayrollResult = {
   travelFeesTotal: number
   travelKilometersTotal: number
   cancellationCount: number
+  cancellationLineItems: CancellationLineItem[]
   cancellationFeesTotal: number
   grandTotal: number
 }
 
 export type PayrollCalculationWarning = {
-  type: 'unmatched_professional' | 'missing_category' | 'unclassified_row' | 'unreadable_date'
+  type:
+    | 'unmatched_professional'
+    | 'missing_category'
+    | 'unclassified_row'
+    | 'unreadable_date'
+    | 'missing_amount'
   message: string
 }
 
@@ -263,11 +250,17 @@ type MeetingRow = {
   amount: number
 }
 
+type CancellationRow = {
+  date: string
+  weekStart: string
+  amount: number
+}
+
 type ProfessionalBucket = {
   professional: ProfessionalPayrollInfo
   rencontres: MeetingRow[]
   travelFeesTotal: number
-  cancellationCount: number
+  cancellations: CancellationRow[]
 }
 
 /**
@@ -334,7 +327,7 @@ export function calculatePayroll(
       professional,
       rencontres: [],
       travelFeesTotal: 0,
-      cancellationCount: 0,
+      cancellations: [],
     }
     buckets.set(professional.id, created)
     return created
@@ -361,7 +354,7 @@ export function calculatePayroll(
       return
     }
 
-    if (professional.email && normalizeEmail(professional.email) === NANCY_AL_KAYAL_EMAIL) {
+    if (isNancyProfessional(professional)) {
       return
     }
 
@@ -393,7 +386,30 @@ export function calculatePayroll(
     }
 
     if (classification === 'absence') {
-      getOrCreateBucket(professional).cancellationCount += 1
+      const parsedDate = parseDateCell(row[0])
+      const amount = parseAmount(row[8])
+
+      if (!parsedDate) {
+        warnings.push({
+          type: 'unreadable_date',
+          message: `Date illisible pour une annulation de ${professionalNameRaw} (ligne ${rowNumber}) - ignorée du calcul.`,
+        })
+        return
+      }
+
+      if (amount <= 0) {
+        warnings.push({
+          type: 'missing_amount',
+          message: `Montant réclamé manquant pour une annulation de ${professionalNameRaw} (ligne ${rowNumber}) - ignorée du calcul.`,
+        })
+        return
+      }
+
+      getOrCreateBucket(professional).cancellations.push({
+        date: parsedDate.date,
+        weekStart: getWeekStart(parsedDate.date),
+        amount,
+      })
       return
     }
 
@@ -413,17 +429,15 @@ export function calculatePayroll(
   const professionalResults: ProfessionalPayrollResult[] = []
 
   buckets.forEach((bucket) => {
-    const { professional, rencontres, travelFeesTotal, cancellationCount } = bucket
+    const { professional, rencontres, travelFeesTotal, cancellations } = bucket
 
-    if (!professional.payrollCategory) {
+    if (!hasCompensationRule(professional)) {
       warnings.push({
         type: 'missing_category',
         message: `Catégorie de paie non définie pour ${professional.fullName} - ce professionnel a été ignoré du calcul. Définissez sa catégorie ci-dessus puis relancez le calcul.`,
       })
       return
     }
-
-    const rates = PAYROLL_CATEGORY_RATES[professional.payrollCategory]
 
     const meetingsByWeek = new Map<string, MeetingRow[]>()
     rencontres.forEach((meeting) => {
@@ -436,11 +450,16 @@ export function calculatePayroll(
 
     rencontres.forEach((meeting) => {
       const weekCount = meetingsByWeek.get(meeting.weekStart)?.length ?? 0
-      const rate = weekCount >= WEEKLY_THRESHOLD ? rates.atOrAboveThreshold : rates.belowThreshold
-      const pay = rates.isFlatRate
-        ? rate * meeting.durationHours
-        : meeting.amount * rate * meeting.durationHours
-      const key = rates.isFlatRate ? `flat-${rate}` : `${meeting.amount}|${rate}`
+      const calculated = calculateProfessionalCompensation({
+        professional,
+        lineType: 'rencontre',
+        clientAmount: meeting.amount * meeting.durationHours,
+        durationHours: meeting.durationHours,
+        weeklyMeetingCount: weekCount,
+      })
+      const rate = calculated.professionalRate
+      const pay = calculated.professionalPay
+      const key = calculated.isFlatRate ? `flat-${rate}` : `${meeting.amount}|${rate}`
       const existing = lineItemsMap.get(key)
 
       if (existing) {
@@ -450,14 +469,45 @@ export function calculatePayroll(
       }
 
       lineItemsMap.set(key, {
-        label: rates.isFlatRate
+        label: calculated.isFlatRate
           ? 'Rencontre'
           : `${getServiceTypeLabel(meeting.amount)} - Rencontre (${meeting.amount} $)`,
         amount: meeting.amount,
         rate,
-        isFlatRate: rates.isFlatRate,
+        isFlatRate: calculated.isFlatRate,
         totalHours: meeting.durationHours,
         totalPay: pay,
+      })
+    })
+
+    const cancellationLineItemsMap = new Map<string, CancellationLineItem>()
+
+    cancellations.forEach((cancellation) => {
+      const weekCount = meetingsByWeek.get(cancellation.weekStart)?.length ?? 0
+      const calculated = calculateProfessionalCompensation({
+        professional,
+        lineType: 'annulation',
+        clientAmount: cancellation.amount,
+        durationHours: 0,
+        weeklyMeetingCount: weekCount,
+      })
+      const key = `${cancellation.amount}|${calculated.professionalRate}`
+      const existing = cancellationLineItemsMap.get(key)
+
+      if (existing) {
+        existing.count += 1
+        existing.totalPay += calculated.professionalPay
+        return
+      }
+
+      cancellationLineItemsMap.set(key, {
+        label: `Annulation - montant facturé ${formatRateAmount(cancellation.amount)} (${Math.round(
+          calculated.professionalRate * 100
+        )} %)`,
+        clientAmount: cancellation.amount,
+        rate: calculated.professionalRate,
+        count: 1,
+        totalPay: calculated.professionalPay,
       })
     })
 
@@ -488,7 +538,11 @@ export function calculatePayroll(
     )
       .map(([, group]) => group)
       .sort((a, b) => a.rate - b.rate)
-    const cancellationFeesTotal = cancellationCount * rates.cancellationFee
+    const cancellationLineItems = Array.from(cancellationLineItemsMap.values())
+    const cancellationFeesTotal = cancellationLineItems.reduce(
+      (sum, item) => sum + item.totalPay,
+      0
+    )
     const meetingsPay = lineItems.reduce((sum, item) => sum + item.totalPay, 0)
     const grandTotal = meetingsPay + travelFeesTotal + cancellationFeesTotal
 
@@ -499,7 +553,8 @@ export function calculatePayroll(
       meetingCount: rencontres.length,
       travelFeesTotal,
       travelKilometersTotal: travelFeesTotal / TRAVEL_FEE_RATE_PER_KM,
-      cancellationCount,
+      cancellationCount: cancellations.length,
+      cancellationLineItems,
       cancellationFeesTotal,
       grandTotal,
     })

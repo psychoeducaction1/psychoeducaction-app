@@ -420,24 +420,25 @@ function buildExtrasTable(result: ProfessionalPayrollResult): Table | null {
   }
 
   if (result.cancellationCount > 0) {
-    const perCancellation = result.cancellationFeesTotal / result.cancellationCount
-
     rows.push(
-      new TableRow({
-        children: [
-          bodyCell("Frais d'annulation de rencontre", TABLE_COLUMN_WIDTHS[0], { bold: true }),
-          bodyCell(String(result.cancellationCount), TABLE_COLUMN_WIDTHS[1], {
-            alignment: AlignmentType.CENTER,
-          }),
-          bodyCell(formatCurrency(perCancellation), TABLE_COLUMN_WIDTHS[2], {
-            alignment: AlignmentType.RIGHT,
-          }),
-          bodyCell(formatCurrency(result.cancellationFeesTotal), TABLE_COLUMN_WIDTHS[3], {
-            alignment: AlignmentType.RIGHT,
-            bold: true,
-          }),
-        ],
-      })
+      ...result.cancellationLineItems.map(
+        (item) =>
+          new TableRow({
+            children: [
+              bodyCell(item.label, TABLE_COLUMN_WIDTHS[0], { bold: true }),
+              bodyCell(String(item.count), TABLE_COLUMN_WIDTHS[1], {
+                alignment: AlignmentType.CENTER,
+              }),
+              bodyCell(formatCurrency(item.totalPay / item.count), TABLE_COLUMN_WIDTHS[2], {
+                alignment: AlignmentType.RIGHT,
+              }),
+              bodyCell(formatCurrency(item.totalPay), TABLE_COLUMN_WIDTHS[3], {
+                alignment: AlignmentType.RIGHT,
+                bold: true,
+              }),
+            ],
+          })
+      )
     )
   }
 

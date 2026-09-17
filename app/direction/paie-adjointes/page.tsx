@@ -70,6 +70,20 @@ type ProfileRow = {
   email?: string | null
 }
 
+type AdministrativePayrollMonthRow = {
+  id: string
+  staff_id: string
+  payroll_month: string
+  payable_hours: number | string
+  total_mad: number | string
+  mad_to_cad_rate: number | string
+  total_cad: number | string
+  rate_date: string
+  payment_date: string
+  rate_source: string
+  updated_at: string
+}
+
 function normalizeSchedule(value: unknown): AdministrativeStaff['default_schedule'] {
   if (!Array.isArray(value)) return null
 
@@ -109,6 +123,21 @@ function formatCurrencyDh(value: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value) + ' DH'
+}
+
+function formatCurrencyCad(value: number): string {
+  return new Intl.NumberFormat('fr-CA', {
+    style: 'currency',
+    currency: 'CAD',
+  }).format(value)
+}
+
+function getLocalDateValue(): string {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 function formatDate(value: string): string {
@@ -154,6 +183,9 @@ export default function DirectionAdministrativePayrollPage() {
   const [canEditAll, setCanEditAll] = useState(false)
   const [currentUserId, setCurrentUserId] = useState('')
   const [currentUserEmail, setCurrentUserEmail] = useState('')
+  const [monthlyPayrollRows, setMonthlyPayrollRows] = useState<
+    AdministrativePayrollMonthRow[]
+  >([])
 
   const loadData = useCallback(async () => {
     await Promise.resolve()
@@ -225,7 +257,7 @@ export default function DirectionAdministrativePayrollPage() {
 
     const staffIds = visibleStaff.map((staffMember) => staffMember.id)
 
-    const [holidayResponse, entryResponse] = await Promise.all([
+    const [holidayResponse, entryResponse, payrollMonthResponse] = await Promise.all([
       supabase
         .from('morocco_holidays')
         .select('holiday_date, name')
@@ -243,6 +275,15 @@ export default function DirectionAdministrativePayrollPage() {
             .lte('work_date', endDate)
             .order('work_date')
         : Promise.resolve({ data: [], error: null }),
+      staffIds.length > 0
+        ? supabase
+            .from('administrative_payroll_months')
+            .select(
+              'id, staff_id, payroll_month, payable_hours, total_mad, mad_to_cad_rate, total_cad, rate_date, payment_date, rate_source, updated_at'
+            )
+            .in('staff_id', staffIds)
+            .eq('payroll_month', `${monthKey}-01`)
+        : Promise.resolve({ data: [], error: null }),
     ])
 
     if (holidayResponse.error) {
@@ -257,6 +298,12 @@ export default function DirectionAdministrativePayrollPage() {
       return
     }
 
+    if (payrollMonthResponse.error) {
+      setError(payrollMonthResponse.error.message)
+      setLoading(false)
+      return
+    }
+
     setStaff(visibleStaff)
     setHolidays((holidayResponse.data ?? []) as MoroccoHoliday[])
     setEntriesByKey(
@@ -266,6 +313,9 @@ export default function DirectionAdministrativePayrollPage() {
           entry,
         ])
       )
+    )
+    setMonthlyPayrollRows(
+      (payrollMonthResponse.data ?? []) as AdministrativePayrollMonthRow[]
     )
     setCanEditAll(isCurrentUserSuperAdmin || (isDirection && !isAllowedStaff))
     setCurrentUserId(user.id)
@@ -477,6 +527,10 @@ export default function DirectionAdministrativePayrollPage() {
   }, [payrollRows, vacationBalanceByStaffId])
 
   const grandTotal = totals.reduce((sum, total) => sum + total.amount, 0)
+  const savedCadTotal = monthlyPayrollRows.reduce(
+    (sum, row) => sum + Number(row.total_cad ?? 0),
+    0
+  )
   const grandPayableHours = totals.reduce(
     (sum, total) => sum + total.payableHours,
     0
@@ -573,9 +627,73 @@ export default function DirectionAdministrativePayrollPage() {
       return
     }
 
-    setMessage('Paie administrative sauvegardée.')
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+
+    if (!session?.access_token) {
+      setError(
+        'Les heures ont été sauvegardées, mais la session a expiré avant la conversion en CAD.'
+      )
+      setSaving(false)
+      return
+    }
+
+    const rateResponse = await fetch('/api/administrative-payroll/exchange-rate', {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+    const ratePayload = (await rateResponse.json()) as {
+      rate?: number
+      rateDate?: string
+      source?: string
+      error?: string
+    }
+
+    if (!rateResponse.ok || !ratePayload.rate || !ratePayload.rateDate) {
+      setError(
+        `Les heures ont été sauvegardées, mais la conversion MAD/CAD a échoué : ${ratePayload.error ?? rateResponse.statusText}`
+      )
+      setSaving(false)
+      return
+    }
+
+    const exchangeRate = ratePayload.rate
+    const paymentDate = getLocalDateValue()
+    const payrollMonthRows = totals.map((total) => ({
+      staff_id: total.staff.id,
+      payroll_month: `${monthKey}-01`,
+      payable_hours: roundMoney(total.payableHours),
+      total_mad: total.amount,
+      mad_to_cad_rate: exchangeRate,
+      total_cad: roundMoney(total.amount * exchangeRate),
+      rate_date: ratePayload.rateDate,
+      payment_date: paymentDate,
+      rate_source: ratePayload.source ?? 'Frankfurter',
+      updated_by: currentUserId || null,
+    }))
+
+    const { error: payrollMonthError } = await supabase
+      .from('administrative_payroll_months')
+      .upsert(payrollMonthRows, { onConflict: 'staff_id,payroll_month' })
+
+    if (payrollMonthError) {
+      setError(
+        `Les heures ont été sauvegardées, mais le montant destiné au budget n'a pas pu être enregistré : ${payrollMonthError.message}`
+      )
+      setSaving(false)
+      return
+    }
+
+    const convertedTotal = payrollMonthRows.reduce(
+      (sum, row) => sum + row.total_cad,
+      0
+    )
+
     setSaving(false)
     await loadData()
+    setMessage(
+      `Paie administrative sauvegardée. ${formatCurrencyCad(convertedTotal)} ont été ajoutés automatiquement au budget avec le taux MAD/CAD du ${ratePayload.rateDate}.`
+    )
   }
 
   const renderPayrollTable = (rows: AdministrativePayrollRow[]) => (
@@ -764,7 +882,7 @@ export default function DirectionAdministrativePayrollPage() {
                 </div>
               </section>
 
-              <div className="grid gap-4 md:grid-cols-3">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <StatCard
                   label="Total à payer"
                   value={formatCurrencyDh(grandTotal)}
@@ -780,6 +898,12 @@ export default function DirectionAdministrativePayrollPage() {
                   label="Vacances utilisées"
                   value={`${roundMoney(vacationHoursUsed).toFixed(2)} h`}
                   helper="Heures de vacances payées dans le mois"
+                />
+                <StatCard
+                  label="Montant au budget"
+                  value={formatCurrencyCad(savedCadTotal)}
+                  helper="Conversion MAD/CAD sauvegardée pour ce mois"
+                  tone="success"
                 />
               </div>
 

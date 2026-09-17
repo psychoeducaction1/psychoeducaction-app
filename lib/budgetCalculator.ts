@@ -1,39 +1,8 @@
-import { normalizeEmail } from '@/lib/superAdmin'
-import type {
-  PayrollCategory,
-  ProfessionalPayrollInfo,
-} from '@/lib/payrollCalculator'
-
-type CategoryRates = {
-  belowThreshold: number
-  atOrAboveThreshold: number
-  isFlatRate: boolean
-}
-
-const BUDGET_CATEGORY_RATES: Record<PayrollCategory, CategoryRates> = {
-  intervenant_psychoeducation: {
-    belowThreshold: 0.5,
-    atOrAboveThreshold: 0.6,
-    isFlatRate: false,
-  },
-  psychoeducateur_membre_ordre: {
-    belowThreshold: 0.6,
-    atOrAboveThreshold: 0.7,
-    isFlatRate: false,
-  },
-  psychotherapeute: {
-    belowThreshold: 110,
-    atOrAboveThreshold: 110,
-    isFlatRate: true,
-  },
-}
-
-const WEEKLY_THRESHOLD = 10
-const NANCY_AL_KAYAL_EMAIL = 'nancy.alkayal.pea@outlook.com'
-const RIM_NAME_KEY = 'rim el bassit'
-const NANCY_NAME_KEY = 'nancy al kayal'
-const HICHAM_NAME_KEY = 'hicham boukili'
-const THINHINANE_NAME_KEY = 'thinhinane ould younes'
+import type { ProfessionalPayrollInfo } from '@/lib/payrollCalculator'
+import {
+  calculateProfessionalCompensation,
+  hasCompensationRule,
+} from '@/lib/professionalCompensation'
 
 export type BudgetPeriod = {
   startDate: string
@@ -302,28 +271,6 @@ export function inferBudgetPeriod(rawRows: unknown[][]): BudgetDetectedPeriod {
   }
 }
 
-function getProfessionalNameKey(professional: ProfessionalPayrollInfo): string {
-  return normalizeProfessionalName(professional.fullName)
-}
-
-function isNancy(professional: ProfessionalPayrollInfo): boolean {
-  return (
-    normalizeEmail(professional.email) === NANCY_AL_KAYAL_EMAIL ||
-    getProfessionalNameKey(professional) === NANCY_NAME_KEY
-  )
-}
-
-function isRim(professional: ProfessionalPayrollInfo): boolean {
-  return getProfessionalNameKey(professional) === RIM_NAME_KEY
-}
-
-function isFullClinicRevenueProfessional(
-  professional: ProfessionalPayrollInfo
-): boolean {
-  const nameKey = getProfessionalNameKey(professional)
-  return nameKey === HICHAM_NAME_KEY || nameKey === THINHINANE_NAME_KEY
-}
-
 function getLineDescription(row: ParsedActivityRow): string {
   if (row.classification === 'dossier') return 'Frais d’ouverture de dossier'
   if (row.classification === 'absence') return 'Frais d’annulation'
@@ -343,63 +290,25 @@ function calculateProfessionalPay({
   clinicRevenue: number
 } {
   const { professional, amount, durationHours, classification } = row
+  const clientAmount =
+    classification === 'rencontre'
+      ? amount * Math.max(durationHours, 0)
+      : amount
 
-  if (classification === 'dossier') {
-    return { professionalPay: 0, nancyPay: 0, clinicRevenue: amount }
-  }
-
-  if (classification === 'deplacement') {
-    return { professionalPay: amount, nancyPay: 0, clinicRevenue: 0 }
-  }
-
-  if (classification === 'absence' && amount <= 0) {
-    return { professionalPay: 0, nancyPay: 0, clinicRevenue: 0 }
-  }
-
-  const billableAmount =
-    classification === 'absence' ? amount : amount * Math.max(durationHours, 0)
-
-  if (isFullClinicRevenueProfessional(professional)) {
-    return { professionalPay: 0, nancyPay: 0, clinicRevenue: billableAmount }
-  }
-
-  if (isNancy(professional)) {
-    const professionalPay = billableAmount * 0.8
-    return {
-      professionalPay,
-      nancyPay: 0,
-      clinicRevenue: billableAmount - professionalPay,
-    }
-  }
-
-  if (isRim(professional)) {
-    const professionalPay =
-      classification === 'absence' ? billableAmount * (110 / 180) : 110 * durationHours
-    const nancyPay =
-      classification === 'absence' ? billableAmount * (35 / 180) : 35 * durationHours
-    return {
-      professionalPay,
-      nancyPay,
-      clinicRevenue: Math.max(billableAmount - professionalPay - nancyPay, 0),
-    }
-  }
-
-  if (!professional.payrollCategory) {
-    return { professionalPay: 0, nancyPay: 0, clinicRevenue: 0 }
-  }
-
-  const rates = BUDGET_CATEGORY_RATES[professional.payrollCategory]
-  const rate =
-    weekCount >= WEEKLY_THRESHOLD ? rates.atOrAboveThreshold : rates.belowThreshold
-  const professionalPay = rates.isFlatRate
-    ? rate * Math.max(durationHours, classification === 'absence' ? 1 : 0)
-    : billableAmount * rate
-
-  return {
-    professionalPay,
-    nancyPay: 0,
-    clinicRevenue: Math.max(billableAmount - professionalPay, 0),
-  }
+  return calculateProfessionalCompensation({
+    professional,
+    lineType:
+      classification === 'absence'
+        ? 'annulation'
+        : classification === 'dossier'
+          ? 'ouverture_dossier'
+          : classification === 'deplacement'
+            ? 'deplacement'
+            : 'rencontre',
+    clientAmount,
+    durationHours,
+    weeklyMeetingCount: weekCount,
+  })
 }
 
 function addToMonthly(
@@ -618,12 +527,7 @@ export function calculateBudget(
         meetingsByWeek.set(key, current)
       })
 
-    if (
-      !bucket.professional.payrollCategory &&
-      !isNancy(bucket.professional) &&
-      !isRim(bucket.professional) &&
-      !isFullClinicRevenueProfessional(bucket.professional)
-    ) {
+    if (!hasCompensationRule(bucket.professional)) {
       warnings.push({
         type: 'missing_category',
         message: `Catégorie de paie non définie pour ${bucket.professional.fullName} - certaines lignes peuvent être ignorées du budget.`,
@@ -636,10 +540,7 @@ export function calculateBudget(
         : 0
 
       if (
-        !bucket.professional.payrollCategory &&
-        !isNancy(bucket.professional) &&
-        !isRim(bucket.professional) &&
-        !isFullClinicRevenueProfessional(bucket.professional) &&
+        !hasCompensationRule(bucket.professional) &&
         row.classification !== 'dossier' &&
         row.classification !== 'deplacement'
       ) {
