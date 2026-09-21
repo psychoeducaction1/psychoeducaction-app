@@ -12,7 +12,9 @@ import {
   History,
   LayoutDashboard,
   ListChecks,
+  ListTodo,
   MessageSquare,
+  PhoneCall,
   Settings,
   UserCheck,
   Users,
@@ -29,6 +31,7 @@ import {
   isPayrollAuthorized,
 } from '@/lib/payrollAccess'
 import { isSuperAdmin } from '@/lib/superAdmin'
+import { isAdministrativeTaskAuthorized } from '@/lib/administrativeTaskAccess'
 
 type UserRole = 'direction' | 'professionnel' | null
 type NavLink = {
@@ -47,6 +50,8 @@ export function AppNav() {
   const [administrativePayrollAuthorized, setAdministrativePayrollAuthorized] =
     useState(false)
   const [budgetAuthorized, setBudgetAuthorized] = useState(false)
+  const [administrativeTasksAuthorized, setAdministrativeTasksAuthorized] =
+    useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -75,6 +80,9 @@ export function AppNav() {
         isAdministrativePayrollAuthorized({ email: user.email }, data)
       )
       setBudgetAuthorized(isSuperAdmin({ email: user.email }, data))
+      setAdministrativeTasksAuthorized(
+        isAdministrativeTaskAuthorized({ email: user.email }, data)
+      )
 
       const unreadCount =
         resolvedRole === 'direction'
@@ -104,6 +112,16 @@ export function AppNav() {
           { href: '/direction', label: 'Dashboard direction', icon: LayoutDashboard },
           { href: '/direction/assignations', label: 'Assignations', icon: ClipboardList },
           { href: '/direction/liste-attente', label: "Liste d'attente", icon: ListChecks },
+          {
+            href: '/direction/assignations-en-cours',
+            label: 'Assignations en cours',
+            icon: PhoneCall,
+          },
+          {
+            href: '/direction/taches-administratives',
+            label: 'Tâches administratives',
+            icon: ListTodo,
+          },
           { href: '/direction/professionnels', label: 'Professionnels', icon: Users },
           { href: '/direction/messages', label: 'Messages', icon: MessageSquare },
           ...(payrollAuthorized
@@ -141,6 +159,15 @@ export function AppNav() {
                   },
                 ]
               : []),
+            ...(administrativeTasksAuthorized
+              ? [
+                  {
+                    href: '/direction/taches-administratives',
+                    label: 'Tâches administratives',
+                    icon: ListTodo,
+                  },
+                ]
+              : []),
           ]
         : []
 
@@ -160,9 +187,13 @@ export function AppNav() {
           ? link.href === '/direction'
             ? pathname === '/direction'
             : link.href === '/direction/assignations'
-              ? pathname?.startsWith('/direction/assignations')
+              ? pathname === '/direction/assignations'
               : link.href === '/direction/liste-attente'
                 ? pathname?.startsWith('/direction/liste-attente')
+              : link.href === '/direction/assignations-en-cours'
+                ? pathname?.startsWith('/direction/assignations-en-cours')
+              : link.href === '/direction/taches-administratives'
+                ? pathname?.startsWith('/direction/taches-administratives')
               : link.href === '/direction/professionnels'
                 ? pathname?.startsWith('/direction/professionnels') ||
                   pathname?.startsWith('/professionnel/')

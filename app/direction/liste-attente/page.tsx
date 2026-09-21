@@ -25,10 +25,12 @@ import { supabase } from '@/lib/supabaseClient'
 import { isSuperAdmin } from '@/lib/superAdmin'
 import {
   getAssignmentRequestMetrics,
-  getServiceTakenCount,
-  getUsedAssignmentCount,
   logAudit,
 } from '@/app/professionnel/shared'
+import {
+  createAssignmentFromWaitingListClient,
+  type ActiveWaitingListAssignmentRequest,
+} from '@/lib/waitingListAssignment'
 import {
   buildClientAssignmentEmailTemplate,
   buildProfessionalAssignmentEmailTemplate,
@@ -74,15 +76,7 @@ type AuditActor = {
   name: string | null
 }
 
-type ActiveAssignmentRequest = {
-  id: string
-  professional_id: string
-  is_active: boolean | null
-  requested_count: number | null
-  assigned_count: number | null
-  remaining_count: number | null
-  occupied_count?: number | null
-}
+type ActiveAssignmentRequest = ActiveWaitingListAssignmentRequest
 
 type PendingEmailNotification = {
   assignedClientId: string
@@ -122,10 +116,18 @@ const waitingListSelect =
 const CLIENTS_PER_PAGE = 10
 const HISTORY_CLIENTS_PER_PAGE = 5
 
-const statusOptions = ['waiting', 'assigned', 'active', 'closed', 'blacklisted']
+const statusOptions = [
+  'waiting',
+  'assignment_in_progress',
+  'assigned',
+  'active',
+  'closed',
+  'blacklisted',
+]
 
 const statusLabels: Record<string, string> = {
   waiting: 'En attente',
+  assignment_in_progress: 'Assignation en cours',
   assigned: 'Assigné',
   active: 'Actif',
   closed: 'Fermé',
@@ -134,6 +136,7 @@ const statusLabels: Record<string, string> = {
 
 const statusTones: Record<string, BadgeTone> = {
   waiting: 'warning',
+  assignment_in_progress: 'neutral',
   assigned: 'success',
   active: 'success',
   closed: 'muted',
@@ -252,124 +255,6 @@ function formatModalities(value: unknown): string {
   return modalities.length > 0 ? modalities.join(', ') : '-'
 }
 
-async function recalculateAssignmentRequest(requestId: string): Promise<void> {
-  const { data: request, error: requestError } = await supabase
-    .from('assignment_requests')
-    .select('requested_count')
-    .eq('id', requestId)
-    .limit(1)
-    .maybeSingle()
-
-  if (requestError || !request) return
-
-  const { data: assignedClients, error: assignedClientsError } = await supabase
-    .from('assigned_clients')
-    .select('is_active')
-    .eq('assignment_request_id', requestId)
-    .is('canceled_at', null)
-
-  if (assignedClientsError || !assignedClients) return
-
-  const assignedCount = getServiceTakenCount(assignedClients)
-  const occupiedCount = getUsedAssignmentCount(assignedClients)
-  const requestedCount = Math.max(request.requested_count ?? 0, 0)
-  const remainingCount = Math.max(requestedCount - occupiedCount, 0)
-  const isActive = assignedCount < requestedCount
-
-  await supabase
-    .from('assignment_requests')
-    .update({
-      assigned_count: assignedCount,
-      remaining_count: remainingCount,
-      is_active: isActive,
-    })
-    .eq('id', requestId)
-}
-
-async function getFreshActiveAssignmentRequest(
-  professionalId: string
-): Promise<ActiveAssignmentRequest | null> {
-  const { data: requests, error: requestsError } = await supabase
-    .from('assignment_requests')
-    .select('id, professional_id, is_active, requested_count, assigned_count, remaining_count')
-    .eq('professional_id', professionalId)
-    .eq('is_active', true)
-    .gt('requested_count', 0)
-    .order('created_at', { ascending: false })
-
-  if (requestsError) {
-    throw requestsError
-  }
-
-  const activeRequests = (requests ?? []) as ActiveAssignmentRequest[]
-  const requestIds = activeRequests.map((request) => request.id)
-
-  if (requestIds.length === 0) return null
-
-  const { data: assignedClients, error: assignedClientsError } = await supabase
-    .from('assigned_clients')
-    .select('assignment_request_id, is_active')
-    .in('assignment_request_id', requestIds)
-    .is('canceled_at', null)
-
-  if (assignedClientsError) {
-    throw assignedClientsError
-  }
-
-  const serviceTakenCountByRequestId = new Map<string, number>()
-  const occupiedCountByRequestId = new Map<string, number>()
-
-  ;(
-    (assignedClients ?? []) as Array<{
-      assignment_request_id: string | null
-      is_active: boolean | null
-    }>
-  ).forEach((client) => {
-    if (!client.assignment_request_id) return
-
-    if (client.is_active === true) {
-      serviceTakenCountByRequestId.set(
-        client.assignment_request_id,
-        (serviceTakenCountByRequestId.get(client.assignment_request_id) ?? 0) + 1
-      )
-      occupiedCountByRequestId.set(
-        client.assignment_request_id,
-        (occupiedCountByRequestId.get(client.assignment_request_id) ?? 0) + 1
-      )
-    } else if (client.is_active === null) {
-      occupiedCountByRequestId.set(
-        client.assignment_request_id,
-        (occupiedCountByRequestId.get(client.assignment_request_id) ?? 0) + 1
-      )
-    }
-  })
-
-  return (
-    activeRequests
-      .map((request) => {
-        const requestedCount = Math.max(request.requested_count ?? 0, 0)
-        const assignedCount = serviceTakenCountByRequestId.get(request.id) ?? 0
-        const occupiedCount = occupiedCountByRequestId.get(request.id) ?? 0
-        const remainingCount = Math.max(requestedCount - occupiedCount, 0)
-
-        return {
-          ...request,
-          assigned_count: assignedCount,
-          occupied_count: occupiedCount,
-          remaining_count: remainingCount,
-        }
-      })
-      .find((request) => {
-        const requestedCount = Math.max(request.requested_count ?? 0, 0)
-        return (
-          requestedCount > 0 &&
-          (request.assigned_count ?? 0) < requestedCount &&
-          (request.remaining_count ?? 0) > 0
-        )
-      }) ?? null
-  )
-}
-
 function formatDate(value: string | null | undefined): string {
   if (!value) return '-'
 
@@ -384,6 +269,52 @@ function formatDate(value: string | null | undefined): string {
     month: 'short',
     day: 'numeric',
   }).format(date)
+}
+
+function calculateAge(
+  birthDateValue: string | null | undefined,
+  referenceDate = new Date()
+): number | null {
+  if (!birthDateValue) return null
+
+  const datePart = birthDateValue.slice(0, 10)
+  const [birthYear, birthMonth, birthDay] = datePart.split('-').map(Number)
+
+  if (!birthYear || !birthMonth || !birthDay) return null
+
+  const birthDate = new Date(birthYear, birthMonth - 1, birthDay)
+
+  if (
+    Number.isNaN(birthDate.getTime()) ||
+    birthDate.getFullYear() !== birthYear ||
+    birthDate.getMonth() !== birthMonth - 1 ||
+    birthDate.getDate() !== birthDay ||
+    birthDate > referenceDate
+  ) {
+    return null
+  }
+
+  let age = referenceDate.getFullYear() - birthYear
+  const birthdayHasPassed =
+    referenceDate.getMonth() > birthMonth - 1 ||
+    (referenceDate.getMonth() === birthMonth - 1 &&
+      referenceDate.getDate() >= birthDay)
+
+  if (!birthdayHasPassed) age -= 1
+
+  return age
+}
+
+function formatBirthDateWithAge(value: string | null | undefined): string {
+  if (!value) return '-'
+
+  const age = calculateAge(value)
+  const datePart = value.slice(0, 10)
+  const formattedDate = /^\d{4}-\d{2}-\d{2}$/.test(datePart)
+    ? datePart
+    : formatDate(value)
+
+  return age === null ? formattedDate : `${formattedDate} (${age} ans)`
 }
 
 function formatRequester(client: WaitingListClient): string {
@@ -453,30 +384,6 @@ function clientMatchesSearch(
   ]
     .map(normalizeSearchValue)
     .some((value) => value.includes(normalizedSearchQuery))
-}
-
-function getTodayDate(): string {
-  return new Date().toISOString().slice(0, 10)
-}
-
-function splitClientName(clientName: string | null): {
-  firstName: string
-  lastName: string
-} {
-  const nameParts = clientName?.trim().split(/\s+/).filter(Boolean) ?? []
-
-  if (nameParts.length === 0) {
-    return { firstName: 'Client', lastName: 'liste d’attente' }
-  }
-
-  if (nameParts.length === 1) {
-    return { firstName: nameParts[0], lastName: '-' }
-  }
-
-  return {
-    firstName: nameParts[0],
-    lastName: nameParts.slice(1).join(' '),
-  }
 }
 
 function normalizeOption(value: string | null, options: string[]): string {
@@ -567,6 +474,10 @@ export default function DirectionListeAttentePage() {
     useState('')
   const [markingOffPlatformClientId, setMarkingOffPlatformClientId] =
     useState('')
+  const [startingAssignmentProcessClientId, setStartingAssignmentProcessClientId] =
+    useState('')
+  const [activeAssignmentProcessClientIds, setActiveAssignmentProcessClientIds] =
+    useState<Set<string>>(new Set())
   const [formMessage, setFormMessage] = useState('')
   const [formError, setFormError] = useState('')
   const [waitingPage, setWaitingPage] = useState(0)
@@ -575,6 +486,8 @@ export default function DirectionListeAttentePage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [serviceFilter, setServiceFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [minimumAgeFilter, setMinimumAgeFilter] = useState('')
+  const [maximumAgeFilter, setMaximumAgeFilter] = useState('')
   const [modalityFilter, setModalityFilter] = useState<string[]>([])
   const [expandedMotifIds, setExpandedMotifIds] = useState<Record<string, boolean>>({})
   const [notifyProfessional, setNotifyProfessional] = useState(false)
@@ -633,6 +546,24 @@ export default function DirectionListeAttentePage() {
 
       const loadedClients = (data ?? []) as WaitingListClient[]
       setClients(sortClientsByContactDate(loadedClients))
+
+      const { data: processData, error: processError } = await supabase
+        .from('assignment_processes')
+        .select('waiting_list_client_id, status')
+
+      if (processError) {
+        setError(processError.message)
+        setLoading(false)
+        return
+      }
+
+      setActiveAssignmentProcessClientIds(
+        new Set(
+          (processData ?? [])
+            .filter((process) => process.status !== 'returned')
+            .map((process) => process.waiting_list_client_id as string)
+        )
+      )
 
       const { data: professionalsData, error: professionalsError } = await supabase
         .from('profiles')
@@ -825,6 +756,98 @@ export default function DirectionListeAttentePage() {
         professionals[0]?.id ||
         ''
     )
+  }
+
+  const handleStartAssignmentProcess = async (client: WaitingListClient) => {
+    if (client.status !== 'waiting') {
+      setFormError('Seul un client en attente peut être déplacé vers les assignations en cours.')
+      return
+    }
+
+    if (
+      !window.confirm(
+        `Démarrer une démarche d’assignation pour ${client.client_name ?? 'ce client'} ?\n\nLe client sera retiré de la liste d’attente active et apparaîtra dans « Assignations en cours ».`
+      )
+    ) {
+      return
+    }
+
+    setStartingAssignmentProcessClientId(client.id)
+    setFormError('')
+    setFormMessage('')
+
+    const startedAt = new Date().toISOString()
+    const { data: process, error: processError } = await supabase
+      .from('assignment_processes')
+      .insert({
+        waiting_list_client_id: client.id,
+        status: 'to_contact',
+        responsible_profile_id: auditActor?.id ?? null,
+        created_by: auditActor?.id ?? null,
+        started_at: startedAt,
+      })
+      .select('id')
+      .limit(1)
+      .maybeSingle()
+
+    if (processError || !process) {
+      setStartingAssignmentProcessClientId('')
+      setFormError(
+        processError?.message ?? 'Impossible de démarrer la démarche d’assignation.'
+      )
+      return
+    }
+
+    const { error: waitingListUpdateError } = await supabase
+      .from('waiting_list_clients')
+      .update({ status: 'assignment_in_progress' })
+      .eq('id', client.id)
+
+    if (waitingListUpdateError) {
+      await supabase.from('assignment_processes').delete().eq('id', process.id)
+      setStartingAssignmentProcessClientId('')
+      setFormError(waitingListUpdateError.message)
+      return
+    }
+
+    const { error: eventError } = await supabase
+      .from('assignment_process_events')
+      .insert({
+        assignment_process_id: process.id,
+        event_type: 'process_started',
+        status: 'to_contact',
+        note: 'Client déplacé depuis la liste d’attente.',
+        actor_profile_id: auditActor?.id ?? null,
+        actor_name: auditActor?.name ?? null,
+      })
+
+    setStartingAssignmentProcessClientId('')
+    setActiveAssignmentProcessClientIds((current) => {
+      const next = new Set(current)
+      next.add(client.id)
+      return next
+    })
+    setFormMessage(
+      eventError
+        ? 'Démarche démarrée. L’événement initial n’a toutefois pas pu être journalisé.'
+        : 'Client déplacé vers les assignations en cours.'
+    )
+
+    if (auditActor) {
+      void logAudit({
+        supabase,
+        actor: auditActor,
+        action: 'assignment_process_started',
+        entityType: 'waiting_list_client',
+        entityId: client.id,
+        description: `Démarche d’assignation démarrée pour ${client.client_name ?? 'un client'}.`,
+        metadata: {
+          assignment_process_id: process.id,
+          client_name: client.client_name,
+          started_at: startedAt,
+        },
+      })
+    }
   }
 
   const stopEditing = () => {
@@ -1577,104 +1600,38 @@ export default function DirectionListeAttentePage() {
 
     setSavingAssignment(true)
 
-    let assignmentRequest: ActiveAssignmentRequest | null = null
+    const previousPendingCount = await getPendingAssignmentCount(
+      selectedProfessionalId
+    )
+
+    let assignmentResult: Awaited<
+      ReturnType<typeof createAssignmentFromWaitingListClient>
+    >
 
     try {
-      assignmentRequest = await getFreshActiveAssignmentRequest(selectedProfessionalId)
+      assignmentResult = await createAssignmentFromWaitingListClient({
+        supabase,
+        client,
+        professionalId: selectedProfessionalId,
+      })
     } catch (caughtError) {
       setSavingAssignment(false)
       setFormError(
         caughtError instanceof Error
           ? caughtError.message
-          : "Impossible de vérifier la demande active du professionnel."
+          : "Impossible de créer l'assignation."
       )
       return
     }
 
-    if (!assignmentRequest?.id) {
-      setSavingAssignment(false)
-      setFormError('Ce professionnel n’a aucune demande active avec place restante.')
-      return
-    }
-
-    const { firstName, lastName } = splitClientName(client.client_name)
-    const requesterName = nullableText(
-      [client.first_requester_name, client.second_requester_name]
-        .map((value) => value?.trim())
-        .filter(Boolean)
-        .join(' / ')
-    )
-
-    const previousPendingCount = await getPendingAssignmentCount(
-      selectedProfessionalId
-    )
-
-    const { data: insertedAssignment, error: insertError } = await supabase
-      .from('assigned_clients')
-      .insert({
-        assignment_request_id: assignmentRequest.id,
-        waiting_list_client_id: client.id,
-        professional_id: selectedProfessionalId,
-        first_name: firstName,
-        last_name: lastName,
-        email: getContactEmails(client)[0] ?? null,
-        phone: getContactPhones(client)[0] ?? null,
-        requester_name: requesterName,
-        short_comment: nullableText(client.consultation_reason ?? ''),
-        meeting_modality: nullableText(
-          getMeetingModalities(client.meeting_modality).join(', ')
-        ),
-        service_address: nullableText(client.city ?? ''),
-        assigned_date: getTodayDate(),
-        contacted: false,
-        is_active: null,
-        dossier_closed: false,
-        closure_reason: null,
-        meeting_count: 0,
-      })
-      .select('id')
-      .limit(1)
-      .maybeSingle()
-
-    if (insertError) {
-      setSavingAssignment(false)
-      setFormError(insertError.message)
-      return
-    }
-
-    if (!insertedAssignment?.id) {
-      setSavingAssignment(false)
-      setFormError("L'assignation a été créée, mais son identifiant est introuvable.")
-      return
-    }
-
-    await recalculateAssignmentRequest(assignmentRequest.id)
-
-    const { data, error: updateError } = await supabase
-      .from('waiting_list_clients')
-      .update({
-        status: 'assigned',
-        assigned_professional_id: selectedProfessionalId,
-        assigned_at: new Date().toISOString(),
-      })
-      .eq('id', client.id)
-      .select(waitingListSelect)
-      .limit(1)
-      .maybeSingle()
-
     setSavingAssignment(false)
 
-    if (updateError) {
-      setFormError(updateError.message)
-      return
-    }
-
-    if (data) {
+    if (assignmentResult.updatedClient) {
       setClients((currentClients) =>
         sortClientsByContactDate(
           currentClients.map((currentClient) =>
             currentClient.id === client.id
-              ? (data as WaitingListClient)
+              ? (assignmentResult.updatedClient as WaitingListClient)
               : currentClient
           )
         )
@@ -1695,18 +1652,18 @@ export default function DirectionListeAttentePage() {
         actor: auditActor,
         action: 'assignment_created',
         entityType: 'assigned_client',
-        entityId: insertedAssignment.id,
+        entityId: assignmentResult.assignedClientId,
         description: `Client ${client.client_name ?? 'sans nom'} assigné à ${
           selectedProfessional?.full_name ?? 'professionnel inconnu'
         }.`,
         metadata: {
           client_name: client.client_name,
           professional_name: selectedProfessional?.full_name ?? null,
-          requester_name: requesterName,
+          requester_name: assignmentResult.requesterName,
           client_email: getContactEmails(client)[0] ?? null,
           professional_id: selectedProfessionalId,
           waiting_list_client_id: client.id,
-          assignment_request_id: assignmentRequest.id,
+          assignment_request_id: assignmentResult.assignmentRequest.id,
           has_assignment_request: true,
           assignment_mode: 'request_assignment',
         },
@@ -1714,14 +1671,14 @@ export default function DirectionListeAttentePage() {
     }
 
     const pendingNotification: PendingEmailNotification = {
-      assignedClientId: insertedAssignment.id,
+      assignedClientId: assignmentResult.assignedClientId,
       professionalId: selectedProfessionalId,
       professionalName:
         selectedProfessional?.full_name ?? selectedProfessional?.email ?? 'professionnel inconnu',
       clientName: client.client_name,
       clientEmail: getContactEmails(client)[0] ?? null,
       waitingListClientId: client.id,
-      assignmentRequestId: assignmentRequest.id,
+      assignmentRequestId: assignmentResult.assignmentRequest.id,
       previousPendingCount,
     }
 
@@ -1753,9 +1710,16 @@ export default function DirectionListeAttentePage() {
     'w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] shadow-sm outline-none transition duration-200 placeholder:text-[#b09c8a] focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]'
 
   const normalizedSearchQuery = searchQuery.trim().toLowerCase()
+  const minimumAge = minimumAgeFilter === '' ? null : Number(minimumAgeFilter)
+  const maximumAge = maximumAgeFilter === '' ? null : Number(maximumAgeFilter)
   const hasActiveFilters =
-    serviceFilter !== 'all' || statusFilter !== 'all' || modalityFilter.length > 0
+    serviceFilter !== 'all' ||
+    statusFilter !== 'all' ||
+    minimumAgeFilter !== '' ||
+    maximumAgeFilter !== '' ||
+    modalityFilter.length > 0
   const filteredClients = clients.filter((client) => {
+    if (activeAssignmentProcessClientIds.has(client.id)) return false
     if (normalizedSearchQuery && !clientMatchesSearch(client, normalizedSearchQuery)) {
       return false
     }
@@ -1764,6 +1728,13 @@ export default function DirectionListeAttentePage() {
     }
     if (statusFilter !== 'all' && client.status !== statusFilter) {
       return false
+    }
+    if (minimumAge !== null || maximumAge !== null) {
+      const clientAge = calculateAge(client.birth_date)
+
+      if (clientAge === null) return false
+      if (minimumAge !== null && clientAge < minimumAge) return false
+      if (maximumAge !== null && clientAge > maximumAge) return false
     }
     if (modalityFilter.length > 0) {
       const clientModalities = getMeetingModalities(client.meeting_modality)
@@ -1978,13 +1949,25 @@ export default function DirectionListeAttentePage() {
                           formatText(client.priority_level)}
                       </Badge>
                       {allowAssignment && (
-                        <button
-                          type="button"
-                          className={`${buttonClass('primary')} !min-h-8 !w-full justify-center whitespace-nowrap px-2 py-1 text-xs`}
-                          onClick={() => startAssigning(client)}
-                        >
-                          Assigner
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            className={`${buttonClass('primary')} !min-h-8 !w-full justify-center whitespace-nowrap px-2 py-1 text-xs`}
+                            onClick={() => startAssigning(client)}
+                          >
+                            Assigner
+                          </button>
+                          <button
+                            type="button"
+                            disabled={startingAssignmentProcessClientId === client.id}
+                            className="min-h-8 w-full rounded-lg border border-[#d7a83e] bg-[#fff3c4] px-2 py-1 text-xs font-semibold leading-tight text-[#6f4c00] transition hover:bg-[#ffe9a0] disabled:cursor-wait disabled:opacity-60"
+                            onClick={() => void handleStartAssignmentProcess(client)}
+                          >
+                            {startingAssignmentProcessClientId === client.id
+                              ? 'Déplacement...'
+                              : 'Démarrer une assignation'}
+                          </button>
+                        </>
                       )}
                       {!allowAssignment && isAlreadyAssigned && (
                         <button
@@ -2023,7 +2006,7 @@ export default function DirectionListeAttentePage() {
                     {formatRequester(client)}
                   </td>
                   <td className="px-3 py-2 align-top text-[#6c5a4d]">
-                    {formatDate(client.birth_date)}
+                    {formatBirthDateWithAge(client.birth_date)}
                   </td>
                   <td className="px-3 py-2 align-top text-[#6c5a4d]">
                     {formatText(client.city)}
@@ -2505,7 +2488,7 @@ export default function DirectionListeAttentePage() {
                   />
                 </label>
 
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <label className="block text-sm font-medium text-[#5d4a3d]">
                     Service demandé
                     <select
@@ -2548,6 +2531,44 @@ export default function DirectionListeAttentePage() {
                     </select>
                   </label>
 
+                  <label className="block text-sm font-medium text-[#5d4a3d]">
+                    Âge minimum
+                    <input
+                      type="number"
+                      min="0"
+                      max="120"
+                      step="1"
+                      value={minimumAgeFilter}
+                      onChange={(event) => {
+                        setMinimumAgeFilter(event.target.value)
+                        setWaitingPage(0)
+                        setAssignedPage(0)
+                        setHistoryPage(0)
+                      }}
+                      placeholder="Ex. 18"
+                      className={`${inputClass} mt-2`}
+                    />
+                  </label>
+
+                  <label className="block text-sm font-medium text-[#5d4a3d]">
+                    Âge maximum
+                    <input
+                      type="number"
+                      min="0"
+                      max="120"
+                      step="1"
+                      value={maximumAgeFilter}
+                      onChange={(event) => {
+                        setMaximumAgeFilter(event.target.value)
+                        setWaitingPage(0)
+                        setAssignedPage(0)
+                        setHistoryPage(0)
+                      }}
+                      placeholder="Ex. 65"
+                      className={`${inputClass} mt-2`}
+                    />
+                  </label>
+
                 </div>
 
                 <div className="mt-4">
@@ -2587,6 +2608,8 @@ export default function DirectionListeAttentePage() {
                     onClick={() => {
                       setServiceFilter('all')
                       setStatusFilter('all')
+                      setMinimumAgeFilter('')
+                      setMaximumAgeFilter('')
                       setModalityFilter([])
                       setWaitingPage(0)
                       setAssignedPage(0)
@@ -2920,7 +2943,7 @@ export default function DirectionListeAttentePage() {
                           </td>
                           <td className={tableCellClass}>{formatRequester(client)}</td>
                           <td className={tableCellClass}>
-                            {formatDate(client.birth_date)}
+                            {formatBirthDateWithAge(client.birth_date)}
                           </td>
                           <td className={tableCellClass}>{formatText(client.city)}</td>
                           <td className={tableCellClass}>
