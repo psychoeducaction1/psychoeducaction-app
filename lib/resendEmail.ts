@@ -2,10 +2,12 @@ import 'server-only'
 
 export async function sendResendEmail({
   to,
+  cc,
   subject,
   text,
 }: {
   to: string
+  cc?: string[]
   subject: string
   text: string
 }) {
@@ -22,7 +24,13 @@ export async function sendResendEmail({
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ from, to: [to], subject, text }),
+    body: JSON.stringify({
+      from,
+      to: [to],
+      ...(cc && cc.length > 0 ? { cc } : {}),
+      subject,
+      text,
+    }),
   })
 
   const responseText = await response.text()

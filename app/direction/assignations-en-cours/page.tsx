@@ -741,7 +741,6 @@ export default function AssignmentProcessesPage() {
           ? { ...item, status: 'assigned', assigned_at: assignedAt }
           : item
       ))
-      setMessage('Service pris confirmé. La demande du professionnel a été recalculée.')
 
       if (actor) void logAudit({
         supabase,
@@ -761,6 +760,42 @@ export default function AssignmentProcessesPage() {
           is_active: true,
         },
       })
+
+      let confirmationMessage =
+        'Service pris confirmé. La demande du professionnel a été recalculée.'
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.access_token) {
+          throw new Error('Session expirée avant l’envoi du courriel.')
+        }
+        const emailResponse = await fetch(
+          '/api/direction/service-taken-confirmation',
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ assignedClientId: result.assignedClientId }),
+          }
+        )
+        const emailPayload = (await emailResponse.json().catch(() => null)) as
+          | { error?: string; skipped?: boolean; recipient?: string; cc?: string }
+          | null
+        if (!emailResponse.ok) {
+          throw new Error(
+            emailPayload?.error ?? 'Le courriel de confirmation n’a pas pu être envoyé.'
+          )
+        }
+        confirmationMessage = emailPayload?.skipped
+          ? `${confirmationMessage} Le courriel avait déjà été envoyé.`
+          : `${confirmationMessage} Courriel envoyé au client avec le professionnel en copie conforme.`
+      } catch (emailError) {
+        confirmationMessage = `${confirmationMessage} L’assignation reste valide, mais le courriel n’a pas été envoyé : ${
+          emailError instanceof Error ? emailError.message : 'erreur inconnue'
+        }`
+      }
+      setMessage(confirmationMessage)
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : 'Assignation impossible.')
     } finally {
