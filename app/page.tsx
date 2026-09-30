@@ -86,6 +86,8 @@ export default function HomePage() {
 
         if (profile.role === 'direction') {
           router.replace('/direction')
+        } else if (profile.role === 'marketing') {
+          router.replace('/marketing')
         } else if (profile.role === 'professionnel') {
           if (profile.platform_access_enabled === false) {
             setErrorMessage(

@@ -68,8 +68,8 @@ export default function InvitationPage() {
       return
     }
 
-    setSuccessMessage('Compte activé. Redirection vers votre espace professionnel...')
-    router.push('/professionnel')
+    setSuccessMessage('Compte activé. Redirection vers votre espace...')
+    router.push('/')
   }
 
   return (
@@ -89,7 +89,7 @@ export default function InvitationPage() {
             Créer votre mot de passe
           </h1>
           <p className="mt-2 text-sm leading-6 text-[#7a6859]">
-            Choisissez un mot de passe pour activer votre compte professionnel.
+            Choisissez un mot de passe pour activer votre compte.
           </p>
         </div>
 
