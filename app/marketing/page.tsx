@@ -256,7 +256,32 @@ export default function MarketingPage() {
       setTasks((current) => [data as Task, ...current])
       setTaskForm({ title: '', description: '', priority: 'normal', dueAt: localDateTimeValue() })
       setShowTaskForm(false)
-      setMessage('Tâche créée pour Camille.')
+      const { data: { session } } = await supabase.auth.getSession()
+      const notificationResponse = await fetch('/api/marketing/task-notification', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session?.access_token ?? ''}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ taskId: data.id }),
+      }).catch(() => null)
+
+      if (notificationResponse?.ok) {
+        setMessage(
+          isDirection
+            ? 'Tâche créée. Camille a reçu une notification par courriel.'
+            : 'Tâche créée. Camille et la direction ont reçu une notification par courriel.'
+        )
+      } else {
+        const notificationPayload = notificationResponse
+          ? await notificationResponse.json().catch(() => null) as { error?: string } | null
+          : null
+        setMessage(
+          `La tâche a été créée, mais le courriel n’a pas pu être envoyé${
+            notificationPayload?.error ? ` : ${notificationPayload.error}` : '.'
+          }`
+        )
+      }
     }
     setSaving(false)
   }
