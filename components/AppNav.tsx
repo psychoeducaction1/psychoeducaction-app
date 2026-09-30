@@ -143,7 +143,9 @@ export function AppNav({
             label: 'Tâches administratives',
             icon: ListTodo,
           },
-          { href: '/marketing', label: 'Marketing', icon: BriefcaseBusiness },
+          ...(budgetAuthorized
+            ? [{ href: '/marketing', label: 'Marketing', icon: BriefcaseBusiness }]
+            : []),
           { href: '/direction/professionnels', label: 'Professionnels', icon: Users },
           { href: '/direction/messages', label: 'Messages', icon: MessageSquare },
           ...(payrollAuthorized

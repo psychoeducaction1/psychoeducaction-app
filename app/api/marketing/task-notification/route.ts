@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendResendEmail } from '@/lib/resendEmail'
+import { isSuperAdmin } from '@/lib/superAdmin'
 
 const DIRECTION_EMAIL = 'contact@psychoeducaction.com'
 
@@ -81,7 +82,8 @@ export async function POST(request: NextRequest) {
     .limit(1)
     .maybeSingle()
   if (profileError) return json({ error: profileError.message }, 500)
-  if (!profile || !['direction', 'marketing'].includes(profile.role)) {
+  const hasDirectionAccess = isSuperAdmin({ email: user.email }, profile)
+  if (!profile || (profile.role !== 'marketing' && !hasDirectionAccess)) {
     return json({ error: 'Accès non autorisé.' }, 403)
   }
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
+import { isSuperAdmin } from '@/lib/superAdmin'
 
 const MARKETING_NAME = 'Camille Payette'
 const MARKETING_EMAIL = 'camille.payette@psychoeducaction.com'
@@ -36,11 +37,11 @@ export async function POST(request: NextRequest) {
 
   const { data: currentProfile } = await supabaseServer
     .from('profiles')
-    .select('role')
+    .select('role, email')
     .eq('id', userData.user.id)
     .maybeSingle()
-  if (currentProfile?.role !== 'direction') {
-    return response({ error: 'Accès réservé à la direction.' }, 403)
+  if (!isSuperAdmin({ email: userData.user.email }, currentProfile)) {
+    return response({ error: 'Accès réservé au super administrateur.' }, 403)
   }
 
   let admin

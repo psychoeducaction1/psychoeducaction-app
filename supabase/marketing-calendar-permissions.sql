@@ -26,7 +26,7 @@ on public.marketing_availability_slots
 for select
 to authenticated
 using (
-  public.is_direction()
+  public.is_marketing_manager()
   or public.is_marketing_staff(staff_id)
 );
 
@@ -35,7 +35,7 @@ on public.marketing_availability_slots
 for insert
 to authenticated
 with check (
-  public.is_direction()
+  public.is_marketing_manager()
   or public.is_marketing_staff(staff_id)
 );
 
@@ -44,11 +44,11 @@ on public.marketing_availability_slots
 for update
 to authenticated
 using (
-  public.is_direction()
+  public.is_marketing_manager()
   or public.is_marketing_staff(staff_id)
 )
 with check (
-  public.is_direction()
+  public.is_marketing_manager()
   or public.is_marketing_staff(staff_id)
 );
 
@@ -57,7 +57,7 @@ on public.marketing_availability_slots
 for delete
 to authenticated
 using (
-  public.is_direction()
+  public.is_marketing_manager()
   or public.is_marketing_staff(staff_id)
 );
 

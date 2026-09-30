@@ -7,6 +7,7 @@ import { AppNav } from '@/components/AppNav'
 import { MarketingAvailabilityCalendar } from '@/components/MarketingAvailabilityCalendar'
 import { PageHeader } from '@/components/ui/index'
 import { buttonClass } from '@/components/Ui'
+import { isSuperAdmin } from '@/lib/superAdmin'
 import { supabase } from '@/lib/supabaseClient'
 
 type Staff = {
@@ -33,15 +34,20 @@ export default function MarketingCalendarPage() {
 
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('role')
+      .select('role, email')
       .eq('id', user.id)
       .maybeSingle()
-    if (profileError || !profile || !['direction', 'marketing'].includes(profile.role)) {
+    const hasDirectionAccess = isSuperAdmin({ email: user.email }, profile)
+    if (
+      profileError ||
+      !profile ||
+      (profile.role !== 'marketing' && !hasDirectionAccess)
+    ) {
       router.push('/')
       return
     }
 
-    setIsDirection(profile.role === 'direction')
+    setIsDirection(hasDirectionAccess)
     const { data: staffData, error: staffError } = await supabase
       .from('marketing_staff')
       .select('id, full_name')

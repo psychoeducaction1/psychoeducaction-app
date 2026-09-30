@@ -16,6 +16,7 @@ import {
 import { AppNav } from '@/components/AppNav'
 import { Badge, EmptyState, PageHeader } from '@/components/ui/index'
 import { buttonClass } from '@/components/Ui'
+import { isSuperAdmin } from '@/lib/superAdmin'
 import { supabase } from '@/lib/supabaseClient'
 
 type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'canceled'
@@ -121,12 +122,17 @@ export default function MarketingPage() {
       .select('role, full_name, email')
       .eq('id', user.id)
       .maybeSingle()
-    if (profileError || !profile || !['direction', 'marketing'].includes(profile.role)) {
+    const hasDirectionAccess = isSuperAdmin({ email: user.email }, profile)
+    if (
+      profileError ||
+      !profile ||
+      (profile.role !== 'marketing' && !hasDirectionAccess)
+    ) {
       router.push('/')
       return
     }
 
-    const direction = profile.role === 'direction'
+    const direction = hasDirectionAccess
     setIsDirection(direction)
     setCurrentName(profile.full_name ?? profile.email ?? user.email ?? 'Utilisateur')
 

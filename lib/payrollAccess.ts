@@ -7,6 +7,7 @@ export const PAYROLL_ACCESS_EMAILS = [
 
 export const ADMINISTRATIVE_PAYROLL_ACCESS_EMAILS = [
   'contact@psychoeducaction.com',
+  'fz.benlahcen@gmail.com',
   'hrahajar@gmail.com',
 ]
 
