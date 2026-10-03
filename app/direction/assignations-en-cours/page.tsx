@@ -245,7 +245,10 @@ export default function AssignmentProcessesPage() {
     })
 
     const [processResponse, profileResponse] = await Promise.all([
-      supabase.from('assignment_processes').select('*').order('started_at', { ascending: false }),
+      supabase
+        .from('assignment_processes')
+        .select('*')
+        .order('started_at', { ascending: false }),
       supabase
         .from('profiles')
         .select('id, full_name, email, role')
@@ -803,85 +806,67 @@ export default function AssignmentProcessesPage() {
     }
   }
 
-  const reopenRefusedProcess = async (process: AssignmentProcess) => {
+  const runHistoryAction = async (
+    process: AssignmentProcess,
+    action: 'reopen' | 'return_to_waiting'
+  ) => {
     const client = clientsById.get(process.waiting_list_client_id)
-    if (
-      !window.confirm(
-        `Reprendre la démarche active pour ${client?.client_name ?? 'ce client'} ? L’historique actuel sera conservé.`
-      )
-    ) return
+    const clientName = client?.client_name ?? 'ce client'
+    const assignmentWarning =
+      process.status === 'assigned'
+        ? ' L’assignation existante sera annulée et la place du professionnel sera libérée.'
+        : ''
+    const confirmation =
+      action === 'reopen'
+        ? `Reprendre la démarche active pour ${clientName} ?${assignmentWarning} L’historique sera conservé.`
+        : `Retourner ${clientName} dans la liste d’attente ?${assignmentWarning}`
+
+    if (!window.confirm(confirmation)) return
 
     setBusyProcessId(process.id)
     setError('')
+    setMessage('')
     try {
-      const { data: clientProcesses, error: processListError } = await supabase
-        .from('assignment_processes')
-        .select('id, status')
-        .eq('waiting_list_client_id', process.waiting_list_client_id)
-      if (processListError) throw processListError
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('Session expirée. Veuillez vous reconnecter.')
+      }
 
-      const otherActiveProcess = (clientProcesses ?? []).find(
-        (item) => item.id !== process.id && activeStatuses.includes(item.status as ProcessStatus)
+      const response = await fetch(
+        `/api/direction/assignment-processes/${process.id}/history-action`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ action }),
+        }
       )
-      if (otherActiveProcess) {
-        throw new Error('Une autre démarche active existe déjà pour ce client.')
+      const payload = (await response.json().catch(() => null)) as
+        | { error?: string; assignmentCanceled?: boolean }
+        | null
+      if (!response.ok) {
+        throw new Error(payload?.error ?? 'Action impossible.')
       }
 
-      const { error: reopenError } = await supabase
-        .from('assignment_processes')
-        .update({
-          status: 'to_contact',
-          classified_at: null,
-          classification_reason: null,
-          classification_details: null,
-        })
-        .eq('id', process.id)
-      if (reopenError) throw reopenError
-
-      const { error: waitingListError } = await supabase
-        .from('waiting_list_clients')
-        .update({ status: 'assignment_in_progress' })
-        .eq('id', process.waiting_list_client_id)
-      if (waitingListError) {
-        await supabase
-          .from('assignment_processes')
-          .update({
-            status: 'classified',
-            classified_at: process.classified_at,
-            classification_reason: process.classification_reason,
-            classification_details: process.classification_details,
-          })
-          .eq('id', process.id)
-        throw waitingListError
+      if (action === 'reopen') {
+        setView('active')
+        setMessage(
+          payload?.assignmentCanceled
+            ? 'La démarche est de nouveau active et l’ancienne assignation a été annulée.'
+            : 'La démarche est de nouveau active.'
+        )
+      } else {
+        setMessage(
+          payload?.assignmentCanceled
+            ? 'Le client est de nouveau en liste d’attente et l’ancienne assignation a été annulée.'
+            : 'Le client est de nouveau dans la liste d’attente.'
+        )
       }
-
-      await supabase
-        .from('administrative_tasks')
-        .update({ status: 'canceled', completed_at: null })
-        .eq('source_type', 'assignment_process_follow_up')
-        .eq('source_id', process.id)
-        .neq('status', 'canceled')
-
-      await insertEvent(process.id, {
-        event_type: 'status_changed',
-        status: 'to_contact',
-        note: 'Démarche reprise après un refus du client. Historique conservé.',
-      })
-      setProcesses((current) => current.map((item) =>
-        item.id === process.id
-          ? {
-              ...item,
-              status: 'to_contact',
-              classified_at: null,
-              classification_reason: null,
-              classification_details: null,
-            }
-          : item
-      ))
-      setView('active')
-      setMessage('La démarche est de nouveau active.')
+      await loadData()
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : 'Réactivation impossible.')
+      setError(caughtError instanceof Error ? caughtError.message : 'Action impossible.')
     } finally {
       setBusyProcessId('')
     }
@@ -1016,10 +1001,6 @@ export default function AssignmentProcessesPage() {
                 const followUpDue = Boolean(
                   followUpAt && followUpAt.getTime() <= Date.now() && isActive
                 )
-                const isRefusedHistory =
-                  !isActive &&
-                  process.status === 'classified' &&
-                  process.classification_reason === 'Refus du client'
                 const canSendFollowUpMessages = [
                   'no_response',
                   'voicemail_left',
@@ -1175,31 +1156,33 @@ export default function AssignmentProcessesPage() {
                       </div>
                     )}
 
-                    {isRefusedHistory && (
-                      <div className="mt-5 rounded-xl border border-[#e9cfc5] bg-[#fff6f2] p-4">
-                        <p className="text-sm font-semibold text-[#6f3f32]">
-                          Dossier classé : refus du client
+                    {!isActive && (
+                      <div className="mt-5 rounded-xl border border-[#dfd0bf] bg-[#fbf6ef] p-4">
+                        <p className="text-sm font-semibold text-[#5d4a3d]">
+                          Actions sur ce dossier historique
                         </p>
                         <p className="mt-1 text-sm text-[#7a6859]">
-                          Vous pouvez reprendre la même démarche ou replacer le client dans la liste d’attente. Tout l’historique sera conservé.
+                          La reprise conserve tout l’historique. Pour un dossier assigné, l’assignation existante sera annulée et la place du professionnel sera libérée.
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
                           <button
                             type="button"
                             disabled={busyProcessId === process.id}
-                            onClick={() => void reopenRefusedProcess(process)}
+                            onClick={() => void runHistoryAction(process, 'reopen')}
                             className={buttonClass('primary')}
                           >
                             Reprendre la démarche
                           </button>
-                          <button
-                            type="button"
-                            disabled={busyProcessId === process.id}
-                            onClick={() => void returnToWaitingList(process)}
-                            className={buttonClass('secondary')}
-                          >
-                            Retourner en liste d’attente
-                          </button>
+                          {process.status !== 'returned' && (
+                            <button
+                              type="button"
+                              disabled={busyProcessId === process.id}
+                              onClick={() => void runHistoryAction(process, 'return_to_waiting')}
+                              className={buttonClass('secondary')}
+                            >
+                              Retourner en liste d’attente
+                            </button>
+                          )}
                         </div>
                       </div>
                     )}

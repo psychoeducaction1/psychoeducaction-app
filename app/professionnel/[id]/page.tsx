@@ -29,6 +29,7 @@ import {
   buildClientAssignmentEmailTemplate,
   buildProfessionalAssignmentEmailTemplate,
 } from "@/lib/assignmentEmailTemplates";
+import { canManageProfessionalAssignmentRequests } from "@/lib/assignmentRequestAccess";
 import { isSuperAdmin } from "@/lib/superAdmin";
 import {
   closureReasonOptions,
@@ -520,6 +521,8 @@ export default function ProfessionnelDetailPage() {
   const [auditActor, setAuditActor] = useState<AuditActor | null>(null);
   const [canUseSuperAdminActions, setCanUseSuperAdminActions] =
     useState(false);
+  const [canManageAssignmentRequests, setCanManageAssignmentRequests] =
+    useState(false);
   const [assignmentRequest, setAssignmentRequest] =
     useState<AssignmentRequest | null>(null);
   const [assignedClients, setAssignedClients] = useState<AssignedClient[]>([]);
@@ -632,6 +635,9 @@ export default function ProfessionnelDetailPage() {
           name: currentProfile.full_name ?? currentProfile.email ?? null,
         });
         setCanUseSuperAdminActions(isSuperAdmin(user, currentProfile));
+        setCanManageAssignmentRequests(
+          canManageProfessionalAssignmentRequests(user, currentProfile),
+        );
 
         const profileResponse = await supabase
           .from("profiles")
@@ -1488,7 +1494,7 @@ export default function ProfessionnelDetailPage() {
   const handleUpsertAssignmentRequest = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!canUseSuperAdminActions) return;
+    if (!canManageAssignmentRequests) return;
 
     const normalizedRequestedCount = Math.max(
       0,
@@ -1578,7 +1584,7 @@ export default function ProfessionnelDetailPage() {
           void logAudit({
             supabase,
             actor: auditActor,
-            action: "assignment_request_increased_by_super_admin",
+            action: "assignment_request_increased_by_direction",
             entityType: "assignment_request",
             entityId: nextRequest.id,
             description: `${normalizedRequestedCount} assignation${
@@ -1590,7 +1596,7 @@ export default function ProfessionnelDetailPage() {
               added_requested_count: normalizedRequestedCount,
               previous_requested_count: existingActiveRequest.requested_count,
               new_requested_count: nextRequestedCount,
-              updated_by_super_admin: true,
+              updated_by_direction: true,
             },
           });
         }
@@ -1632,7 +1638,7 @@ export default function ProfessionnelDetailPage() {
         void logAudit({
           supabase,
           actor: auditActor,
-          action: "assignment_request_created_by_super_admin",
+          action: "assignment_request_created_by_direction",
           entityType: "assignment_request",
           entityId: createdRequest.id,
           description: `Demande de ${normalizedRequestedCount} assignation${
@@ -1642,7 +1648,7 @@ export default function ProfessionnelDetailPage() {
             professional_id: professionalId,
             professional_name: professionalName,
             requested_count: normalizedRequestedCount,
-            created_by_super_admin: true,
+            created_by_direction: true,
           },
         });
       }
@@ -2772,12 +2778,12 @@ export default function ProfessionnelDetailPage() {
                   </div>
                 )}
 
-                {canUseSuperAdminActions && (
+                {canManageAssignmentRequests && (
                   <div className="mt-5 rounded-2xl border border-[#d8b992] bg-[#fff8ef] p-4">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                       <div>
                         <p className="text-sm font-semibold text-[#8a5633]">
-                          Action Super administrateur
+                          Gestion administrative
                         </p>
                         <h3 className="mt-1 text-base font-semibold text-[#332820]">
                           {displayAssignmentRequest
