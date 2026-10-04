@@ -20,6 +20,14 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Admission publique WordPress
+
+Le contrat des routes publiques, les variables d’environnement et les étapes
+de configuration sont documentés dans
+[`docs/public-intake-api.md`](docs/public-intake-api.md). La migration
+`supabase/public-intake-calendar.sql` doit être exécutée manuellement avant
+d’utiliser les routes ou la page Direction > Calendrier.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

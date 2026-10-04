@@ -14,19 +14,13 @@ import {
   LayoutDashboard,
   ListChecks,
   ListTodo,
-  MessageSquare,
   PhoneCall,
-  Settings,
   UserCheck,
   Users,
   type LucideIcon,
 } from 'lucide-react'
 import { buttonClass } from '@/components/Ui'
 import { supabase } from '@/lib/supabaseClient'
-import {
-  getUnreadCountForDirection,
-  getUnreadCountForProfessional,
-} from '@/lib/internalMessages'
 import {
   isAdministrativePayrollAuthorized,
   isPayrollAuthorized,
@@ -54,7 +48,6 @@ export function AppNav({
   const router = useRouter()
   const [role, setRole] = useState<UserRole>(null)
   const [profileName, setProfileName] = useState('')
-  const [unreadMessageCount, setUnreadMessageCount] = useState(0)
   const [payrollAuthorized, setPayrollAuthorized] = useState(false)
   const [administrativePayrollAuthorized, setAdministrativePayrollAuthorized] =
     useState(false)
@@ -98,16 +91,6 @@ export function AppNav({
         isAdministrativeTaskAuthorized({ email: user.email }, data)
       )
 
-      const unreadCount =
-        resolvedRole === 'direction'
-          ? await getUnreadCountForDirection(supabase)
-          : resolvedRole === 'professionnel'
-            ? await getUnreadCountForProfessional(supabase, user.id)
-            : 0
-
-      if (!cancelled) {
-        setUnreadMessageCount(unreadCount)
-      }
     }
 
     loadRole()
@@ -133,6 +116,8 @@ export function AppNav({
           { href: '/direction', label: 'Dashboard direction', icon: LayoutDashboard },
           { href: '/direction/assignations', label: 'Assignations', icon: ClipboardList },
           { href: '/direction/liste-attente', label: "Liste d'attente", icon: ListChecks },
+          { href: '/direction/calendrier', label: 'Calendrier', icon: CalendarDays },
+          { href: '/direction/prospects', label: 'Prospects', icon: UserCheck },
           {
             href: '/direction/assignations-en-cours',
             label: 'Assignations en cours',
@@ -147,7 +132,6 @@ export function AppNav({
             ? [{ href: '/marketing', label: 'Marketing', icon: BriefcaseBusiness }]
             : []),
           { href: '/direction/professionnels', label: 'Professionnels', icon: Users },
-          { href: '/direction/messages', label: 'Messages', icon: MessageSquare },
           ...(payrollAuthorized
             ? [{ href: '/direction/paie', label: 'Paie', icon: DollarSign }]
             : []),
@@ -164,16 +148,13 @@ export function AppNav({
             ? [{ href: '/direction/budget', label: 'Budget', icon: ChartPie }]
             : []),
           { href: '/direction/journal-audit', label: "Journal d'audit", icon: History },
-          { href: '/direction/parametres', label: 'Paramètres', icon: Settings },
         ]
       : displayRole === 'professionnel'
         ? [
             { href: '/professionnel', label: 'Tableau de bord', icon: LayoutDashboard },
             { href: '/professionnel/clients', label: 'Mes assignations', icon: UserCheck },
             { href: '/professionnel/demande', label: 'Ma demande', icon: ClipboardList },
-            { href: '/professionnel/messages', label: 'Messages', icon: MessageSquare },
             { href: '/professionnel/historique', label: 'Historique', icon: History },
-            { href: '/professionnel/preferences', label: 'Mes préférences', icon: Settings },
             ...(administrativePayrollAuthorized
               ? [
                   {
@@ -226,6 +207,10 @@ export function AppNav({
               ? pathname === '/direction/assignations'
               : link.href === '/direction/liste-attente'
                 ? pathname?.startsWith('/direction/liste-attente')
+              : link.href === '/direction/calendrier'
+                ? pathname?.startsWith('/direction/calendrier')
+              : link.href === '/direction/prospects'
+                ? pathname?.startsWith('/direction/prospects')
               : link.href === '/direction/assignations-en-cours'
                 ? pathname?.startsWith('/direction/assignations-en-cours')
               : link.href === '/direction/taches-administratives'
@@ -237,24 +222,18 @@ export function AppNav({
               : link.href === '/direction/professionnels'
                 ? pathname?.startsWith('/direction/professionnels') ||
                   pathname?.startsWith('/professionnel/')
-                : link.href === '/direction/messages'
-                  ? pathname?.startsWith('/direction/messages')
                 : link.href === '/direction/paie-adjointes'
                   ? pathname?.startsWith('/direction/paie-adjointes')
                 : link.href === '/direction/paie'
                   ? pathname === '/direction/paie'
                 : link.href === '/direction/budget'
                   ? pathname?.startsWith('/direction/budget')
-                : link.href === '/direction/journal-audit'
-                  ? pathname?.startsWith('/direction/journal-audit')
-                : pathname?.startsWith('/direction/parametres')
+                : pathname?.startsWith('/direction/journal-audit')
           : displayRole === 'marketing' && link.href === '/marketing'
             ? pathname === '/marketing'
           : link.href === '/professionnel'
             ? pathname === '/professionnel'
             : pathname?.startsWith(link.href)
-      const showUnreadBadge = link.href.endsWith('/messages') && unreadMessageCount > 0
-
       return (
         <Link
           key={link.href}
@@ -271,11 +250,6 @@ export function AppNav({
         >
           <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
           {link.label}
-          {showUnreadBadge && (
-            <span className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-[#c14545] px-1.5 text-xs font-semibold text-white">
-              {unreadMessageCount}
-            </span>
-          )}
         </Link>
       )
     })
