@@ -12,25 +12,34 @@ import {
   validatePublicIntakePayload,
 } from '../lib/publicIntakeValidation.ts'
 
-test('génère les créneaux de semaine de 8 h à 17 h 30', () => {
+test('génère les créneaux de semaine de 8 h à 18 h', () => {
   const slots = buildIntakeSlots(
     '2026-10-05',
     1,
     new Date('2026-10-01T12:00:00Z')
   )
-  assert.equal(slots.length, 20)
+  assert.equal(slots.length, 21)
   assert.equal(slots[0].startAt, torontoLocalToUtc('2026-10-05', 8, 0).toISOString())
-  assert.equal(slots.at(-1)?.startAt, torontoLocalToUtc('2026-10-05', 17, 30).toISOString())
+  assert.equal(slots.at(-1)?.startAt, torontoLocalToUtc('2026-10-05', 18, 0).toISOString())
 })
 
-test('génère les créneaux de fin de semaine de 12 h à 15 h', () => {
+test('génère les créneaux du samedi de 12 h à 15 h 30', () => {
+  const slots = buildIntakeSlots(
+    '2026-10-03',
+    1,
+    new Date('2026-10-01T12:00:00Z')
+  )
+  assert.equal(slots.length, 8)
+  assert.equal(slots.at(-1)?.startAt, torontoLocalToUtc('2026-10-03', 15, 30).toISOString())
+})
+
+test('ne génère aucun créneau le dimanche', () => {
   const slots = buildIntakeSlots(
     '2026-10-04',
     1,
     new Date('2026-10-01T12:00:00Z')
   )
-  assert.equal(slots.length, 7)
-  assert.equal(slots.at(-1)?.startAt, torontoLocalToUtc('2026-10-04', 15, 0).toISOString())
+  assert.equal(slots.length, 0)
 })
 
 test('refuse un créneau situé dans les deux prochaines heures', () => {

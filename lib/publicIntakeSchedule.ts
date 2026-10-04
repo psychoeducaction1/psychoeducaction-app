@@ -95,11 +95,12 @@ export function isValidIntakeSlot(startAt: Date, now = new Date()) {
 
   const parts = partsInToronto(startAt)
   if (parts.minute !== 0 && parts.minute !== 30) return false
+  if (parts.weekday === 'Sun') return false
 
   const minutes = parts.hour * 60 + parts.minute
-  const isWeekend = parts.weekday === 'Sat' || parts.weekday === 'Sun'
-  const firstStart = isWeekend ? 12 * 60 : 8 * 60
-  const closing = isWeekend ? 15 * 60 + 30 : 18 * 60
+  const isSaturday = parts.weekday === 'Sat'
+  const firstStart = isSaturday ? 12 * 60 : 8 * 60
+  const closing = isSaturday ? 16 * 60 : 18 * 60 + 30
 
   return minutes >= firstStart && minutes + INTAKE_SLOT_MINUTES <= closing
 }
@@ -115,9 +116,11 @@ export function buildIntakeSlots(
     const dateValue = addLocalDays(fromDate, dayOffset)
     const midday = torontoLocalToUtc(dateValue, 12, 0)
     const weekday = partsInToronto(midday).weekday
-    const isWeekend = weekday === 'Sat' || weekday === 'Sun'
-    const firstStart = isWeekend ? 12 * 60 : 8 * 60
-    const closing = isWeekend ? 15 * 60 + 30 : 18 * 60
+    if (weekday === 'Sun') continue
+
+    const isSaturday = weekday === 'Sat'
+    const firstStart = isSaturday ? 12 * 60 : 8 * 60
+    const closing = isSaturday ? 16 * 60 : 18 * 60 + 30
 
     for (
       let minuteOfDay = firstStart;
