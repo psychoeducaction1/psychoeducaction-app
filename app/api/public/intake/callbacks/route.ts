@@ -45,7 +45,15 @@ export async function POST(request: NextRequest) {
       },
       p_idempotency_key: idempotencyKey,
     })
-    if (error) return publicIntakeJson(request, { error: 'La demande de rappel a échoué.' }, 500)
+    if (error) {
+      console.error('[public-intake-callback] Supabase RPC failed:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+      })
+      return publicIntakeJson(request, { error: 'La demande de rappel a échoué.' }, 500)
+    }
 
     let notificationPending = false
     try {

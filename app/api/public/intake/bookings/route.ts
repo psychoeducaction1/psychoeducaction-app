@@ -55,6 +55,12 @@ export async function POST(request: NextRequest) {
       p_idempotency_key: idempotencyKey,
     })
     if (error) {
+      console.error('[public-intake-booking] Supabase RPC failed:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+      })
       const unavailable = error.message.includes('HOLD_INVALID_OR_EXPIRED') || error.message.includes('SLOT_UNAVAILABLE')
       return publicIntakeJson(
         request,

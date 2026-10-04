@@ -290,9 +290,9 @@ declare
 begin
   perform pg_advisory_xact_lock(84201);
 
-  select response_payload into existing_response
-  from public.public_intake_requests
-  where idempotency_key = p_idempotency_key;
+  select intake_request.response_payload into existing_response
+  from public.public_intake_requests as intake_request
+  where intake_request.idempotency_key = p_idempotency_key;
   if found then return existing_response || jsonb_build_object('reused', true); end if;
 
   delete from public.intake_slot_holds where expires_at <= now();
@@ -421,9 +421,9 @@ declare
   response_payload jsonb;
 begin
   perform pg_advisory_xact_lock(84202);
-  select response_payload into existing_response
-  from public.public_intake_requests
-  where idempotency_key = p_idempotency_key;
+  select intake_request.response_payload into existing_response
+  from public.public_intake_requests as intake_request
+  where intake_request.idempotency_key = p_idempotency_key;
   if found then return existing_response || jsonb_build_object('reused', true); end if;
 
   select id into duplicate_prospect_id
@@ -741,5 +741,7 @@ grant execute on function public.create_public_callback_request(jsonb, text) to 
 grant execute on function public.create_intake_calendar_block(timestamptz, timestamptz, text, uuid, text) to service_role;
 grant execute on function public.update_intake_appointment(uuid, text, timestamptz, timestamptz, timestamptz, text, uuid, text) to service_role;
 grant execute on function public.transfer_prospect_to_waiting_list(uuid, text, uuid, text) to service_role;
+
+notify pgrst, 'reload schema';
 
 commit;
