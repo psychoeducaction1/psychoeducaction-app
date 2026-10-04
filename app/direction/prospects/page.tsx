@@ -58,7 +58,6 @@ const editableStatuses: Array<{ value: ProspectStatus; label: string }> = [
   { value: 'other', label: 'Autre' },
 ]
 const historyStatuses = new Set<ProspectStatus>([
-  'service_taken',
   'service_not_taken',
   'transferred_to_waiting_list',
 ])
@@ -152,6 +151,10 @@ export default function ProspectsPage() {
 
   const saveStatus = async () => {
     if (!selected) return
+    if (draftStatus === 'service_taken') {
+      await transferToWaitingList()
+      return
+    }
     setSaving(true); setError(''); setMessage('')
     const response = await authenticatedFetch(`/api/direction/prospects/${selected.id}`, {
       method: 'PATCH',
@@ -168,7 +171,7 @@ export default function ProspectsPage() {
   }
 
   const transferToWaitingList = async () => {
-    if (!selected || !window.confirm('Envoyer ce prospect vers la liste d’attente?')) return
+    if (!selected) return
     setSaving(true); setError(''); setMessage('')
     const response = await authenticatedFetch(`/api/direction/prospects/${selected.id}/transfer`, {
       method: 'POST',
@@ -176,7 +179,11 @@ export default function ProspectsPage() {
     })
     const payload = await response.json()
     if (!response.ok) setError(payload.error ?? 'Transfert impossible.')
-    else { setMessage('Le client a été ajouté à la liste d’attente.'); await loadProspects() }
+    else {
+      router.push(
+        `/direction/liste-attente?client=${encodeURIComponent(payload.waitingListClientId)}`
+      )
+    }
     setSaving(false)
   }
 
@@ -237,9 +244,7 @@ export default function ProspectsPage() {
 
               {selected.outcome_reason && <div className="mt-5 rounded-xl border border-[#eadfd2] bg-white p-4"><p className="text-sm font-semibold text-[#8a6f5d]">Note de suivi</p><p className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">{selected.outcome_reason}</p></div>}
 
-              {selected.status !== 'transferred_to_waiting_list' && <div className="mt-6 border-t border-[#eadfd2] pt-5"><h3 className="font-semibold text-[#332820]">Résultat de l’appel</h3><label className="mt-4 block text-sm font-semibold text-[#5d4a3d]">Statut<select className={`${inputClass} mt-2`} value={draftStatus} onChange={(event) => setDraftStatus(event.target.value as ProspectStatus)}>{editableStatuses.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}</select></label>{(draftStatus === 'service_not_taken' || draftStatus === 'other') && <label className="mt-4 block text-sm font-semibold text-[#5d4a3d]">{draftStatus === 'other' ? 'Précisez la situation' : 'Pourquoi le service n’a-t-il pas été pris?'}<textarea className={`${inputClass} mt-2 min-h-24`} value={outcomeReason} onChange={(event) => setOutcomeReason(event.target.value)} required /></label>}<button type="button" disabled={saving || ((draftStatus === 'service_not_taken' || draftStatus === 'other') && !outcomeReason.trim())} className={`${buttonClass('primary')} mt-4`} onClick={() => void saveStatus()}>Enregistrer le résultat</button></div>}
-
-              {selected.status === 'service_taken' && !selected.waiting_list_client_id && <div className="mt-6 rounded-xl border border-[#d8b992] bg-[#fff8ef] p-4"><h3 className="font-semibold text-[#332820]">Envoyer vers la liste d’attente</h3><p className="mt-1 text-sm text-[#7a6859]">Cette action créera la fiche client uniquement maintenant.</p><label className="mt-4 block text-sm font-semibold text-[#5d4a3d]">Priorité<select className={`${inputClass} mt-2`} value={priority} onChange={(event) => setPriority(event.target.value)}><option value="normal">Normale</option><option value="urgent">Urgente</option><option value="existing_or_transfer">Client existant / transfert</option></select></label><button type="button" disabled={saving} className={`${buttonClass('primary')} mt-4`} onClick={() => void transferToWaitingList()}><UserCheck className="h-4 w-4" />Ajouter à la liste d’attente</button></div>}
+              {selected.status !== 'transferred_to_waiting_list' && <div className="mt-6 border-t border-[#eadfd2] pt-5"><h3 className="font-semibold text-[#332820]">Résultat de l’appel</h3><label className="mt-4 block text-sm font-semibold text-[#5d4a3d]">Statut<select className={`${inputClass} mt-2`} value={draftStatus} onChange={(event) => setDraftStatus(event.target.value as ProspectStatus)}>{editableStatuses.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}</select></label>{(draftStatus === 'service_not_taken' || draftStatus === 'other') && <label className="mt-4 block text-sm font-semibold text-[#5d4a3d]">{draftStatus === 'other' ? 'Précisez la situation' : 'Pourquoi le service n’a-t-il pas été pris?'}<textarea className={`${inputClass} mt-2 min-h-24`} value={outcomeReason} onChange={(event) => setOutcomeReason(event.target.value)} required /></label>}{draftStatus === 'service_taken' && <div className="mt-4 rounded-xl border border-[#d8b992] bg-[#fff8ef] p-4"><p className="text-sm font-semibold text-[#5d4a3d]">Ajouter directement à la liste d’attente</p><p className="mt-1 text-sm text-[#7a6859]">Le prospect sera classé dans l’historique seulement après la création de sa fiche client.</p><label className="mt-4 block text-sm font-semibold text-[#5d4a3d]">Priorité<select className={`${inputClass} mt-2`} value={priority} onChange={(event) => setPriority(event.target.value)}><option value="normal">Normale</option><option value="urgent">Urgente</option><option value="existing_or_transfer">Client existant / transfert</option></select></label></div>}<button type="button" disabled={saving || ((draftStatus === 'service_not_taken' || draftStatus === 'other') && !outcomeReason.trim())} className={`${buttonClass('primary')} mt-4`} onClick={() => void saveStatus()}>{draftStatus === 'service_taken' ? <><UserCheck className="h-4 w-4" />Ajouter à la liste d’attente</> : 'Enregistrer le résultat'}</button></div>}
               {selected.waiting_list_client_id && <div className="mt-6 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-800">Ce prospect a été transféré vers la liste d’attente.</div>}
             </>}
           </section>

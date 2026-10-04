@@ -38,17 +38,13 @@ export async function POST(
   if (error) {
     const status = error.message.includes('PROSPECT_NOT_FOUND')
       ? 404
-      : error.message.includes('SERVICE_NOT_CONFIRMED')
-        ? 409
-        : 500
+      : 500
     return NextResponse.json(
       {
         error:
           status === 404
             ? 'Prospect introuvable.'
-            : status === 409
-              ? 'Confirmez d’abord que le service a été pris.'
-              : error.message,
+            : error.message,
       },
       { status }
     )

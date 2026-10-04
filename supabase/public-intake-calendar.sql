@@ -675,9 +675,6 @@ begin
       'reused', true
     );
   end if;
-  if prospect.status <> 'service_taken' then
-    raise exception using errcode = 'P0001', message = 'SERVICE_NOT_CONFIRMED';
-  end if;
   if p_priority_level not in ('normal', 'urgent', 'existing_or_transfer') then
     raise exception using errcode = 'P0001', message = 'INVALID_PRIORITY';
   end if;
@@ -697,7 +694,7 @@ begin
     prospect.modalities,
     prospect.email, prospect.phone, array[prospect.email], array[prospect.phone],
     prospect.consultation_reason,
-    'Transféré depuis la liste des prospects après confirmation du service.'
+    null
   ) returning id into client_id;
 
   update public.public_intake_prospects

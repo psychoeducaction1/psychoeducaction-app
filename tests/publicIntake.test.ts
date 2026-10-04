@@ -90,4 +90,9 @@ test('la migration protège les doubles soumissions et doubles réservations', a
   assert.match(sql, /transfer_prospect_to_waiting_list/i)
   assert.match(sql, /'other'/i)
   assert.doesNotMatch(sql, /select response_payload into existing_response/i)
+  assert.doesNotMatch(sql, /SERVICE_NOT_CONFIRMED/i)
+  assert.doesNotMatch(
+    sql,
+    /Transféré depuis la liste des prospects après confirmation du service/i
+  )
 })

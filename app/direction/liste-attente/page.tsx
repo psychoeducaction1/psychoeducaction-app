@@ -547,6 +547,15 @@ export default function DirectionListeAttentePage() {
       const loadedClients = (data ?? []) as WaitingListClient[]
       setClients(sortClientsByContactDate(loadedClients))
 
+      const requestedClientId = new URLSearchParams(window.location.search).get('client')
+      const requestedClient = loadedClients.find(
+        (client) => client.id === requestedClientId
+      )
+      if (requestedClient) {
+        setEditingClientId(requestedClient.id)
+        setEditForm(clientToForm(requestedClient))
+      }
+
       const { data: processData, error: processError } = await supabase
         .from('assignment_processes')
         .select('waiting_list_client_id, status')
