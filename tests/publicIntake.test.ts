@@ -88,4 +88,6 @@ test('la migration protège les doubles soumissions et doubles réservations', a
   assert.match(sql, /pg_advisory_xact_lock\(84201\)/i)
   assert.match(sql, /SLOT_UNAVAILABLE/i)
   assert.match(sql, /transfer_prospect_to_waiting_list/i)
+  assert.match(sql, /'other'/i)
+  assert.doesNotMatch(sql, /select response_payload into existing_response/i)
 })

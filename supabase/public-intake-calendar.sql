@@ -8,7 +8,8 @@ create table if not exists public.public_intake_prospects (
   status text not null default 'new' check (
     status in (
       'new', 'scheduled', 'callback_requested', 'contacted',
-      'service_taken', 'service_not_taken', 'transferred_to_waiting_list'
+      'service_taken', 'service_not_taken', 'other',
+      'transferred_to_waiting_list'
     )
   ),
   first_name text not null,

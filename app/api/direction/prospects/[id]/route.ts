@@ -3,12 +3,10 @@ import { getDirectionContext } from '@/lib/directionServer'
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
 
 const editableStatuses = new Set([
-  'new',
-  'scheduled',
-  'callback_requested',
   'contacted',
   'service_taken',
   'service_not_taken',
+  'other',
 ])
 
 export async function PATCH(
@@ -30,9 +28,13 @@ export async function PATCH(
   if (!editableStatuses.has(status)) {
     return NextResponse.json({ error: 'Statut invalide.' }, { status: 400 })
   }
-  if (status === 'service_not_taken' && !outcomeReason) {
+  if ((status === 'service_not_taken' || status === 'other') && !outcomeReason) {
     return NextResponse.json(
-      { error: 'Précisez pourquoi le service n’a pas été pris.' },
+      {
+        error: status === 'other'
+          ? 'Ajoutez une note pour préciser la situation.'
+          : 'Précisez pourquoi le service n’a pas été pris.',
+      },
       { status: 400 }
     )
   }
@@ -56,7 +58,9 @@ export async function PATCH(
     .from('public_intake_prospects')
     .update({
       status,
-      outcome_reason: status === 'service_not_taken' ? outcomeReason : null,
+      outcome_reason: status === 'service_not_taken' || status === 'other'
+        ? outcomeReason
+        : null,
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)
@@ -72,7 +76,11 @@ export async function PATCH(
     entity_type: 'public_intake_prospect',
     entity_id: id,
     description: 'Statut du prospect mis à jour.',
-    metadata: { previous_status: prospect.status, new_status: status },
+    metadata: {
+      previous_status: prospect.status,
+      new_status: status,
+      has_outcome_reason: Boolean(outcomeReason),
+    },
   })
   return NextResponse.json({ success: true, prospect: data })
 }
