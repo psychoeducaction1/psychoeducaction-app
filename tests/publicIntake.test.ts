@@ -60,6 +60,14 @@ test('détecte deux plages qui se chevauchent', () => {
   )
 })
 
+test("l'API expose l'UUID du rendez-vous comme identifiant d'événement", async () => {
+  const route = await readFile(
+    new URL('../app/api/public/intake/bookings/route.ts', import.meta.url),
+    'utf8'
+  )
+  assert.match(route, /bookingEventId:\s*data\.appointmentId/)
+})
+
 test('valide les clés d’idempotence et les soumissions complètes', () => {
   assert.equal(validateIdempotencyKey('court'), null)
   assert.equal(validateIdempotencyKey('form-550e8400-e29b-41d4-a716'), 'form-550e8400-e29b-41d4-a716')

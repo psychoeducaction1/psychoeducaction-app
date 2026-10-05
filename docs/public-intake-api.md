@@ -113,11 +113,17 @@ Réponse `201` ou `200` pour une répétition idempotente :
 {
   "success": true,
   "appointmentId": "uuid",
+  "bookingEventId": "uuid",
   "startAt": "2026-10-05T12:00:00+00:00",
   "endAt": "2026-10-05T12:15:00+00:00",
   "notificationPending": false
 }
 ```
+
+`bookingEventId` reprend l'UUID non sensible du rendez-vous créé par le serveur.
+Le formulaire public l'utilise comme `booking_event_id` pour émettre
+`booking_form_submitted` uniquement après une confirmation positive de la
+réservation. Le même UUID est retourné lors d'une répétition idempotente.
 
 ## Demander un rappel rapide
 
