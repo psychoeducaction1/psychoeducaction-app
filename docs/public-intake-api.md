@@ -113,17 +113,28 @@ Réponse `201` ou `200` pour une répétition idempotente :
 {
   "success": true,
   "appointmentId": "uuid",
-  "bookingEventId": "uuid",
+  "conversionEventId": "uuid distinct",
   "startAt": "2026-10-05T12:00:00+00:00",
   "endAt": "2026-10-05T12:15:00+00:00",
   "notificationPending": false
 }
 ```
 
-`bookingEventId` reprend l'UUID non sensible du rendez-vous créé par le serveur.
-Le formulaire public l'utilise comme `booking_event_id` pour émettre
+`conversionEventId` est un UUID aléatoire distinct de `appointmentId`, créé et
+conservé par le serveur pour cette réservation. Le formulaire public l'utilise
+comme `conversion_event_id` pour émettre
 `booking_form_submitted` uniquement après une confirmation positive de la
-réservation. Le même UUID est retourné lors d'une répétition idempotente.
+réservation. Une répétition idempotente retourne le même `conversionEventId`.
+L'objet envoyé au `dataLayer` ne contient que le nom de l'événement et cet
+identifiant; `appointmentId` et les données personnelles ou cliniques en sont
+exclus.
+
+```javascript
+window.dataLayer.push({
+  event: "booking_form_submitted",
+  conversion_event_id: result.conversionEventId
+});
+```
 
 ## Demander un rappel rapide
 

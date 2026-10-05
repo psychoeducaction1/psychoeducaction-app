@@ -55,6 +55,7 @@ on public.public_intake_prospects(normalized_phone);
 
 create table if not exists public.intake_appointments (
   id uuid primary key default gen_random_uuid(),
+  conversion_event_id uuid not null default gen_random_uuid(),
   prospect_id uuid not null
     references public.public_intake_prospects(id) on delete restrict,
   start_at timestamptz not null,
@@ -73,6 +74,22 @@ create table if not exists public.intake_appointments (
   check (end_at > start_at),
   check (buffer_end_at >= end_at)
 );
+
+alter table public.intake_appointments
+add column if not exists conversion_event_id uuid;
+
+alter table public.intake_appointments
+alter column conversion_event_id set default gen_random_uuid();
+
+update public.intake_appointments
+set conversion_event_id = gen_random_uuid()
+where conversion_event_id is null;
+
+alter table public.intake_appointments
+alter column conversion_event_id set not null;
+
+create unique index if not exists intake_appointments_conversion_event_id_idx
+on public.intake_appointments(conversion_event_id);
 
 create unique index if not exists intake_appointments_unique_scheduled_start_idx
 on public.intake_appointments(start_at)
@@ -287,14 +304,31 @@ declare
   duplicate_waiting_id uuid;
   prospect_id uuid;
   appointment_id uuid;
+  appointment_conversion_event_id uuid;
   response_payload jsonb;
 begin
   perform pg_advisory_xact_lock(84201);
 
-  select intake_request.response_payload into existing_response
+  select intake_request.response_payload, intake_request.appointment_id
+  into existing_response, appointment_id
   from public.public_intake_requests as intake_request
   where intake_request.idempotency_key = p_idempotency_key;
-  if found then return existing_response || jsonb_build_object('reused', true); end if;
+  if found then
+    select appointment.conversion_event_id
+    into appointment_conversion_event_id
+    from public.intake_appointments as appointment
+    where appointment.id = appointment_id;
+
+    existing_response := existing_response || jsonb_build_object(
+      'conversionEventId', appointment_conversion_event_id
+    );
+
+    update public.public_intake_requests as intake_request
+    set response_payload = existing_response
+    where intake_request.idempotency_key = p_idempotency_key;
+
+    return existing_response || jsonb_build_object('reused', true);
+  end if;
 
   delete from public.intake_slot_holds where expires_at <= now();
   select * into held from public.intake_slot_holds
@@ -361,7 +395,8 @@ begin
   ) values (
     prospect_id, held.start_at, held.end_at, held.buffer_end_at,
     'public_website'
-  ) returning id into appointment_id;
+  ) returning id, conversion_event_id
+  into appointment_id, appointment_conversion_event_id;
 
   insert into public.intake_appointment_events (
     appointment_id, event_type, new_start_at, metadata
@@ -388,6 +423,7 @@ begin
   response_payload := jsonb_build_object(
     'success', true,
     'appointmentId', appointment_id,
+    'conversionEventId', appointment_conversion_event_id,
     'prospectId', prospect_id,
     'startAt', held.start_at,
     'endAt', held.end_at,

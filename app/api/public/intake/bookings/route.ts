@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
     return publicIntakeJson(request, {
       success: true,
       appointmentId: data.appointmentId,
-      bookingEventId: data.appointmentId,
+      conversionEventId: data.conversionEventId,
       startAt: data.startAt,
       endAt: data.endAt,
       notificationPending,
