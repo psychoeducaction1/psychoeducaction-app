@@ -3,6 +3,8 @@ import { getDirectionContext } from '@/lib/directionServer'
 import { isPayrollAuthorized } from '@/lib/payrollAccess'
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
 
+const ACCOUNTANT_CC_EMAIL = 'DominiqueLeduc@gestionproled.com'
+
 type PayrollInvoiceEmailBody = {
   to?: unknown
   subject?: unknown
@@ -60,6 +62,7 @@ async function sendEmailWithAttachment({
     body: JSON.stringify({
       from: fromEmail,
       to: [to],
+      cc: [ACCOUNTANT_CC_EMAIL],
       subject,
       text,
       attachments: [
@@ -159,6 +162,7 @@ export async function POST(request: NextRequest) {
         professional_id: professionalId || null,
         professional_name: professionalName || null,
         recipient_email: to,
+        cc_emails: [ACCOUNTANT_CC_EMAIL],
         invoice_number: invoiceNumber || null,
         payment_date: paymentDate || null,
         attachment_file_name: attachmentFileName,

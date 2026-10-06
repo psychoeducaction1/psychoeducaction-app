@@ -26,7 +26,7 @@ export function isPsychoeducationalEvaluationReport(
   detail: string
 ): boolean {
   const text = combinedActivityText(description, detail)
-  return text.includes('rapport') && text.includes('evaluation')
+  return text.includes('rapport') || text.includes('redaction')
 }
 
 export function isTelephoneInterview(description: string, detail: string): boolean {

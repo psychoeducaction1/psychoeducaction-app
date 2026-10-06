@@ -16,6 +16,18 @@ test('reconnaît un rapport d’évaluation psychoéducative', () => {
     classifyPayrollActivity("Rapport d'évaluation", 'Psycho-éducative'),
     'rapport_evaluation'
   )
+  assert.equal(
+    classifyPayrollActivity('Rédaction', "Rédaction d'un rapport"),
+    'rapport_evaluation'
+  )
+  assert.equal(
+    classifyPayrollActivity('Rédaction', ''),
+    'rapport_evaluation'
+  )
+  assert.equal(
+    classifyPayrollActivity('Rapport', ''),
+    'rapport_evaluation'
+  )
 })
 
 test('reconnaît un entretien téléphonique comme une rencontre facturable', () => {
