@@ -392,10 +392,23 @@ export default function MarketingPage() {
             actions={isDirection ? (
               <>
                 {!readOnlyPreview && (
-                  <Link href="/marketing/calendrier" className={buttonClass('secondary')}>
-                    <CalendarDays className="h-4 w-4" />
-                    Calendrier marketing
-                  </Link>
+                  <>
+                    <Link href="/marketing/calendrier" className={buttonClass('secondary')}>
+                      <CalendarDays className="h-4 w-4" />
+                      Calendrier marketing
+                    </Link>
+                    {staff && (
+                      <button
+                        type="button"
+                        disabled={saving}
+                        onClick={() => void inviteCamille()}
+                        className={buttonClass('secondary')}
+                      >
+                        <Send className="h-4 w-4" />
+                        {saving ? 'Envoi...' : "Renvoyer l'invitation"}
+                      </button>
+                    )}
+                  </>
                 )}
                 <button
                   type="button"

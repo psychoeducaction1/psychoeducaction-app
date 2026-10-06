@@ -3,6 +3,13 @@ import {
   hasCompensationRule,
   isNancyProfessional,
 } from '@/lib/professionalCompensation'
+import {
+  classifyPayrollActivity,
+  getActivityQuantity,
+  getActivityUnitClientAmount,
+  isTelephoneInterview,
+  type PayrollActivityClassification,
+} from '@/lib/payrollActivity'
 
 export type PayrollCategory =
   | 'intervenant_psychoeducation'
@@ -227,27 +234,17 @@ function getWeekStart(dateStr: string): string {
   return date.toISOString().slice(0, 10)
 }
 
-type RowClassification = 'rencontre' | 'absence' | 'deplacement' | 'dossier' | 'inconnu'
-
-function classifyRow(description: string, detail: string): RowClassification {
-  const normalizedDescription = description.trim().toLowerCase()
-  const normalizedDetail = detail.trim().toLowerCase()
-
-  if (normalizedDescription === 'absence') return 'absence'
-  if (normalizedDescription.includes('rencontre')) return 'rencontre'
-  if (normalizedDetail.includes('ouverture de dossier')) return 'dossier'
-  if (normalizedDetail.includes('déplacement') || normalizedDetail.includes('deplacement')) {
-    return 'deplacement'
-  }
-
-  return 'inconnu'
-}
-
 type MeetingRow = {
   date: string
   weekStart: string
   durationHours: number
   amount: number
+  classification: Extract<
+    PayrollActivityClassification,
+    'rencontre' | 'rapport_evaluation'
+  >
+  description: string
+  detail: string
 }
 
 type CancellationRow = {
@@ -360,11 +357,11 @@ export function calculatePayroll(
 
     const description = typeof row[4] === 'string' ? row[4] : ''
     const detail = typeof row[5] === 'string' ? row[5] : ''
-    const classification = classifyRow(description, detail)
+    const classification = classifyPayrollActivity(description, detail)
 
     if (classification === 'dossier') return
 
-    if (classification === 'rencontre') {
+    if (classification === 'rencontre' || classification === 'rapport_evaluation') {
       const parsedDate = parseDateCell(row[0])
 
       if (!parsedDate) {
@@ -381,6 +378,9 @@ export function calculatePayroll(
         weekStart: getWeekStart(parsedDate.date),
         durationHours: parsedDate.durationHours,
         amount: parseAmount(row[8]),
+        classification,
+        description,
+        detail,
       })
       return
     }
@@ -431,51 +431,74 @@ export function calculatePayroll(
   buckets.forEach((bucket) => {
     const { professional, rencontres, travelFeesTotal, cancellations } = bucket
 
-    if (!hasCompensationRule(professional)) {
+    const hasStandardCompensationRule = hasCompensationRule(professional)
+
+    const hasStandardRows =
+      rencontres.some((meeting) => meeting.classification === 'rencontre') ||
+      cancellations.length > 0
+
+    if (!hasStandardCompensationRule && hasStandardRows) {
       warnings.push({
         type: 'missing_category',
-        message: `Catégorie de paie non définie pour ${professional.fullName} - ce professionnel a été ignoré du calcul. Définissez sa catégorie ci-dessus puis relancez le calcul.`,
+        message: `Catégorie de paie non définie pour ${professional.fullName} - seules les lignes ayant une règle universelle peuvent être calculées. Définissez sa catégorie ci-dessus puis relancez le calcul.`,
       })
-      return
     }
 
     const meetingsByWeek = new Map<string, MeetingRow[]>()
-    rencontres.forEach((meeting) => {
-      const list = meetingsByWeek.get(meeting.weekStart) ?? []
-      list.push(meeting)
-      meetingsByWeek.set(meeting.weekStart, list)
-    })
+    rencontres
+      .filter((meeting) => meeting.classification === 'rencontre')
+      .forEach((meeting) => {
+        const list = meetingsByWeek.get(meeting.weekStart) ?? []
+        list.push(meeting)
+        meetingsByWeek.set(meeting.weekStart, list)
+      })
 
     const lineItemsMap = new Map<string, InvoiceLineItem>()
 
     rencontres.forEach((meeting) => {
+      if (
+        meeting.classification === 'rencontre' &&
+        !hasStandardCompensationRule
+      ) {
+        return
+      }
+
       const weekCount = meetingsByWeek.get(meeting.weekStart)?.length ?? 0
+      const countAsItem = isTelephoneInterview(meeting.description, meeting.detail)
+      const quantity = getActivityQuantity(meeting.durationHours, countAsItem)
+      const unitClientAmount = getActivityUnitClientAmount(meeting.amount, quantity)
       const calculated = calculateProfessionalCompensation({
         professional,
-        lineType: 'rencontre',
-        clientAmount: meeting.amount * meeting.durationHours,
+        lineType: meeting.classification,
+        clientAmount: meeting.amount,
         durationHours: meeting.durationHours,
         weeklyMeetingCount: weekCount,
       })
       const rate = calculated.professionalRate
       const pay = calculated.professionalPay
-      const key = calculated.isFlatRate ? `flat-${rate}` : `${meeting.amount}|${rate}`
+      const label =
+        meeting.classification === 'rapport_evaluation'
+          ? "Rapport d'évaluation psychoéducative"
+          : countAsItem
+            ? 'Entretien téléphonique'
+            : `${getServiceTypeLabel(unitClientAmount)} - Rencontre (${unitClientAmount} $)`
+      const key = calculated.isFlatRate
+        ? `flat-${rate}`
+        : `${label}|${unitClientAmount}|${rate}`
       const existing = lineItemsMap.get(key)
 
       if (existing) {
-        existing.totalHours += meeting.durationHours
+        existing.totalHours += quantity
         existing.totalPay += pay
         return
       }
 
       lineItemsMap.set(key, {
-        label: calculated.isFlatRate
-          ? 'Rencontre'
-          : `${getServiceTypeLabel(meeting.amount)} - Rencontre (${meeting.amount} $)`,
-        amount: meeting.amount,
+        label: calculated.isFlatRate ? 'Rencontre' : label,
+        amount: unitClientAmount,
         rate,
         isFlatRate: calculated.isFlatRate,
-        totalHours: meeting.durationHours,
+        totalHours: quantity,
         totalPay: pay,
       })
     })
@@ -483,6 +506,8 @@ export function calculatePayroll(
     const cancellationLineItemsMap = new Map<string, CancellationLineItem>()
 
     cancellations.forEach((cancellation) => {
+      if (!hasStandardCompensationRule) return
+
       const weekCount = meetingsByWeek.get(cancellation.weekStart)?.length ?? 0
       const calculated = calculateProfessionalCompensation({
         professional,
@@ -550,7 +575,9 @@ export function calculatePayroll(
       professional,
       lineItems,
       rateGroups,
-      meetingCount: rencontres.length,
+      meetingCount: rencontres.filter(
+        (meeting) => meeting.classification === 'rencontre'
+      ).length,
       travelFeesTotal,
       travelKilometersTotal: travelFeesTotal / TRAVEL_FEE_RATE_PER_KM,
       cancellationCount: cancellations.length,

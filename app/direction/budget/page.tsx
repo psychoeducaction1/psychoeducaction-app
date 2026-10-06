@@ -43,6 +43,7 @@ const inputClass =
 
 const lineTypeLabels: Record<BudgetLineType, string> = {
   rencontre: 'Rencontre',
+  rapport_evaluation: "Rapport d'évaluation psychoéducative",
   annulation: 'Annulation',
   ouverture_dossier: 'Ouverture de dossier',
   deplacement_exclu: 'Déplacement exclu',
@@ -50,6 +51,7 @@ const lineTypeLabels: Record<BudgetLineType, string> = {
 
 const lineTypeTones: Record<BudgetLineType, 'neutral' | 'success' | 'warning' | 'muted'> = {
   rencontre: 'neutral',
+  rapport_evaluation: 'success',
   annulation: 'warning',
   ouverture_dossier: 'success',
   deplacement_exclu: 'muted',

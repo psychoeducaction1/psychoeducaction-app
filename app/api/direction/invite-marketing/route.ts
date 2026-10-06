@@ -72,6 +72,17 @@ export async function POST(request: NextRequest) {
     }
     marketingUser = data.user
     invitationSent = true
+  } else {
+    const { error } = await admin.auth.resetPasswordForEmail(MARKETING_EMAIL, {
+      redirectTo: `${appUrl.replace(/\/$/, '')}/auth/invitation`,
+    })
+    if (error) {
+      return response(
+        { error: error.message || "L'invitation n'a pas pu être renvoyée." },
+        500
+      )
+    }
+    invitationSent = true
   }
 
   const { error: profileError } = await admin.from('profiles').upsert(

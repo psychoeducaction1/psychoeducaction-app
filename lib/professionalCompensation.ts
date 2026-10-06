@@ -35,6 +35,7 @@ const THINHINANE_NAME_KEY = 'thinhinaneouldyounes'
 
 export type CompensationLineType =
   | 'rencontre'
+  | 'rapport_evaluation'
   | 'annulation'
   | 'ouverture_dossier'
   | 'deplacement'
@@ -120,6 +121,18 @@ export function calculateProfessionalCompensation({
       nancyPay: 0,
       clinicRevenue: 0,
       professionalRate: 1,
+      isFlatRate: false,
+    }
+  }
+
+  if (lineType === 'rapport_evaluation') {
+    const professionalRate = 0.8
+    const professionalPay = safeClientAmount * professionalRate
+    return {
+      professionalPay,
+      nancyPay: 0,
+      clinicRevenue: safeClientAmount - professionalPay,
+      professionalRate,
       isFlatRate: false,
     }
   }

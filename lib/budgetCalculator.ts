@@ -3,6 +3,10 @@ import {
   calculateProfessionalCompensation,
   hasCompensationRule,
 } from '@/lib/professionalCompensation'
+import {
+  classifyPayrollActivity,
+  type PayrollActivityClassification,
+} from '@/lib/payrollActivity'
 
 export type BudgetPeriod = {
   startDate: string
@@ -17,6 +21,7 @@ export type BudgetDetectedPeriod = {
 
 export type BudgetLineType =
   | 'rencontre'
+  | 'rapport_evaluation'
   | 'annulation'
   | 'ouverture_dossier'
   | 'deplacement_exclu'
@@ -78,8 +83,6 @@ export type BudgetCalculationResult = {
   warnings: BudgetCalculationWarning[]
 }
 
-type RowClassification = 'rencontre' | 'absence' | 'deplacement' | 'dossier' | 'inconnu'
-
 type ParsedActivityRow = {
   rowNumber: number
   professional: ProfessionalPayrollInfo
@@ -88,7 +91,7 @@ type ParsedActivityRow = {
   weekStart: string | null
   durationHours: number
   amount: number
-  classification: RowClassification
+  classification: PayrollActivityClassification
   description: string
   detail: string
 }
@@ -218,18 +221,6 @@ function getWeekStart(dateStr: string): string {
   return date.toISOString().slice(0, 10)
 }
 
-function classifyRow(description: string, detail: string): RowClassification {
-  const normalizedDescription = normalizeSearchText(description)
-  const normalizedDetail = normalizeSearchText(detail)
-
-  if (normalizedDescription === 'absence') return 'absence'
-  if (normalizedDescription.includes('rencontre')) return 'rencontre'
-  if (normalizedDetail.includes('ouverture de dossier')) return 'dossier'
-  if (normalizedDetail.includes('deplacement')) return 'deplacement'
-
-  return 'inconnu'
-}
-
 function isDateInPeriod(date: string | null, period?: BudgetPeriod): boolean {
   if (!date || !period?.startDate || !period.endDate) return true
   return date >= period.startDate && date <= period.endDate
@@ -275,6 +266,9 @@ function getLineDescription(row: ParsedActivityRow): string {
   if (row.classification === 'dossier') return 'Frais d’ouverture de dossier'
   if (row.classification === 'absence') return 'Frais d’annulation'
   if (row.classification === 'deplacement') return 'Frais de déplacement'
+  if (row.classification === 'rapport_evaluation') {
+    return "Rapport d'évaluation psychoéducative"
+  }
   return row.detail || row.description || 'Rencontre'
 }
 
@@ -290,10 +284,7 @@ function calculateProfessionalPay({
   clinicRevenue: number
 } {
   const { professional, amount, durationHours, classification } = row
-  const clientAmount =
-    classification === 'rencontre'
-      ? amount * Math.max(durationHours, 0)
-      : amount
+  const clientAmount = amount
 
   return calculateProfessionalCompensation({
     professional,
@@ -304,6 +295,8 @@ function calculateProfessionalPay({
           ? 'ouverture_dossier'
           : classification === 'deplacement'
             ? 'deplacement'
+            : classification === 'rapport_evaluation'
+              ? 'rapport_evaluation'
             : 'rencontre',
     clientAmount,
     durationHours,
@@ -451,14 +444,16 @@ export function calculateBudget(
 
     const description = typeof row[4] === 'string' ? row[4] : ''
     const detail = typeof row[5] === 'string' ? row[5] : ''
-    const classification = classifyRow(description, detail)
+    const classification = classifyPayrollActivity(description, detail)
     const parsedDate = parseDateCell(row[0])
     const date = parsedDate?.date ?? null
 
     if (!isDateInPeriod(date, period)) return
 
     if (
-      (classification === 'rencontre' || classification === 'absence') &&
+      (classification === 'rencontre' ||
+        classification === 'rapport_evaluation' ||
+        classification === 'absence') &&
       !parsedDate
     ) {
       warnings.push({
@@ -542,16 +537,14 @@ export function calculateBudget(
       if (
         !hasCompensationRule(bucket.professional) &&
         row.classification !== 'dossier' &&
-        row.classification !== 'deplacement'
+        row.classification !== 'deplacement' &&
+        row.classification !== 'rapport_evaluation'
       ) {
         return []
       }
 
       const calculated = calculateProfessionalPay({ row, weekCount })
-      const clientAmount =
-        row.classification === 'rencontre'
-          ? row.amount * Math.max(row.durationHours, 0)
-          : row.amount
+      const clientAmount = row.amount
       const type: BudgetLineType =
         row.classification === 'absence'
           ? 'annulation'
@@ -559,6 +552,8 @@ export function calculateBudget(
             ? 'ouverture_dossier'
             : row.classification === 'deplacement'
               ? 'deplacement_exclu'
+              : row.classification === 'rapport_evaluation'
+                ? 'rapport_evaluation'
               : 'rencontre'
 
       return [
