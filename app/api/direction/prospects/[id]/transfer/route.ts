@@ -14,16 +14,39 @@ export async function POST(
   }
   const { id } = await params
   const body = (await request.json().catch(() => null)) as
-    | { priorityLevel?: unknown }
+    | { priorityLevel?: unknown; consultationReason?: unknown }
     | null
   const priorityLevel = typeof body?.priorityLevel === 'string'
     ? body.priorityLevel
     : ''
+  const consultationReason =
+    typeof body?.consultationReason === 'string'
+      ? body.consultationReason.trim().slice(0, 5000)
+      : ''
   if (!priorities.has(priorityLevel)) {
     return NextResponse.json({ error: 'Priorité invalide.' }, { status: 400 })
   }
+  if (!consultationReason) {
+    return NextResponse.json(
+      { error: "Ajoutez le motif de consultation avant le transfert vers la liste d'attente." },
+      { status: 400 }
+    )
+  }
 
-  const { data, error } = await getSupabaseAdmin().rpc(
+  const supabase = getSupabaseAdmin()
+  const { error: updateError } = await supabase
+    .from('public_intake_prospects')
+    .update({
+      consultation_reason: consultationReason,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+
+  if (updateError) {
+    return NextResponse.json({ error: updateError.message }, { status: 500 })
+  }
+
+  const { data, error } = await supabase.rpc(
     'transfer_prospect_to_waiting_list',
     {
       p_prospect_id: id,
