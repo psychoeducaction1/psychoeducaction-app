@@ -78,10 +78,27 @@ export function dateKeyInToronto(date: Date) {
   return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`
 }
 
+export function dateTimeInputValueInToronto(date: Date) {
+  const parts = partsInToronto(date)
+  return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}T${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`
+}
+
+export function dateTimeInputToUtcInToronto(value: string) {
+  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})$/.exec(value)
+  if (!match) throw new Error('Date et heure locales invalides.')
+  return torontoLocalToUtc(match[1], Number(match[2]), Number(match[3]))
+}
+
 export function addLocalDays(dateValue: string, days: number) {
   const [year, month, day] = dateValue.split('-').map(Number)
   const date = new Date(Date.UTC(year, month - 1, day + days, 12))
   return date.toISOString().slice(0, 10)
+}
+
+export function startOfLocalWeek(dateValue: string) {
+  const [year, month, day] = dateValue.split('-').map(Number)
+  const weekday = new Date(Date.UTC(year, month - 1, day, 12)).getUTCDay() || 7
+  return addLocalDays(dateValue, 1 - weekday)
 }
 
 export function isValidIntakeSlot(startAt: Date, now = new Date()) {

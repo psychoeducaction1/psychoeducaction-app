@@ -3,8 +3,12 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import {
   buildIntakeSlots,
+  dateKeyInToronto,
+  dateTimeInputToUtcInToronto,
+  dateTimeInputValueInToronto,
   isValidIntakeSlot,
   rangesOverlap,
+  startOfLocalWeek,
   torontoLocalToUtc,
 } from '../lib/publicIntakeSchedule.ts'
 import {
@@ -69,6 +73,17 @@ test("l'API expose un identifiant de conversion distinct du rendez-vous", async 
   assert.match(route, /conversionEventId:\s*data\.conversionEventId/)
   assert.doesNotMatch(route, /conversionEventId:\s*data\.appointmentId/)
   assert.doesNotMatch(route, /bookingEventId/)
+})
+
+test('conserve les dates et heures du calendrier dans le fuseau de Toronto', () => {
+  const appointment = new Date('2026-10-09T17:00:00Z')
+  assert.equal(dateKeyInToronto(appointment), '2026-10-09')
+  assert.equal(dateTimeInputValueInToronto(appointment), '2026-10-09T13:00')
+  assert.equal(
+    dateTimeInputToUtcInToronto('2026-10-09T13:00').toISOString(),
+    '2026-10-09T17:00:00.000Z'
+  )
+  assert.equal(startOfLocalWeek('2026-10-09'), '2026-10-05')
 })
 
 test('chaque réservation reçoit un UUID de conversion unique', async () => {
