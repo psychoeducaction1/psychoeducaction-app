@@ -53,7 +53,6 @@ export const serviceTypeOptions: PreferenceOption[] = [
   { value: 'psychosocial_intervention', label: 'Intervention psychosociale' },
   { value: 'psychotherapy', label: 'Psychothérapie' },
   { value: 'psychological_assessment', label: 'Évaluation psychologique' },
-  { value: 'psychoeducational_assessment', label: 'Évaluation psychoéducative' },
 ]
 
 export const officeLocationOptions: PreferenceOption[] = [

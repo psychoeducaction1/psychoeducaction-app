@@ -139,7 +139,7 @@ with validated_preferences as (
       "full_name": "Karima Becherif",
       "age_ranges": [{"min": 0, "max": null}],
       "client_groups": ["children", "adolescents", "adults", "seniors", "parents", "families"],
-      "service_types": ["psychoeducation", "psychoeducational_assessment"],
+      "service_types": ["psychoeducation"],
       "office_locations": [],
       "meeting_modes": ["in_person", "video"],
       "motifs": ["parenting", "family_relationships", "adaptation"],
@@ -304,6 +304,19 @@ set
 from validated_preferences as pref
 where profile.full_name = pref.full_name
   and profile.role = 'professionnel';
+
+-- L’évaluation psychoéducative fait partie de la psychoéducation. Nettoie aussi
+-- les sélections enregistrées manuellement avant cette mise à jour.
+update public.profiles
+set pref_service_types = (
+  select array_agg(distinct case
+    when service_type = 'psychoeducational_assessment' then 'psychoeducation'
+    else service_type
+  end)
+  from unnest(pref_service_types) as service_type
+)
+where role = 'professionnel'
+  and 'psychoeducational_assessment' = any(pref_service_types);
 
 comment on column public.profiles.pref_age_ranges is
   'Plages d’âge structurées utilisées pour les suggestions de jumelage.';

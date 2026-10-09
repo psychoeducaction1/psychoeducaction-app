@@ -30,7 +30,7 @@ const serviceValues: Record<string, string> = {
   psychoeducation: 'psychoeducation',
   psychotherapie: 'psychotherapy',
   'evaluation psychologique': 'psychological_assessment',
-  'evaluation psychoeducative': 'psychoeducational_assessment',
+  'evaluation psychoeducative': 'psychoeducation',
 }
 
 const motifKeywords: Record<string, string[]> = {

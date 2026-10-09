@@ -37,6 +37,17 @@ test('propose un professionnel compatible sans considérer sa capacité', () => 
   assert.equal(result.score, 100)
 })
 
+test('traite une évaluation psychoéducative comme de la psychoéducation', () => {
+  const result = evaluateProfessionalMatch(
+    { ...baseClient, service_requested: 'Évaluation psychoéducative' },
+    baseProfessional,
+    new Date('2026-10-09T12:00:00Z')
+  )
+
+  assert.equal(result.isSuggested, true)
+  assert.equal(result.score, 100)
+})
+
 test('applique une tolérance de deux ans autour de la plage d’âge', () => {
   const client = { ...baseClient, birth_date: '2012-01-01' }
   const result = evaluateProfessionalMatch(
