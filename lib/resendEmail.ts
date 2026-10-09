@@ -5,11 +5,13 @@ export async function sendResendEmail({
   cc,
   subject,
   text,
+  html,
 }: {
   to: string
   cc?: string[]
   subject: string
   text: string
+  html?: string
 }) {
   const apiKey = process.env.RESEND_API_KEY
   const from =
@@ -30,6 +32,7 @@ export async function sendResendEmail({
       ...(cc && cc.length > 0 ? { cc } : {}),
       subject,
       text,
+      ...(html ? { html } : {}),
     }),
   })
 
