@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import {
+  clientGroupOptions,
+  getOptionLabels,
+  meetingModeOptions,
+} from '@/lib/professionalPreferences'
 
 type NotificationBody = {
   requestId?: unknown
@@ -17,8 +22,8 @@ type ProfileRow = {
   full_name: string | null
   email: string | null
   role: string | null
-  pref_client_types: string[] | null
-  pref_modalities: string[] | null
+  pref_client_groups: string[] | null
+  pref_meeting_modes: string[] | null
 }
 
 function jsonResponse(body: object, status: number) {
@@ -162,7 +167,7 @@ export async function POST(request: NextRequest) {
 
   const { data: profile, error: profileError } = await supabaseServer
     .from('profiles')
-    .select('full_name, email, role, pref_client_types, pref_modalities')
+    .select('full_name, email, role, pref_client_groups, pref_meeting_modes')
     .eq('id', user.id)
     .limit(1)
     .maybeSingle()
@@ -180,7 +185,7 @@ export async function POST(request: NextRequest) {
   const professionalName =
     profileRow?.full_name?.trim() || profileRow?.email?.trim() || 'Professionnel'
   const appUrl = getAppUrl()
-  const directionLink = `${appUrl}/direction/assignations`
+  const directionLink = `${appUrl}/direction/professionnels`
   const createdAt = requestRow.created_at
     ? new Intl.DateTimeFormat('fr-CA', {
         dateStyle: 'long',
@@ -202,10 +207,10 @@ export async function POST(request: NextRequest) {
     String(requestRow.requested_count ?? 0),
     '',
     'Clientèle :',
-    formatList(profileRow?.pref_client_types),
+    formatList(getOptionLabels(profileRow?.pref_client_groups, clientGroupOptions)),
     '',
     'Modalité :',
-    formatList(profileRow?.pref_modalities),
+    formatList(getOptionLabels(profileRow?.pref_meeting_modes, meetingModeOptions)),
     '',
     'Commentaire :',
     formatText(requestRow.request_comment),

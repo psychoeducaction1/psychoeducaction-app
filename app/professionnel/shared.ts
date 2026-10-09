@@ -28,25 +28,6 @@ export type AssignmentRequest = {
   request_comment: string | null
 }
 
-export type ProfessionalPreferences = {
-  pref_languages: string
-  pref_client_types: string
-  pref_modalities: string
-  pref_followup_types: string
-  pref_notes: string
-}
-
-export type PreferenceField = keyof ProfessionalPreferences
-
-export type ProfilePreferencesRow = {
-  role: string | null
-  pref_languages: string[] | null
-  pref_client_types: string[] | null
-  pref_modalities: string[] | null
-  pref_followup_types: string[] | null
-  pref_notes: string | null
-}
-
 export type EditableClientField =
   | 'contacted'
   | 'is_active'

@@ -2,7 +2,6 @@
 
 import { type FormEvent, type RefObject, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Sparkles, X } from 'lucide-react'
 import { AppNav } from '@/components/AppNav'
 import {
   EmailComposerModal,
@@ -37,10 +36,10 @@ import {
   buildProfessionalAssignmentEmailTemplate,
 } from '@/lib/assignmentEmailTemplates'
 import {
-  isProfessionalSuggested,
-  rankProfessionalMatches,
+  getSuggestedProfessionals,
+  type MatchingProfessional,
 } from '@/lib/professionalMatching'
-import { hasSpecialProgramMarker } from '@/lib/waitingListFilters'
+import type { ProfessionalStructuredPreferencesRow } from '@/lib/professionalPreferences'
 
 type WaitingListClient = {
   id: string
@@ -67,18 +66,15 @@ type WaitingListClient = {
   assigned_at: string | null
 }
 
-type Professional = {
-  id: string
-  full_name: string | null
-  email: string | null
-  professional_title: string | null
-  professional_phone: string | null
-  professional_license_number: string | null
-  pref_client_types: string[] | null
-  pref_modalities: string[] | null
-  pref_followup_types: string[] | null
-  pref_notes: string | null
-}
+type Professional = MatchingProfessional &
+  ProfessionalStructuredPreferencesRow & {
+    id: string
+    full_name: string | null
+    email: string | null
+    professional_title: string | null
+    professional_phone: string | null
+    professional_license_number: string | null
+  }
 
 type AuditActor = {
   id: string
@@ -396,6 +392,13 @@ function clientMatchesSearch(
     .some((value) => value.includes(normalizedSearchQuery))
 }
 
+function isThirdPartyClient(client: WaitingListClient): boolean {
+  const searchableText = normalizeSearchValue(
+    `${client.internal_notes ?? ''} ${client.consultation_reason ?? ''} ${client.service_requested ?? ''}`
+  )
+  return /\b(ivac|pae|cnesst)\b/.test(searchableText)
+}
+
 function normalizeOption(value: string | null, options: string[]): string {
   return value && options.includes(value) ? value : options[0]
 }
@@ -474,13 +477,6 @@ export default function DirectionListeAttentePage() {
   const [editingClientId, setEditingClientId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<WaitingListForm>(emptyWaitingListForm)
   const [assigningClientId, setAssigningClientId] = useState<string | null>(null)
-  const [suggestionClientId, setSuggestionClientId] = useState<string | null>(null)
-  const [administrativeTaskClientId, setAdministrativeTaskClientId] =
-    useState<string | null>(null)
-  const [administrativeTaskProfessionalId, setAdministrativeTaskProfessionalId] =
-    useState('')
-  const [creatingAdministrativeTask, setCreatingAdministrativeTask] = useState(false)
-  const [administrativeTaskError, setAdministrativeTaskError] = useState('')
   const [selectedProfessionalId, setSelectedProfessionalId] = useState('')
   const [savingClient, setSavingClient] = useState(false)
   const [savingEdit, setSavingEdit] = useState(false)
@@ -506,9 +502,20 @@ export default function DirectionListeAttentePage() {
   const [minimumAgeFilter, setMinimumAgeFilter] = useState('')
   const [maximumAgeFilter, setMaximumAgeFilter] = useState('')
   const [modalityFilter, setModalityFilter] = useState<string[]>([])
-  const [suggestedProfessionalFilter, setSuggestedProfessionalFilter] = useState('all')
-  const [hideSpecialProgramClients, setHideSpecialProgramClients] = useState(false)
+  const [professionalFilter, setProfessionalFilter] = useState('all')
+  const [hideThirdPartyClients, setHideThirdPartyClients] = useState(false)
   const [expandedMotifIds, setExpandedMotifIds] = useState<Record<string, boolean>>({})
+  const [suggestionClient, setSuggestionClient] = useState<WaitingListClient | null>(null)
+  const [suggestionProfessionalId, setSuggestionProfessionalId] = useState('')
+  const [suggestionRequestCount, setSuggestionRequestCount] = useState('1')
+  const [savingSuggestionAction, setSavingSuggestionAction] = useState(false)
+  const [suggestionNotifyProfessional, setSuggestionNotifyProfessional] = useState(false)
+  const [suggestionNotifyClient, setSuggestionNotifyClient] = useState(false)
+  const [administrativeTaskClient, setAdministrativeTaskClient] =
+    useState<WaitingListClient | null>(null)
+  const [administrativeTaskProfessionalId, setAdministrativeTaskProfessionalId] =
+    useState('')
+  const [savingAdministrativeTask, setSavingAdministrativeTask] = useState(false)
   const [notifyProfessional, setNotifyProfessional] = useState(false)
   const [notifyClient, setNotifyClient] = useState(false)
   const [emailComposerDrafts, setEmailComposerDrafts] =
@@ -596,7 +603,7 @@ export default function DirectionListeAttentePage() {
       const { data: professionalsData, error: professionalsError } = await supabase
         .from('profiles')
         .select(
-          'id, full_name, email, professional_title, professional_phone, professional_license_number, pref_client_types, pref_modalities, pref_followup_types, pref_notes'
+          'id, full_name, email, professional_title, professional_phone, professional_license_number, pref_languages, pref_age_ranges, pref_client_groups, pref_service_types, pref_office_locations, pref_meeting_modes, pref_motifs, pref_exclusions, pref_matching_notes'
         )
         .eq('role', 'professionnel')
         .eq('is_active', true)
@@ -760,12 +767,11 @@ export default function DirectionListeAttentePage() {
     setEditForm(clientToForm(client))
     setShowForm(false)
     setAssigningClientId(null)
-    setSuggestionClientId(null)
     setFormError('')
     setFormMessage('')
   }
 
-  const startAssigning = (client: WaitingListClient, suggestedProfessionalId = '') => {
+  const startAssigning = (client: WaitingListClient) => {
     if (client.status !== 'waiting') {
       setFormError('Ce client est déjà assigné ou n’est plus en attente.')
       setFormMessage('')
@@ -773,7 +779,6 @@ export default function DirectionListeAttentePage() {
     }
 
     setAssigningClientId(client.id)
-    setSuggestionClientId(null)
     setEditingClientId(null)
     setShowForm(false)
     setFormError('')
@@ -781,136 +786,32 @@ export default function DirectionListeAttentePage() {
     setNotifyProfessional(false)
     setNotifyClient(false)
     setSelectedProfessionalId(
-      suggestedProfessionalId ||
-        client.assigned_professional_id ||
+      client.assigned_professional_id ||
         selectedProfessionalId ||
         professionals[0]?.id ||
         ''
     )
   }
 
-  const openAdministrativeTask = (client: WaitingListClient) => {
-    setAdministrativeTaskClientId(client.id)
-    setAdministrativeTaskProfessionalId(
-      client.assigned_professional_id || selectedProfessionalId || professionals[0]?.id || ''
-    )
-    setAdministrativeTaskError('')
-    setSuggestionClientId(null)
-  }
-
-  const createAdministrativeTask = async () => {
-    if (!administrativeTaskClientId || creatingAdministrativeTask) return
-
-    const client = clients.find((item) => item.id === administrativeTaskClientId)
-    const professional = professionals.find(
-      (item) => item.id === administrativeTaskProfessionalId
-    )
-    if (!client || !professional) {
-      setAdministrativeTaskError('Choisissez un professionnel pour cette tâche.')
-      return
-    }
-
-    setCreatingAdministrativeTask(true)
-    setAdministrativeTaskError('')
-    setFormMessage('')
-
-    const professionalName =
-      professional.full_name || professional.email || 'Professionnel sans nom'
-    const clientName = client.client_name?.trim() || 'Client sans nom'
-    const description = [
-      `Client : ${clientName}`,
-      `Professionnel visé : ${professionalName}`,
-      `Premier contact : ${formatDate(client.contact_date ?? client.created_at)}`,
-      `Service demandé : ${formatText(client.service_requested)}`,
-      `Modalités : ${formatModalities(client.meeting_modality)}`,
-      `Disponibilités : ${formatText(client.availability)}`,
-      `Coordonnées : ${[...getContactEmails(client), ...getContactPhones(client)].join(' · ') || '-'}`,
-      `Motif : ${formatText(client.consultation_reason)}`,
-      client.internal_notes?.trim()
-        ? `Notes internes : ${client.internal_notes.trim()}`
-        : '',
-    ].filter(Boolean).join('\n')
-
-    const { data: task, error: insertError } = await supabase
-      .from('administrative_tasks')
-      .insert({
-        title: `Assigner ${clientName} à ${professionalName}`,
-        description,
-        assigned_to: 'both',
-        status: 'pending',
-        source_type: 'waiting_list_assignment',
-        source_id: client.id,
-        created_by: auditActor?.id ?? null,
-      })
-      .select('id')
-      .limit(1)
-      .maybeSingle()
-
-    if (insertError || !task) {
-      setAdministrativeTaskError(
-        insertError?.code === '23505'
-          ? 'Une tâche administrative existe déjà pour ce client.'
-          : insertError?.message ?? 'La tâche administrative n’a pas pu être créée.'
-      )
-      setCreatingAdministrativeTask(false)
-      return
-    }
-
-    let notificationSent = true
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) throw new Error('Session expirée.')
-      const response = await fetch('/api/direction/administrative-task-notification', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ taskId: task.id }),
-      })
-      if (!response.ok) notificationSent = false
-    } catch {
-      notificationSent = false
-    }
-
-    if (auditActor) {
-      void logAudit({
-        supabase,
-        actor: auditActor,
-        action: 'administrative_assignment_task_created',
-        entityType: 'administrative_task',
-        entityId: task.id,
-        description: `Tâche créée pour assigner ${clientName} à ${professionalName}.`,
-        metadata: {
-          waiting_list_client_id: client.id,
-          professional_id: professional.id,
-          professional_name: professionalName,
-          notification_sent: notificationSent,
-        },
-      })
-    }
-
-    setAdministrativeTaskClientId(null)
-    setCreatingAdministrativeTask(false)
-    setFormMessage(
-      notificationSent
-        ? 'Tâche administrative créée et notification envoyée.'
-        : 'Tâche administrative créée, mais la notification par courriel a échoué.'
-    )
-  }
-
-  const handleStartAssignmentProcess = async (client: WaitingListClient) => {
+  const handleStartAssignmentProcess = async (
+    client: WaitingListClient,
+    options: {
+      prospectiveProfessionalId?: string | null
+      skipConfirmation?: boolean
+    } = {}
+  ): Promise<boolean> => {
     if (client.status !== 'waiting') {
       setFormError('Seul un client en attente peut être déplacé vers les assignations en cours.')
-      return
+      return false
     }
 
     if (
+      !options.skipConfirmation &&
       !window.confirm(
         `Démarrer une démarche d’assignation pour ${client.client_name ?? 'ce client'} ?\n\nLe client sera retiré de la liste d’attente active et apparaîtra dans « Assignations en cours ».`
       )
     ) {
-      return
+      return false
     }
 
     setStartingAssignmentProcessClientId(client.id)
@@ -923,6 +824,7 @@ export default function DirectionListeAttentePage() {
       .insert({
         waiting_list_client_id: client.id,
         status: 'to_contact',
+        prospective_professional_id: options.prospectiveProfessionalId ?? null,
         responsible_profile_id: auditActor?.id ?? null,
         created_by: auditActor?.id ?? null,
         started_at: startedAt,
@@ -936,7 +838,7 @@ export default function DirectionListeAttentePage() {
       setFormError(
         processError?.message ?? 'Impossible de démarrer la démarche d’assignation.'
       )
-      return
+      return false
     }
 
     const { error: waitingListUpdateError } = await supabase
@@ -948,19 +850,38 @@ export default function DirectionListeAttentePage() {
       await supabase.from('assignment_processes').delete().eq('id', process.id)
       setStartingAssignmentProcessClientId('')
       setFormError(waitingListUpdateError.message)
-      return
+      return false
     }
 
     const { error: eventError } = await supabase
       .from('assignment_process_events')
-      .insert({
-        assignment_process_id: process.id,
-        event_type: 'process_started',
-        status: 'to_contact',
-        note: 'Client déplacé depuis la liste d’attente.',
-        actor_profile_id: auditActor?.id ?? null,
-        actor_name: auditActor?.name ?? null,
-      })
+      .insert([
+        {
+          assignment_process_id: process.id,
+          event_type: 'process_started',
+          status: 'to_contact',
+          note: 'Client déplacé depuis la liste d’attente.',
+          actor_profile_id: auditActor?.id ?? null,
+          actor_name: auditActor?.name ?? null,
+        },
+        ...(options.prospectiveProfessionalId
+          ? [
+              {
+                assignment_process_id: process.id,
+                event_type: 'professional_selected',
+                status: 'to_contact',
+                note: `Professionnel envisagé : ${
+                  professionals.find(
+                    (professional) =>
+                      professional.id === options.prospectiveProfessionalId
+                  )?.full_name ?? 'Professionnel'
+                }.`,
+                actor_profile_id: auditActor?.id ?? null,
+                actor_name: auditActor?.name ?? null,
+              },
+            ]
+          : []),
+      ])
 
     setStartingAssignmentProcessClientId('')
     setActiveAssignmentProcessClientIds((current) => {
@@ -986,9 +907,321 @@ export default function DirectionListeAttentePage() {
           assignment_process_id: process.id,
           client_name: client.client_name,
           started_at: startedAt,
+          prospective_professional_id: options.prospectiveProfessionalId ?? null,
         },
       })
     }
+    return true
+  }
+
+  const openAdministrativeTask = (client: WaitingListClient) => {
+    setAdministrativeTaskClient(client)
+    const firstSuggestion = getSuggestedProfessionals(client, professionals)[0]
+    setAdministrativeTaskProfessionalId(
+      firstSuggestion?.professional.id ?? professionals[0]?.id ?? ''
+    )
+    setFormError('')
+    setFormMessage('')
+  }
+
+  const openSuggestions = (client: WaitingListClient) => {
+    const suggestions = getSuggestedProfessionals(client, professionals)
+    setSuggestionClient(client)
+    setSuggestionProfessionalId(
+      suggestions[0]?.professional.id ?? professionals[0]?.id ?? ''
+    )
+    setSuggestionRequestCount('1')
+    setSuggestionNotifyProfessional(false)
+    setSuggestionNotifyClient(false)
+    setFormError('')
+    setFormMessage('')
+  }
+
+  const professionalHasAssignmentCapacity = (professionalId: string) =>
+    activeRequests.some(
+      (request) =>
+        request.professional_id === professionalId &&
+        getAssignmentRequestMetrics({
+          isActive: request.is_active,
+          requestedCount: request.requested_count,
+          acceptedCount: request.assigned_count,
+          occupiedCount: request.occupied_count,
+          remainingCount: request.remaining_count,
+        }).isActive
+    )
+
+  const addAssignmentRequestCapacity = async (
+    professionalId: string,
+    amount: number
+  ): Promise<ActiveAssignmentRequest> => {
+    const normalizedAmount = Math.min(Math.max(Math.trunc(amount), 1), 10)
+    const { data: existingRequest, error: loadError } = await supabase
+      .from('assignment_requests')
+      .select('id, professional_id, is_active, requested_count, assigned_count, remaining_count')
+      .eq('professional_id', professionalId)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (loadError) throw loadError
+
+    let savedRequest: ActiveAssignmentRequest
+    if (existingRequest) {
+      const nextRequestedCount =
+        Math.max(existingRequest.requested_count ?? 0, 0) + normalizedAmount
+      const nextRemainingCount =
+        Math.max(existingRequest.remaining_count ?? 0, 0) + normalizedAmount
+      const { data: updatedRequest, error: updateError } = await supabase
+        .from('assignment_requests')
+        .update({
+          requested_count: nextRequestedCount,
+          remaining_count: nextRemainingCount,
+          is_active: true,
+        })
+        .eq('id', existingRequest.id)
+        .select('id, professional_id, is_active, requested_count, assigned_count, remaining_count')
+        .limit(1)
+        .maybeSingle()
+      if (updateError) throw updateError
+      if (!updatedRequest) throw new Error('La demande mise à jour est introuvable.')
+      savedRequest = updatedRequest as ActiveAssignmentRequest
+    } else {
+      const { data: insertedRequest, error: insertError } = await supabase
+        .from('assignment_requests')
+        .insert({
+          professional_id: professionalId,
+          is_active: true,
+          requested_count: normalizedAmount,
+          assigned_count: 0,
+          remaining_count: normalizedAmount,
+          request_comment: 'Demande créée par la direction depuis les suggestions.',
+        })
+        .select('id, professional_id, is_active, requested_count, assigned_count, remaining_count')
+        .limit(1)
+        .maybeSingle()
+      if (insertError) throw insertError
+      if (!insertedRequest) throw new Error('La demande créée est introuvable.')
+      savedRequest = insertedRequest as ActiveAssignmentRequest
+    }
+
+    const requestWithCapacity = {
+      ...savedRequest,
+      occupied_count: Math.max(
+        (savedRequest.requested_count ?? 0) - (savedRequest.remaining_count ?? 0),
+        0
+      ),
+    }
+    setActiveRequests((currentRequests) => [
+      requestWithCapacity,
+      ...currentRequests.filter(
+        (request) => request.professional_id !== professionalId
+      ),
+    ])
+
+    const professional = professionals.find((item) => item.id === professionalId)
+    if (auditActor) {
+      void logAudit({
+        supabase,
+        actor: auditActor,
+        action: existingRequest
+          ? 'assignment_request_capacity_added'
+          : 'assignment_request_created',
+        entityType: 'assignment_request',
+        entityId: savedRequest.id,
+        description: `${normalizedAmount} assignation${normalizedAmount > 1 ? 's' : ''} ajoutée${normalizedAmount > 1 ? 's' : ''} pour ${professional?.full_name ?? 'un professionnel'}.`,
+        metadata: {
+          professional_id: professionalId,
+          professional_name: professional?.full_name ?? null,
+          added_requested_count: normalizedAmount,
+          created_from_suggestions: true,
+        },
+      })
+    }
+
+    return requestWithCapacity
+  }
+
+  const handleSuggestionRequestOnly = async () => {
+    if (!suggestionProfessionalId || savingSuggestionAction) return
+    setSavingSuggestionAction(true)
+    setFormError('')
+    try {
+      await addAssignmentRequestCapacity(
+        suggestionProfessionalId,
+        Number(suggestionRequestCount)
+      )
+      setFormMessage('Demande d’assignation ajoutée pour ce professionnel.')
+    } catch (caughtError) {
+      setFormError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'La demande n’a pas pu être créée.'
+      )
+    } finally {
+      setSavingSuggestionAction(false)
+    }
+  }
+
+  const handleSuggestionAssignment = async () => {
+    if (!suggestionClient || !suggestionProfessionalId || savingSuggestionAction) return
+    if (!professionalHasAssignmentCapacity(suggestionProfessionalId)) {
+      setFormMessage('')
+      setFormError(
+        'Ajoutez d’abord une demande de client pour ce professionnel avant de créer l’assignation.'
+      )
+      return
+    }
+    setSavingSuggestionAction(true)
+    setFormError('')
+    try {
+      const assigned = await assignClientToProfessional({
+        client: suggestionClient,
+        professionalId: suggestionProfessionalId,
+        shouldNotifyProfessional: suggestionNotifyProfessional,
+        shouldNotifyClient: suggestionNotifyClient,
+      })
+      if (assigned) setSuggestionClient(null)
+    } catch (caughtError) {
+      setFormError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'L’assignation n’a pas pu être créée.'
+      )
+    } finally {
+      setSavingSuggestionAction(false)
+    }
+  }
+
+  const handleSuggestionAssignmentProcess = async () => {
+    if (!suggestionClient || !suggestionProfessionalId || savingSuggestionAction) return
+    if (!professionalHasAssignmentCapacity(suggestionProfessionalId)) {
+      setFormMessage('')
+      setFormError(
+        'Ajoutez d’abord une demande de client pour ce professionnel avant de mettre le dossier en assignation en cours.'
+      )
+      return
+    }
+    setSavingSuggestionAction(true)
+    setFormError('')
+    try {
+      const started = await handleStartAssignmentProcess(suggestionClient, {
+        prospectiveProfessionalId: suggestionProfessionalId,
+        skipConfirmation: true,
+      })
+      if (started) setSuggestionClient(null)
+    } catch (caughtError) {
+      setFormError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'La démarche d’assignation n’a pas pu être créée.'
+      )
+    } finally {
+      setSavingSuggestionAction(false)
+    }
+  }
+
+  const handleSuggestionOffPlatform = async () => {
+    if (!suggestionClient || savingSuggestionAction) return
+    setSavingSuggestionAction(true)
+    const marked = await handleMarkOffPlatformClient(suggestionClient)
+    if (marked) setSuggestionClient(null)
+    setSavingSuggestionAction(false)
+  }
+
+  const handleCreateAdministrativeTask = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!administrativeTaskClient || !administrativeTaskProfessionalId) return
+
+    const professional = professionals.find(
+      (candidate) => candidate.id === administrativeTaskProfessionalId
+    )
+    if (!professional) {
+      setFormError('Le professionnel choisi est introuvable.')
+      return
+    }
+
+    setSavingAdministrativeTask(true)
+    setFormError('')
+    setFormMessage('')
+
+    const clientName = administrativeTaskClient.client_name ?? 'Client sans nom'
+    const professionalName =
+      professional.full_name ?? professional.email ?? 'Professionnel sans nom'
+    const dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+    const description = [
+      `Client : ${clientName}`,
+      `Professionnel ciblé : ${professionalName}`,
+      `Service : ${administrativeTaskClient.service_requested ?? '-'}`,
+      `Téléphone : ${getContactPhones(administrativeTaskClient).join(', ') || '-'}`,
+      `Courriel : ${getContactEmails(administrativeTaskClient).join(', ') || '-'}`,
+      `Motif : ${administrativeTaskClient.consultation_reason ?? '-'}`,
+    ].join('\n')
+
+    const { data: task, error: taskError } = await supabase
+      .from('administrative_tasks')
+      .insert({
+        title: `Assigner ${clientName} à ${professionalName}`,
+        description,
+        assigned_to: 'both',
+        status: 'pending',
+        due_at: dueAt,
+        source_type: 'waiting_list_assignment',
+        source_id: administrativeTaskClient.id,
+        created_by: auditActor?.id ?? null,
+      })
+      .select('id')
+      .limit(1)
+      .maybeSingle()
+
+    if (taskError || !task?.id) {
+      setSavingAdministrativeTask(false)
+      setFormError(
+        taskError?.code === '23505'
+          ? 'Une tâche administrative active existe déjà pour ce client.'
+          : taskError?.message ?? 'La tâche administrative n’a pas pu être créée.'
+      )
+      return
+    }
+
+    const { data: { session } } = await supabase.auth.getSession()
+    if (session?.access_token) {
+      const notificationResponse = await fetch(
+        '/api/direction/administrative-task-notification',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ taskId: task.id }),
+        }
+      )
+      if (!notificationResponse.ok) {
+        console.error('[administrative-task-notification] Notification non envoyée.')
+      }
+    }
+
+    if (auditActor) {
+      void logAudit({
+        supabase,
+        actor: auditActor,
+        action: 'administrative_task_created_from_waiting_list',
+        entityType: 'waiting_list_client',
+        entityId: administrativeTaskClient.id,
+        description: `Tâche créée pour assigner ${clientName} à ${professionalName}.`,
+        metadata: {
+          administrative_task_id: task.id,
+          professional_id: professional.id,
+          professional_name: professionalName,
+        },
+      })
+    }
+
+    setSavingAdministrativeTask(false)
+    setAdministrativeTaskClient(null)
+    setAdministrativeTaskProfessionalId('')
+    setFormMessage('Tâche envoyée aux adjointes administratives.')
   }
 
   const stopEditing = () => {
@@ -1409,7 +1642,9 @@ export default function DirectionListeAttentePage() {
     setFormMessage("Client remis dans la liste d'attente.")
   }
 
-  const handleMarkOffPlatformClient = async (client: WaitingListClient) => {
+  const handleMarkOffPlatformClient = async (
+    client: WaitingListClient
+  ): Promise<boolean> => {
     const confirmed = window.confirm(
       [
         'Marquer ce client comme pris en charge hors plateforme ?',
@@ -1420,7 +1655,7 @@ export default function DirectionListeAttentePage() {
       ].join('\n')
     )
 
-    if (!confirmed) return
+    if (!confirmed) return false
 
     setFormMessage('')
     setFormError('')
@@ -1433,7 +1668,7 @@ export default function DirectionListeAttentePage() {
     if (!session?.access_token) {
       setFormError('Session introuvable.')
       setMarkingOffPlatformClientId('')
-      return
+      return false
     }
 
     const response = await fetch(
@@ -1456,12 +1691,12 @@ export default function DirectionListeAttentePage() {
         result?.error ??
           'Impossible de marquer ce client comme pris en charge hors plateforme.'
       )
-      return
+      return false
     }
 
     if (result?.skipped) {
       setFormMessage(result.message ?? 'Ce client est déjà retiré de la liste active.')
-      return
+      return false
     }
 
     setClients((currentClients) =>
@@ -1492,6 +1727,7 @@ export default function DirectionListeAttentePage() {
     }
 
     setFormMessage('Client marqué comme pris en charge hors plateforme.')
+    return true
   }
 
   const getComposerFromLabel = () =>
@@ -1712,37 +1948,32 @@ export default function DirectionListeAttentePage() {
     setFormMessage('Assignation créée. Aucun courriel envoyé.')
   }
 
-  const handleAssignClient = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-
-    if (!assigningClientId || savingAssignment) return
-
+  const assignClientToProfessional = async ({
+    client,
+    professionalId,
+    shouldNotifyProfessional,
+    shouldNotifyClient,
+  }: {
+    client: WaitingListClient
+    professionalId: string
+    shouldNotifyProfessional: boolean
+    shouldNotifyClient: boolean
+  }): Promise<boolean> => {
     setFormMessage('')
     setFormError('')
 
-    const client = clients.find(
-      (currentClient) => currentClient.id === assigningClientId
-    )
-
-    if (!client) {
-      setFormError('Client introuvable.')
-      return
-    }
-
     if (client.status !== 'waiting') {
       setFormError('Ce client est déjà assigné ou n’est plus en attente.')
-      return
+      return false
     }
 
-    if (!selectedProfessionalId) {
+    if (!professionalId) {
       setFormError('Veuillez choisir un professionnel.')
-      return
+      return false
     }
-
-    setSavingAssignment(true)
 
     const previousPendingCount = await getPendingAssignmentCount(
-      selectedProfessionalId
+      professionalId
     )
 
     let assignmentResult: Awaited<
@@ -1753,19 +1984,16 @@ export default function DirectionListeAttentePage() {
       assignmentResult = await createAssignmentFromWaitingListClient({
         supabase,
         client,
-        professionalId: selectedProfessionalId,
+        professionalId,
       })
     } catch (caughtError) {
-      setSavingAssignment(false)
       setFormError(
         caughtError instanceof Error
           ? caughtError.message
           : "Impossible de créer l'assignation."
       )
-      return
+      return false
     }
-
-    setSavingAssignment(false)
 
     if (assignmentResult.updatedClient) {
       setClients((currentClients) =>
@@ -1778,13 +2006,27 @@ export default function DirectionListeAttentePage() {
         )
       )
     }
+    setActiveRequests((currentRequests) =>
+      currentRequests.flatMap((request) => {
+        if (request.id !== assignmentResult.assignmentRequest.id) return [request]
+        const nextRemainingCount = Math.max((request.remaining_count ?? 0) - 1, 0)
+        if (nextRemainingCount === 0) return []
+        return [
+          {
+            ...request,
+            remaining_count: nextRemainingCount,
+            occupied_count: (request.occupied_count ?? 0) + 1,
+          },
+        ]
+      })
+    )
 
     setAssigningClientId(null)
     setNotifyProfessional(false)
     setNotifyClient(false)
     setFormMessage('Client assigné au professionnel avec succès.')
     const selectedProfessional = professionals.find(
-      (professional) => professional.id === selectedProfessionalId
+      (professional) => professional.id === professionalId
     )
 
     if (auditActor) {
@@ -1802,7 +2044,7 @@ export default function DirectionListeAttentePage() {
           professional_name: selectedProfessional?.full_name ?? null,
           requester_name: assignmentResult.requesterName,
           client_email: getContactEmails(client)[0] ?? null,
-          professional_id: selectedProfessionalId,
+          professional_id: professionalId,
           waiting_list_client_id: client.id,
           assignment_request_id: assignmentResult.assignmentRequest.id,
           has_assignment_request: true,
@@ -1813,7 +2055,7 @@ export default function DirectionListeAttentePage() {
 
     const pendingNotification: PendingEmailNotification = {
       assignedClientId: assignmentResult.assignedClientId,
-      professionalId: selectedProfessionalId,
+      professionalId,
       professionalName:
         selectedProfessional?.full_name ?? selectedProfessional?.email ?? 'professionnel inconnu',
       clientName: client.client_name,
@@ -1823,14 +2065,14 @@ export default function DirectionListeAttentePage() {
       previousPendingCount,
     }
 
-    if (notifyProfessional || notifyClient) {
+    if (shouldNotifyProfessional || shouldNotifyClient) {
       setPendingEmailNotification(pendingNotification)
       setEmailComposerDrafts(
         buildEmailComposerDrafts({
           professional: selectedProfessional,
           client,
-          enableProfessional: notifyProfessional,
-          enableClient: notifyClient,
+          enableProfessional: shouldNotifyProfessional,
+          enableClient: shouldNotifyClient,
         })
       )
     } else {
@@ -1845,37 +2087,33 @@ export default function DirectionListeAttentePage() {
         reason: 'checkbox_unchecked',
       })
     }
+    return true
+  }
+
+  const handleAssignClient = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    if (!assigningClientId || savingAssignment) return
+    const client = clients.find(
+      (currentClient) => currentClient.id === assigningClientId
+    )
+    if (!client) {
+      setFormError('Client introuvable.')
+      return
+    }
+
+    setSavingAssignment(true)
+    await assignClientToProfessional({
+      client,
+      professionalId: selectedProfessionalId,
+      shouldNotifyProfessional: notifyProfessional,
+      shouldNotifyClient: notifyClient,
+    })
+    setSavingAssignment(false)
   }
 
   const inputClass =
     'w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] shadow-sm outline-none transition duration-200 placeholder:text-[#b09c8a] focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]'
-
-  const matchingProfessionals = professionals.map((professional) => ({
-    id: professional.id,
-    name: professional.full_name || professional.email || 'Professionnel sans nom',
-    professionalTitle: professional.professional_title,
-    preferredClientTypes: professional.pref_client_types,
-    preferredModalities: professional.pref_modalities,
-    preferredFollowupTypes: professional.pref_followup_types,
-    preferenceNotes: professional.pref_notes,
-    remainingPlaces: activeRequests
-      .filter((request) => request.professional_id === professional.id)
-      .reduce(
-        (total, request) => total + Math.max(request.remaining_count ?? 0, 0),
-        0
-      ),
-  }))
-  const getProfessionalSuggestions = (client: WaitingListClient) =>
-    rankProfessionalMatches(
-      {
-        birthDate: client.birth_date,
-        serviceRequested: client.service_requested,
-        meetingModalities: getMeetingModalities(client.meeting_modality),
-        city: client.city,
-        consultationReason: client.consultation_reason,
-      },
-      matchingProfessionals
-    )
 
   const normalizedSearchQuery = searchQuery.trim().toLowerCase()
   const minimumAge = minimumAgeFilter === '' ? null : Number(minimumAgeFilter)
@@ -1886,8 +2124,8 @@ export default function DirectionListeAttentePage() {
     minimumAgeFilter !== '' ||
     maximumAgeFilter !== '' ||
     modalityFilter.length > 0 ||
-    suggestedProfessionalFilter !== 'all' ||
-    hideSpecialProgramClients
+    professionalFilter !== 'all' ||
+    hideThirdPartyClients
   const filteredClients = clients.filter((client) => {
     if (activeAssignmentProcessClientIds.has(client.id)) return false
     if (normalizedSearchQuery && !clientMatchesSearch(client, normalizedSearchQuery)) {
@@ -1897,9 +2135,6 @@ export default function DirectionListeAttentePage() {
       return false
     }
     if (statusFilter !== 'all' && client.status !== statusFilter) {
-      return false
-    }
-    if (hideSpecialProgramClients && hasSpecialProgramMarker(client)) {
       return false
     }
     if (minimumAge !== null || maximumAge !== null) {
@@ -1917,11 +2152,15 @@ export default function DirectionListeAttentePage() {
       )
       if (!hasMatchingModality) return false
     }
-    if (suggestedProfessionalFilter !== 'all') {
-      const professionalMatch = getProfessionalSuggestions(client).find(
-        (match) => match.professionalId === suggestedProfessionalFilter
+    if (hideThirdPartyClients && isThirdPartyClient(client)) return false
+    if (professionalFilter !== 'all') {
+      const selectedProfessional = professionals.find(
+        (professional) => professional.id === professionalFilter
       )
-      if (!professionalMatch || !isProfessionalSuggested(professionalMatch)) {
+      if (
+        !selectedProfessional ||
+        getSuggestedProfessionals(client, [selectedProfessional]).length === 0
+      ) {
         return false
       }
     }
@@ -1957,17 +2196,18 @@ export default function DirectionListeAttentePage() {
   const selectedAssignmentClientHasEmail = Boolean(
     selectedAssignmentClient && getContactEmails(selectedAssignmentClient).length > 0
   )
-  const suggestionClient = suggestionClientId
-    ? clients.find((client) => client.id === suggestionClientId) ?? null
-    : null
-  const professionalSuggestions = suggestionClient
-    ? getProfessionalSuggestions(suggestionClient)
-        .filter(isProfessionalSuggested)
-        .slice(0, 5)
+  const suggestionMatches = suggestionClient
+    ? getSuggestedProfessionals(suggestionClient, professionals)
     : []
-  const administrativeTaskClient = administrativeTaskClientId
-    ? clients.find((client) => client.id === administrativeTaskClientId) ?? null
-    : null
+  const selectedSuggestionProfessional = professionals.find(
+    (professional) => professional.id === suggestionProfessionalId
+  )
+  const selectedSuggestionHasCapacity = suggestionProfessionalId
+    ? professionalHasAssignmentCapacity(suggestionProfessionalId)
+    : false
+  const suggestionClientHasEmail = Boolean(
+    suggestionClient && getContactEmails(suggestionClient).length > 0
+  )
   const getPageCount = (totalCount: number, pageSize = CLIENTS_PER_PAGE) =>
     Math.max(Math.ceil(totalCount / pageSize), 1)
   const getPaginatedClients = (
@@ -2152,14 +2392,6 @@ export default function DirectionListeAttentePage() {
                           </button>
                           <button
                             type="button"
-                            className={`${buttonClass('secondary')} !min-h-8 !w-full justify-center whitespace-nowrap px-2 py-1 text-xs`}
-                            onClick={() => setSuggestionClientId(client.id)}
-                          >
-                            <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-                            Suggestions
-                          </button>
-                          <button
-                            type="button"
                             disabled={startingAssignmentProcessClientId === client.id}
                             className="min-h-8 w-full rounded-lg border border-[#d7a83e] bg-[#fff3c4] px-2 py-1 text-xs font-semibold leading-tight text-[#6f4c00] transition hover:bg-[#ffe9a0] disabled:cursor-wait disabled:opacity-60"
                             onClick={() => void handleStartAssignmentProcess(client)}
@@ -2170,10 +2402,17 @@ export default function DirectionListeAttentePage() {
                           </button>
                           <button
                             type="button"
-                            className="min-h-8 w-full rounded-lg border border-[#c9b8a7] bg-[#f8f3ed] px-2 py-1 text-xs font-semibold leading-tight text-[#5d4a3d] transition hover:border-[#9b6a3d] hover:bg-[#f1e6da]"
+                            className={`${buttonClass('secondary')} !min-h-8 !w-full justify-center whitespace-normal px-2 py-1 text-xs`}
+                            onClick={() => openSuggestions(client)}
+                          >
+                            Suggestions
+                          </button>
+                          <button
+                            type="button"
+                            className="min-h-8 w-full rounded-lg border border-[#c9b39d] bg-white px-2 py-1 text-xs font-semibold leading-tight text-[#6d3f1f] transition hover:bg-[#f7efe7]"
                             onClick={() => openAdministrativeTask(client)}
                           >
-                            Tâche administrative
+                            Tâche aux adjointes
                           </button>
                         </>
                       )}
@@ -2654,204 +2893,254 @@ export default function DirectionListeAttentePage() {
         />
       )}
       {suggestionClient && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="professional-suggestions-title"
-            className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-[#eadfd2] bg-[#fffdf9] shadow-xl"
-          >
-            <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-[#eadfd2] bg-[#fffdf9] px-5 py-4">
-              <div>
-                <h2 id="professional-suggestions-title" className="text-xl font-semibold text-[#332820]">
-                  Professionnels suggérés
-                </h2>
-                <p className="mt-1 text-sm text-[#7a6859]">
-                  {formatText(suggestionClient.client_name)} · {formatText(suggestionClient.service_requested)}
-                </p>
-              </div>
-              <button
-                type="button"
-                title="Fermer"
-                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#6c5a4d] transition hover:bg-[#f5ebe0]"
-                onClick={() => setSuggestionClientId(null)}
-              >
-                <X className="h-5 w-5" aria-hidden="true" />
-              </button>
-            </header>
-
-            {professionalSuggestions.length === 0 ? (
-              <div className="p-5">
-                <EmptyState
-                  title="Aucune suggestion suffisamment forte"
-                  description={
-                    matchingProfessionals.some((professional) => professional.remainingPlaces > 0)
-                      ? 'Des professionnels ont des places, mais leurs préférences actuelles ne correspondent pas suffisamment à ce dossier.'
-                      : 'Aucune demande active ne comporte actuellement de place restante.'
-                  }
-                />
-              </div>
-            ) : (
-              <div className="divide-y divide-[#eadfd2]">
-                {professionalSuggestions.map((suggestion, index) => {
-                  const professional = professionals.find(
-                    (item) => item.id === suggestion.professionalId
-                  )
-                  const scoreTone: BadgeTone =
-                    suggestion.score >= 75
-                      ? 'success'
-                      : suggestion.score >= 55
-                        ? 'warning'
-                        : 'muted'
-
-                  return (
-                    <article key={suggestion.professionalId} className="p-5">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-sm font-semibold text-[#9b6a3d]">#{index + 1}</span>
-                            <h3 className="font-semibold text-[#332820]">
-                              {suggestion.professionalName}
-                            </h3>
-                            <Badge tone={scoreTone}>Indice {suggestion.score}%</Badge>
-                          </div>
-                          {professional?.professional_title && (
-                            <p className="mt-1 text-sm text-[#7a6859]">
-                              {professional.professional_title}
-                            </p>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          className={buttonClass('primary')}
-                          onClick={() =>
-                            startAssigning(suggestionClient, suggestion.professionalId)
-                          }
-                        >
-                          Choisir
-                        </button>
-                      </div>
-
-                      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                        <div>
-                          <p className="text-xs font-semibold uppercase text-[#6f673a]">
-                            Correspondances
-                          </p>
-                          <ul className="mt-2 space-y-1.5 text-sm text-[#5f5932]">
-                            {suggestion.reasons.map((reason) => (
-                              <li key={reason} className="flex gap-2">
-                                <span aria-hidden="true">✓</span>
-                                <span>{reason}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                        <div>
-                          <p className="text-xs font-semibold uppercase text-[#8a6f5d]">
-                            À vérifier
-                          </p>
-                          {suggestion.cautions.length > 0 ? (
-                            <ul className="mt-2 space-y-1.5 text-sm text-[#7a6859]">
-                              {suggestion.cautions.map((caution) => (
-                                <li key={caution} className="flex gap-2">
-                                  <span aria-hidden="true">•</span>
-                                  <span>{caution}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p className="mt-2 text-sm text-[#7a6859]">Aucun élément signalé.</p>
-                          )}
-                        </div>
-                      </div>
-
-                      {professional?.pref_notes?.trim() && (
-                        <details className="mt-4 border-t border-[#eee3d8] pt-3">
-                          <summary className="cursor-pointer text-sm font-medium text-[#6d3f1f]">
-                            Notes du professionnel
-                          </summary>
-                          <p className="mt-2 whitespace-pre-wrap text-sm text-[#6c5a4d]">
-                            {professional.pref_notes.trim()}
-                          </p>
-                        </details>
-                      )}
-                    </article>
-                  )
-                })}
-              </div>
-            )}
-          </section>
-        </div>
-      )}
-      {administrativeTaskClient && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="administrative-task-title"
-            className="w-full max-w-xl rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-xl"
-          >
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4 py-6">
+          <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-6 shadow-xl">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h2 id="administrative-task-title" className="text-xl font-semibold text-[#332820]">
-                  Créer une tâche administrative
+                <p className="text-sm font-semibold text-[#9b6a3d]">Suggestions</p>
+                <h2 className="mt-1 text-xl font-semibold text-[#332820]">
+                  Choisir un professionnel pour {suggestionClient.client_name ?? 'ce client'}
                 </h2>
-                <p className="mt-1 text-sm text-[#7a6859]">
-                  {formatText(administrativeTaskClient.client_name)}
+                <p className="mt-2 text-sm leading-6 text-[#7a6859]">
+                  Sélectionnez une suggestion ou choisissez un autre professionnel, puis créez la demande ou l’assignation directement.
                 </p>
               </div>
               <button
                 type="button"
-                title="Fermer"
-                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#6c5a4d] transition hover:bg-[#f5ebe0]"
-                onClick={() => setAdministrativeTaskClientId(null)}
-                disabled={creatingAdministrativeTask}
+                aria-label="Fermer"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#dfd0bf] bg-white text-xl text-[#7a6859] hover:bg-[#f7efe7]"
+                onClick={() => setSuggestionClient(null)}
               >
-                <X className="h-5 w-5" aria-hidden="true" />
+                ×
               </button>
             </div>
 
+            <section className="mt-5">
+              <h3 className="text-sm font-semibold uppercase text-[#8a5633]">
+                Professionnels suggérés
+              </h3>
+              {suggestionMatches.length === 0 ? (
+                <p className="mt-2 rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-4 text-sm text-[#7a6859]">
+                  Aucun professionnel ne satisfait actuellement tous les critères. Vous pouvez quand même en choisir un manuellement ci-dessous.
+                </p>
+              ) : (
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  {suggestionMatches.map((suggestion) => {
+                    const selected = suggestion.professional.id === suggestionProfessionalId
+                    return (
+                      <button
+                        key={suggestion.professional.id}
+                        type="button"
+                        className={`rounded-xl border p-4 text-left transition ${
+                          selected
+                            ? 'border-[#9b6a3d] bg-[#f7e9da] ring-2 ring-[#ead2bd]'
+                            : 'border-[#eadfd2] bg-white hover:border-[#c9a27d]'
+                        }`}
+                        onClick={() =>
+                          setSuggestionProfessionalId(suggestion.professional.id)
+                        }
+                      >
+                        <span className="block font-semibold text-[#332820]">
+                          {suggestion.professional.full_name ??
+                            suggestion.professional.email ??
+                            'Professionnel sans nom'}
+                        </span>
+                        <span className="mt-1 block text-sm leading-5 text-[#7a6859]">
+                          {suggestion.reasons.join(', ')}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </section>
+
             <label className="mt-5 block text-sm font-medium text-[#5d4a3d]">
-              Professionnel visé
+              Tous les professionnels actifs
               <select
-                value={administrativeTaskProfessionalId}
-                onChange={(event) => setAdministrativeTaskProfessionalId(event.target.value)}
+                value={suggestionProfessionalId}
+                onChange={(event) => setSuggestionProfessionalId(event.target.value)}
                 className={`${inputClass} mt-2`}
               >
                 <option value="">Choisir un professionnel</option>
                 {professionals.map((professional) => (
                   <option key={professional.id} value={professional.id}>
-                    {professional.full_name || professional.email || 'Sans nom'}
+                    {professional.full_name ?? professional.email ?? 'Professionnel sans nom'}
                   </option>
                 ))}
               </select>
             </label>
 
-            {administrativeTaskError && (
-              <p className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                {administrativeTaskError}
+            {selectedSuggestionProfessional && (
+              <div className="mt-4 rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-[#332820]">
+                      {selectedSuggestionProfessional.full_name ??
+                        selectedSuggestionProfessional.email}
+                    </p>
+                    <p className="mt-1 text-sm text-[#7a6859]">
+                      {selectedSuggestionHasCapacity
+                        ? 'Une demande active possède une place disponible.'
+                        : 'Aucune place active : ajoutez d’abord une demande de client.'}
+                    </p>
+                  </div>
+                  <Badge tone={selectedSuggestionHasCapacity ? 'success' : 'warning'}>
+                    {selectedSuggestionHasCapacity ? 'Place disponible' : 'Demande requise'}
+                  </Badge>
+                </div>
+
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+                  <label className="text-sm font-medium text-[#5d4a3d]">
+                    Nombre de demandes à ajouter
+                    <input
+                      type="number"
+                      min="1"
+                      max="10"
+                      step="1"
+                      value={suggestionRequestCount}
+                      onChange={(event) => setSuggestionRequestCount(event.target.value)}
+                      className={`${inputClass} mt-1 w-32`}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className={buttonClass('secondary')}
+                    disabled={savingSuggestionAction || !suggestionProfessionalId}
+                    onClick={() => void handleSuggestionRequestOnly()}
+                  >
+                    Ajouter la demande seulement
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="mt-4 rounded-xl border border-[#eadfd2] bg-white p-4">
+              <p className="text-sm font-semibold text-[#332820]">Notifications d’assignation</p>
+              <div className="mt-3 flex flex-wrap gap-5">
+                <label className="flex items-center gap-2 text-sm text-[#5d4a3d]">
+                  <input
+                    type="checkbox"
+                    checked={suggestionNotifyProfessional}
+                    onChange={(event) => setSuggestionNotifyProfessional(event.target.checked)}
+                    className="h-4 w-4 accent-[#8a5633]"
+                  />
+                  Aviser le professionnel
+                </label>
+                <label className="flex items-center gap-2 text-sm text-[#5d4a3d]">
+                  <input
+                    type="checkbox"
+                    checked={suggestionNotifyClient}
+                    disabled={!suggestionClientHasEmail}
+                    onChange={(event) => setSuggestionNotifyClient(event.target.checked)}
+                    className="h-4 w-4 accent-[#8a5633] disabled:opacity-50"
+                  />
+                  Aviser le client
+                </label>
+              </div>
+            </div>
+
+            {formError && (
+              <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {formError}
+              </p>
+            )}
+            {formMessage && (
+              <p className="mt-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+                {formMessage}
               </p>
             )}
 
-            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <div className="mt-6 flex flex-col gap-3 border-t border-[#eadfd2] pt-5 sm:flex-row sm:flex-wrap sm:justify-end">
+              <button
+                type="button"
+                className="inline-flex min-h-10 items-center justify-center rounded-xl border border-[#d6a436] bg-[#fff4c7] px-4 py-2 text-sm font-semibold text-[#6b4a00] transition hover:bg-[#ffe79a] disabled:opacity-60"
+                disabled={savingSuggestionAction}
+                onClick={() => void handleSuggestionOffPlatform()}
+              >
+                Assignation hors plateforme
+              </button>
               <button
                 type="button"
                 className={buttonClass('secondary')}
-                onClick={() => setAdministrativeTaskClientId(null)}
-                disabled={creatingAdministrativeTask}
+                disabled={savingSuggestionAction}
+                onClick={() => setSuggestionClient(null)}
               >
                 Annuler
               </button>
               <button
                 type="button"
-                className={buttonClass('primary')}
-                onClick={() => void createAdministrativeTask()}
-                disabled={creatingAdministrativeTask || !administrativeTaskProfessionalId}
+                className={buttonClass('secondary')}
+                disabled={savingSuggestionAction || !suggestionProfessionalId}
+                onClick={() => void handleSuggestionAssignmentProcess()}
               >
-                {creatingAdministrativeTask ? 'Création...' : 'Créer et notifier'}
+                {savingSuggestionAction ? 'Traitement...' : 'Mettre assignation en cours'}
+              </button>
+              <button
+                type="button"
+                className={buttonClass('primary')}
+                disabled={savingSuggestionAction || !suggestionProfessionalId}
+                onClick={() => void handleSuggestionAssignment()}
+              >
+                {savingSuggestionAction ? 'Traitement...' : 'Assigner'}
               </button>
             </div>
-          </section>
+          </div>
+        </div>
+      )}
+      {administrativeTaskClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4 py-8">
+          <form
+            onSubmit={handleCreateAdministrativeTask}
+            className="w-full max-w-lg rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-6 shadow-xl"
+          >
+            <h2 className="text-xl font-semibold text-[#332820]">
+              Envoyer aux tâches administratives
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-[#7a6859]">
+              Les adjointes recevront une tâche pour assigner{' '}
+              <strong>{administrativeTaskClient.client_name ?? 'ce client'}</strong>{' '}
+              au professionnel choisi.
+            </p>
+            <label className="mt-5 block text-sm font-medium text-[#5d4a3d]">
+              Professionnel ciblé
+              <select
+                required
+                value={administrativeTaskProfessionalId}
+                onChange={(event) =>
+                  setAdministrativeTaskProfessionalId(event.target.value)
+                }
+                className={`${inputClass} mt-2`}
+              >
+                <option value="">Choisir un professionnel</option>
+                {professionals.map((professional) => (
+                  <option key={professional.id} value={professional.id}>
+                    {professional.full_name ?? professional.email ?? 'Professionnel sans nom'}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                className={buttonClass('secondary')}
+                disabled={savingAdministrativeTask}
+                onClick={() => {
+                  setAdministrativeTaskClient(null)
+                  setAdministrativeTaskProfessionalId('')
+                }}
+              >
+                Annuler
+              </button>
+              <button
+                type="submit"
+                className={buttonClass('primary')}
+                disabled={savingAdministrativeTask || !administrativeTaskProfessionalId}
+              >
+                {savingAdministrativeTask ? 'Création...' : 'Créer la tâche'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
       <main className="min-h-screen px-4 py-8 sm:px-6 lg:ml-72 lg:px-10">
@@ -2941,29 +3230,6 @@ export default function DirectionListeAttentePage() {
                   </label>
 
                   <label className="block text-sm font-medium text-[#5d4a3d]">
-                    Professionnel suggéré
-                    <select
-                      value={suggestedProfessionalFilter}
-                      onChange={(event) => {
-                        setSuggestedProfessionalFilter(event.target.value)
-                        setWaitingPage(0)
-                        setAssignedPage(0)
-                        setHistoryPage(0)
-                      }}
-                      className={`${inputClass} mt-2`}
-                    >
-                      <option value="all">Tous les professionnels</option>
-                      {matchingProfessionals
-                        .filter((professional) => professional.remainingPlaces > 0)
-                        .map((professional) => (
-                          <option key={professional.id} value={professional.id}>
-                            {professional.name}
-                          </option>
-                        ))}
-                    </select>
-                  </label>
-
-                  <label className="block text-sm font-medium text-[#5d4a3d]">
                     Âge minimum
                     <input
                       type="number"
@@ -2999,6 +3265,27 @@ export default function DirectionListeAttentePage() {
                       placeholder="Ex. 65"
                       className={`${inputClass} mt-2`}
                     />
+                  </label>
+
+                  <label className="block text-sm font-medium text-[#5d4a3d]">
+                    Professionnel suggéré
+                    <select
+                      value={professionalFilter}
+                      onChange={(event) => {
+                        setProfessionalFilter(event.target.value)
+                        setWaitingPage(0)
+                        setAssignedPage(0)
+                        setHistoryPage(0)
+                      }}
+                      className={`${inputClass} mt-2`}
+                    >
+                      <option value="all">Tous les professionnels</option>
+                      {professionals.map((professional) => (
+                        <option key={professional.id} value={professional.id}>
+                          {professional.full_name ?? professional.email ?? 'Professionnel sans nom'}
+                        </option>
+                      ))}
+                    </select>
                   </label>
 
                 </div>
@@ -3037,9 +3324,9 @@ export default function DirectionListeAttentePage() {
                 <label className="mt-4 flex items-center gap-2 text-sm font-medium text-[#5d4a3d]">
                   <input
                     type="checkbox"
-                    checked={hideSpecialProgramClients}
+                    checked={hideThirdPartyClients}
                     onChange={(event) => {
-                      setHideSpecialProgramClients(event.target.checked)
+                      setHideThirdPartyClients(event.target.checked)
                       setWaitingPage(0)
                       setAssignedPage(0)
                       setHistoryPage(0)
@@ -3058,8 +3345,8 @@ export default function DirectionListeAttentePage() {
                       setMinimumAgeFilter('')
                       setMaximumAgeFilter('')
                       setModalityFilter([])
-                      setSuggestedProfessionalFilter('all')
-                      setHideSpecialProgramClients(false)
+                      setProfessionalFilter('all')
+                      setHideThirdPartyClients(false)
                       setWaitingPage(0)
                       setAssignedPage(0)
                       setHistoryPage(0)

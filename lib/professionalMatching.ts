@@ -1,263 +1,209 @@
+import type { ProfessionalAgeRange } from '@/lib/professionalPreferences'
+
 export type MatchingClient = {
-  birthDate: string | null
-  serviceRequested: string | null
-  meetingModalities: string[] | null
-  city: string | null
-  consultationReason: string | null
+  birth_date: string | null
+  service_requested: string | null
+  meeting_modality: string[] | null
+  consultation_reason: string | null
+  internal_notes: string | null
 }
 
 export type MatchingProfessional = {
   id: string
-  name: string
-  professionalTitle: string | null
-  preferredClientTypes: string[] | null
-  preferredModalities: string[] | null
-  preferredFollowupTypes: string[] | null
-  preferenceNotes: string | null
-  remainingPlaces: number
+  full_name: string | null
+  pref_age_ranges: ProfessionalAgeRange[] | null
+  pref_service_types: string[] | null
+  pref_office_locations: string[] | null
+  pref_meeting_modes: string[] | null
+  pref_motifs: string[] | null
 }
 
 export type ProfessionalMatch = {
-  professionalId: string
-  professionalName: string
+  professional: MatchingProfessional
   score: number
-  remainingPlaces: number
+  isSuggested: boolean
   reasons: string[]
-  cautions: string[]
 }
 
-export const MINIMUM_SUGGESTION_SCORE = 55
-
-export function isProfessionalSuggested(match: ProfessionalMatch) {
-  return match.score >= MINIMUM_SUGGESTION_SCORE
+const serviceValues: Record<string, string> = {
+  'intervention psychosociale': 'psychosocial_intervention',
+  psychoeducation: 'psychoeducation',
+  psychotherapie: 'psychotherapy',
+  'evaluation psychologique': 'psychological_assessment',
+  'evaluation psychoeducative': 'psychoeducational_assessment',
 }
 
-const agePreferences = {
-  enfant: ['enfant', 'enfants', 'jeunesse'],
-  adolescent: ['adolescent', 'adolescents', 'ado', 'ados'],
-  adulte: ['adulte', 'adultes'],
-} as const
+const motifKeywords: Record<string, string[]> = {
+  anxiety: ['anxiete', 'angoisse', 'stress'],
+  emotional_regulation: ['emotion', 'colere', 'regulation emotionnelle'],
+  behavior: ['comportement', 'crise', 'agressivite'],
+  opposition: ['opposition', 'refus', 'defiance'],
+  self_esteem: ['estime de soi', 'confiance en soi'],
+  social_skills: ['habilete sociale', 'habiletes sociales', 'socialisation'],
+  sleep: ['sommeil', 'dormir', 'insomnie'],
+  parenting: ['parental', 'parentalite', 'encadrement', 'coaching parental'],
+  family_relationships: ['famille', 'familial', 'fratrie'],
+  school_adaptation: ['ecole', 'scolaire', 'motivation scolaire'],
+  attention: ['attention', 'concentration'],
+  tdah: ['tdah', 'hyperactivite'],
+  tsa_di: ['tsa', 'autisme', 'deficience intellectuelle'],
+  depression_mood: ['depression', 'humeur', 'tristesse'],
+  trauma: ['trauma', 'traumatique', 'ptsd'],
+  dependence: ['dependance', 'toxicomanie', 'consommation'],
+  adaptation: ['adaptation', 'difficulte a s adapter'],
+  life_transitions: ['deuil', 'separation', 'transition', 'changement de vie'],
+  relational_difficulties: ['relation', 'conflit', 'couple'],
+  personality: ['personnalite', 'tpl'],
+  screen_use: ['ecran', 'jeu video', 'jeux video'],
+  migration: ['immigration', 'migration', 'interculturel'],
+  burnout: ['epuisement', 'burnout', 'burn out'],
+  autonomy: ['autonomie'],
+}
 
-const modalityPreferences = {
-  video: ['visioconference', 'telepratique', 'virtuel', 'virtuelle', 'distance', 'en ligne'],
-  home: ['domicile'],
-  inPerson: ['presentiel', 'en personne', 'bureau'],
-  longueuil: ['longueuil'],
-  montreal: ['montreal'],
-} as const
-
-const servicePreferences: Array<{
-  clientTerms: string[]
-  professionalTerms: string[]
-}> = [
-  {
-    clientTerms: ['psychoeducation'],
-    professionalTerms: ['psychoeduc'],
-  },
-  {
-    clientTerms: ['psychotherapie'],
-    professionalTerms: ['psychotherap'],
-  },
-  {
-    clientTerms: ['evaluation psychologique'],
-    professionalTerms: ['evaluation', 'psycholog'],
-  },
-  {
-    clientTerms: ['intervention psychosociale'],
-    professionalTerms: ['psychosocial', 'intervention', 'suivi individuel'],
-  },
-]
-
-const ignoredWords = new Set([
-  'avec', 'avoir', 'besoin', 'client', 'cliente', 'dans', 'depuis', 'difficulte',
-  'difficultes', 'elle', 'entre', 'faire', 'pour', 'prise', 'service', 'suivi',
-  'leurs', 'leur', 'plus', 'question', 'rencontre', 'situation', 'souhaite',
-  'tout', 'une', 'des', 'les', 'aux', 'est', 'sont', 'qui', 'que', 'sur',
-])
-
-function normalize(value: string | null | undefined) {
+function normalize(value: string | null | undefined): string {
   return (value ?? '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
+    .replace(/[’']/g, ' ')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
 }
 
-function combine(values: Array<string | null | undefined>) {
-  return normalize(values.filter(Boolean).join(' '))
-}
-
-function includesAny(text: string, terms: readonly string[]) {
-  return terms.some((term) => text.includes(normalize(term)))
-}
-
-function calculateAge(birthDate: string | null, referenceDate: Date) {
+function calculateAge(birthDate: string | null, now = new Date()): number | null {
   if (!birthDate) return null
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(birthDate)
-  if (!match) return null
-
-  const year = Number(match[1])
-  const month = Number(match[2])
-  const day = Number(match[3])
+  const [year, month, day] = birthDate.slice(0, 10).split('-').map(Number)
   if (!year || !month || !day) return null
 
-  let age = referenceDate.getFullYear() - year
+  let age = now.getFullYear() - year
   if (
-    referenceDate.getMonth() + 1 < month ||
-    (referenceDate.getMonth() + 1 === month && referenceDate.getDate() < day)
+    now.getMonth() < month - 1 ||
+    (now.getMonth() === month - 1 && now.getDate() < day)
   ) {
     age -= 1
   }
-  return age >= 0 && age <= 120 ? age : null
+  return age >= 0 ? age : null
 }
 
-function getAgeGroup(age: number) {
-  if (age < 12) return 'enfant' as const
-  if (age < 18) return 'adolescent' as const
-  return 'adulte' as const
+function getClientService(service: string | null): string | null {
+  return serviceValues[normalize(service)] ?? null
 }
 
-function getMeaningfulTokens(value: string) {
-  return Array.from(
-    new Set(
-      normalize(value)
-        .split(' ')
-        .filter((word) => word.length >= 5 && !ignoredWords.has(word))
+function getClientMotifs(client: MatchingClient): string[] {
+  const text = normalize(`${client.consultation_reason ?? ''} ${client.internal_notes ?? ''}`)
+  return Object.entries(motifKeywords)
+    .filter(([, keywords]) => keywords.some((keyword) => text.includes(normalize(keyword))))
+    .map(([motif]) => motif)
+}
+
+function ageMatches(age: number, ranges: ProfessionalAgeRange[]): boolean {
+  return ranges.some((range) => {
+    const minimum = Math.max(0, range.min - 2)
+    const maximum = range.max === null ? Number.POSITIVE_INFINITY : range.max + 2
+    return age >= minimum && age <= maximum
+  })
+}
+
+function getModalityRequirements(modalities: string[] | null): Array<{
+  mode: string
+  office?: string
+  label: string
+}> {
+  return (modalities ?? []).map((modality) => {
+    const normalized = normalize(modality)
+    if (normalized.includes('visioconference')) {
+      return { mode: 'video', label: 'téléconsultation' }
+    }
+    if (normalized.includes('domicile')) {
+      return { mode: 'home', label: 'à domicile' }
+    }
+    if (normalized.includes('montreal')) {
+      return { mode: 'in_person', office: 'montreal', label: 'bureau de Montréal' }
+    }
+    return { mode: 'in_person', office: 'longueuil', label: 'bureau de Longueuil' }
+  })
+}
+
+export function evaluateProfessionalMatch(
+  client: MatchingClient,
+  professional: MatchingProfessional,
+  now = new Date()
+): ProfessionalMatch {
+  let score = 0
+  const reasons: string[] = []
+  let hardMismatch = false
+
+  const service = getClientService(client.service_requested)
+  if (!service) {
+    score += 30
+  } else if (professional.pref_service_types?.includes(service)) {
+    score += 30
+    reasons.push('service compatible')
+  } else {
+    hardMismatch = true
+  }
+
+  const age = calculateAge(client.birth_date, now)
+  if (age === null) {
+    score += 20
+    reasons.push('âge à confirmer')
+  } else if (ageMatches(age, professional.pref_age_ranges ?? [])) {
+    score += 20
+    reasons.push('groupe d’âge compatible')
+  } else {
+    hardMismatch = true
+  }
+
+  const requirements = getModalityRequirements(client.meeting_modality)
+  if (requirements.length === 0) {
+    score += 25
+    reasons.push('modalité à confirmer')
+  } else {
+    const modes = professional.pref_meeting_modes ?? []
+    const offices = professional.pref_office_locations ?? []
+    const matchingRequirement = requirements.find(
+      (requirement) =>
+        modes.includes(requirement.mode) &&
+        (!requirement.office || offices.includes(requirement.office))
     )
-  )
-}
-
-function modalityMatch(
-  clientModalities: string[] | null,
-  professionalPreferences: string
-) {
-  const modalities = clientModalities?.map(normalize).filter(Boolean) ?? []
-  if (modalities.length === 0) return { points: 5, reason: '', caution: 'Modalité du client non précisée' }
-  if (!professionalPreferences) return { points: 7, reason: '', caution: 'Modalités du professionnel non précisées' }
-
-  for (const modality of modalities) {
-    if (modality.includes('visioconference')) {
-      if (includesAny(professionalPreferences, modalityPreferences.video)) {
-        return { points: 25, reason: 'Visioconférence compatible', caution: '' }
-      }
-      continue
-    }
-    if (modality.includes('domicile')) {
-      if (includesAny(professionalPreferences, modalityPreferences.home)) {
-        return { points: 25, reason: 'Intervention à domicile compatible', caution: '' }
-      }
-      continue
-    }
-    if (modality.includes('longueuil')) {
-      if (includesAny(professionalPreferences, modalityPreferences.longueuil)) {
-        return { points: 25, reason: 'Bureau de Longueuil compatible', caution: '' }
-      }
-      if (includesAny(professionalPreferences, modalityPreferences.inPerson)) {
-        return { points: 17, reason: 'Présentiel souhaité', caution: 'Bureau de Longueuil à confirmer' }
-      }
-      continue
-    }
-    if (modality.includes('montreal')) {
-      if (includesAny(professionalPreferences, modalityPreferences.montreal)) {
-        return { points: 25, reason: 'Bureau de Montréal compatible', caution: '' }
-      }
-      if (includesAny(professionalPreferences, modalityPreferences.inPerson)) {
-        return { points: 17, reason: 'Présentiel souhaité', caution: 'Bureau de Montréal à confirmer' }
-      }
+    if (matchingRequirement) {
+      score += 25
+      reasons.push(matchingRequirement.label)
+    } else {
+      hardMismatch = true
     }
   }
 
-  return { points: 0, reason: '', caution: 'Modalité à vérifier' }
+  const clientMotifs = getClientMotifs(client)
+  const matchingMotifs = clientMotifs.filter((motif) =>
+    professional.pref_motifs?.includes(motif)
+  )
+  if (clientMotifs.length > 0 && matchingMotifs.length > 0) {
+    score += 25
+    reasons.push('motif compatible')
+  }
+
+  return {
+    professional,
+    score,
+    isSuggested: !hardMismatch && score >= 80,
+    reasons,
+  }
 }
 
-export function rankProfessionalMatches(
+export function getSuggestedProfessionals<T extends MatchingProfessional>(
   client: MatchingClient,
-  professionals: MatchingProfessional[],
-  referenceDate = new Date()
-): ProfessionalMatch[] {
+  professionals: T[],
+  now = new Date()
+): Array<ProfessionalMatch & { professional: T }> {
   return professionals
-    .filter((professional) => professional.remainingPlaces > 0)
-    .map((professional) => {
-      let score = 25
-      const reasons = [`${professional.remainingPlaces} place${professional.remainingPlaces > 1 ? 's' : ''} restante${professional.remainingPlaces > 1 ? 's' : ''}`]
-      const cautions: string[] = []
-
-      const clientTypes = combine(professional.preferredClientTypes ?? [])
-      const age = calculateAge(client.birthDate, referenceDate)
-      if (age === null) {
-        score += 5
-        cautions.push('Âge du client non précisé')
-      } else {
-        const ageGroup = getAgeGroup(age)
-        const recognizedAgePreference = Object.values(agePreferences).some((terms) =>
-          includesAny(clientTypes, terms)
-        )
-        if (includesAny(clientTypes, agePreferences[ageGroup])) {
-          score += 25
-          reasons.push(`Clientèle ${ageGroup}${ageGroup === 'adolescent' ? 'e' : ''} compatible`)
-        } else if (!recognizedAgePreference) {
-          score += 7
-          cautions.push('Groupe d’âge non précisé dans les préférences')
-        } else {
-          cautions.push('Groupe d’âge différent des préférences inscrites')
-        }
-      }
-
-      const modality = modalityMatch(
-        client.meetingModalities,
-        combine(professional.preferredModalities ?? [])
-      )
-      score += modality.points
-      if (modality.reason) reasons.push(modality.reason)
-      if (modality.caution) cautions.push(modality.caution)
-
-      const service = normalize(client.serviceRequested)
-      const professionalServices = combine([
-        professional.professionalTitle,
-        ...(professional.preferredFollowupTypes ?? []),
-      ])
-      const serviceRule = servicePreferences.find((rule) =>
-        includesAny(service, rule.clientTerms)
-      )
-      if (serviceRule && includesAny(professionalServices, serviceRule.professionalTerms)) {
-        score += 15
-        reasons.push('Service ou type de suivi compatible')
-      } else if (!professionalServices) {
-        score += 5
-        cautions.push('Types de suivis non précisés')
-      } else {
-        cautions.push('Service à confirmer')
-      }
-
-      const reasonTokens = getMeaningfulTokens(client.consultationReason ?? '')
-      const preferenceTokens = new Set(
-        getMeaningfulTokens((professional.preferredFollowupTypes ?? []).join(' '))
-      )
-      const sharedTokens = reasonTokens.filter((token) => preferenceTokens.has(token))
-      if (sharedTokens.length > 0) {
-        score += Math.min(10, sharedTokens.length * 5)
-        reasons.push(`Motif associé à ${sharedTokens.slice(0, 2).join(', ')}`)
-      } else if (!client.consultationReason?.trim()) {
-        cautions.push('Motif de consultation non précisé')
-      }
-
-      if (client.meetingModalities?.some((value) => normalize(value).includes('domicile')) && client.city) {
-        cautions.push(`Secteur ${client.city.trim()} à confirmer`)
-      }
-
-      return {
-        professionalId: professional.id,
-        professionalName: professional.name,
-        score: Math.max(0, Math.min(100, score)),
-        remainingPlaces: professional.remainingPlaces,
-        reasons,
-        cautions: Array.from(new Set(cautions)),
-      }
-    })
+    .map((professional) => evaluateProfessionalMatch(client, professional, now) as ProfessionalMatch & { professional: T })
+    .filter((match) => match.isSuggested)
     .sort((first, second) =>
       second.score - first.score ||
-      second.remainingPlaces - first.remainingPlaces ||
-      first.professionalName.localeCompare(second.professionalName, 'fr')
+      (first.professional.full_name ?? '').localeCompare(
+        second.professional.full_name ?? '',
+        'fr'
+      )
     )
 }

@@ -9,6 +9,7 @@ import {
 } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AppNav } from "@/components/AppNav";
+import { ProfessionalPreferencesEditor } from "@/components/ProfessionalPreferencesEditor";
 import {
   EmailComposerModal,
   type EmailComposerDrafts,
@@ -30,12 +31,22 @@ import {
   buildProfessionalAssignmentEmailTemplate,
 } from "@/lib/assignmentEmailTemplates";
 import { canManageProfessionalAssignmentRequests } from "@/lib/assignmentRequestAccess";
+import {
+  clientGroupOptions,
+  formatAgeRanges,
+  getOptionLabels,
+  meetingModeOptions,
+  motifOptions,
+  normalizeStructuredPreferences,
+  officeLocationOptions,
+  serviceTypeOptions,
+  type ProfessionalAgeRange,
+  type ProfessionalStructuredPreferences,
+} from "@/lib/professionalPreferences";
 import { isSuperAdmin } from "@/lib/superAdmin";
 import {
   closureReasonOptions,
   buildClosureReason,
-  englishLanguagePreference,
-  frenchLanguagePreference,
   getClosureReasonBase,
   getClosureReasonDetails,
   getAssignedClientStatus,
@@ -47,7 +58,6 @@ import {
   getUsedAssignmentCount,
   logAudit,
   logAssignedClientStatusChange,
-  otherLanguagePreference,
   otherClosureReason,
   unreachableFollowupClosureReason,
   type AssignedClientStatus,
@@ -61,10 +71,14 @@ type Profile = {
   professional_phone: string | null;
   professional_license_number: string | null;
   pref_languages: string[] | null;
-  pref_client_types: string[] | null;
-  pref_modalities: string[] | null;
-  pref_followup_types: string[] | null;
-  pref_notes: string | null;
+  pref_age_ranges: ProfessionalAgeRange[] | null;
+  pref_client_groups: string[] | null;
+  pref_service_types: string[] | null;
+  pref_office_locations: string[] | null;
+  pref_meeting_modes: string[] | null;
+  pref_motifs: string[] | null;
+  pref_exclusions: string | null;
+  pref_matching_notes: string | null;
 };
 
 type AssignmentRequest = {
@@ -150,11 +164,7 @@ type ProfessionalProfileForm = {
   professional_title: string;
   professional_phone: string;
   professional_license_number: string;
-  pref_languages: string;
-  pref_client_types: string;
-  pref_modalities: string;
-  pref_followup_types: string;
-  pref_notes: string;
+  preferences: ProfessionalStructuredPreferences;
 };
 
 const HISTORY_PAGE_SIZE = 5;
@@ -180,11 +190,7 @@ const emptyProfessionalProfileForm: ProfessionalProfileForm = {
   professional_title: "",
   professional_phone: "",
   professional_license_number: "",
-  pref_languages: frenchLanguagePreference,
-  pref_client_types: "",
-  pref_modalities: "",
-  pref_followup_types: "",
-  pref_notes: "",
+  preferences: normalizeStructuredPreferences(null),
 };
 
 function formatBoolean(value: boolean | null): string {
@@ -441,33 +447,6 @@ function nullableText(value: string): string | null {
   return trimmedValue.length > 0 ? trimmedValue : null;
 }
 
-function arrayToTextareaValue(value: string[] | null): string {
-  return value?.join(", ") ?? "";
-}
-
-function textareaValueToArray(value: string): string[] {
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0);
-}
-
-function getOtherLanguageDetails(value: string): string {
-  const otherLanguage = textareaValueToArray(value).find((language) =>
-    language.startsWith(`${otherLanguagePreference} :`),
-  );
-
-  return otherLanguage?.slice(`${otherLanguagePreference} :`.length).trim() ?? "";
-}
-
-function hasOtherLanguage(value: string): boolean {
-  return textareaValueToArray(value).some(
-    (language) =>
-      language === otherLanguagePreference ||
-      language.startsWith(`${otherLanguagePreference} :`),
-  );
-}
-
 function getTodayDate(): string {
   const today = new Date();
   const year = today.getFullYear();
@@ -642,7 +621,7 @@ export default function ProfessionnelDetailPage() {
         const profileResponse = await supabase
           .from("profiles")
           .select(
-            "id, full_name, email, professional_title, professional_phone, professional_license_number, pref_languages, pref_client_types, pref_modalities, pref_followup_types, pref_notes",
+            "id, full_name, email, professional_title, professional_phone, professional_license_number, pref_languages, pref_age_ranges, pref_client_groups, pref_service_types, pref_office_locations, pref_meeting_modes, pref_motifs, pref_exclusions, pref_matching_notes",
           )
           .eq("id", professionalId)
           .limit(1)
@@ -760,15 +739,7 @@ export default function ProfessionnelDetailPage() {
           professional_phone: loadedProfile.professional_phone ?? "",
           professional_license_number:
             loadedProfile.professional_license_number ?? "",
-          pref_languages:
-            arrayToTextareaValue(loadedProfile.pref_languages) ||
-            frenchLanguagePreference,
-          pref_client_types: arrayToTextareaValue(loadedProfile.pref_client_types),
-          pref_modalities: arrayToTextareaValue(loadedProfile.pref_modalities),
-          pref_followup_types: arrayToTextareaValue(
-            loadedProfile.pref_followup_types,
-          ),
-          pref_notes: loadedProfile.pref_notes ?? "",
+          preferences: normalizeStructuredPreferences(loadedProfile),
         });
         setAssignmentRequest(activeRequest);
         setAssignedClients(loadedClients);
@@ -823,65 +794,13 @@ export default function ProfessionnelDetailPage() {
   }, [assignedClients.length]);
 
   const handleProfessionalProfileFormChange = (
-    field: keyof ProfessionalProfileForm,
+    field: Exclude<keyof ProfessionalProfileForm, "preferences">,
     value: string,
   ) => {
     setProfessionalProfileForm((currentForm) => ({
       ...currentForm,
       [field]: value,
     }));
-  };
-
-  const updateProfessionalLanguagePreference = (
-    language: string,
-    checked: boolean,
-  ) => {
-    setProfessionalProfileForm((currentForm) => {
-      const currentLanguages = textareaValueToArray(
-        currentForm.pref_languages,
-      ).filter(
-        (currentLanguage) =>
-          currentLanguage !== language &&
-          !(
-            language === otherLanguagePreference &&
-            (currentLanguage === otherLanguagePreference ||
-              currentLanguage.startsWith(`${otherLanguagePreference} :`))
-          ),
-      );
-
-      if (checked) {
-        currentLanguages.push(language);
-      }
-
-      return {
-        ...currentForm,
-        pref_languages: currentLanguages.join(", "),
-      };
-    });
-  };
-
-  const updateProfessionalOtherLanguageDetails = (details: string) => {
-    setProfessionalProfileForm((currentForm) => {
-      const currentLanguages = textareaValueToArray(
-        currentForm.pref_languages,
-      ).filter(
-        (language) =>
-          language !== otherLanguagePreference &&
-          !language.startsWith(`${otherLanguagePreference} :`),
-      );
-      const trimmedDetails = details.trim();
-
-      currentLanguages.push(
-        trimmedDetails
-          ? `${otherLanguagePreference} : ${trimmedDetails}`
-          : otherLanguagePreference,
-      );
-
-      return {
-        ...currentForm,
-        pref_languages: currentLanguages.join(", "),
-      };
-    });
   };
 
   const handleSaveProfessionalProfile = async (
@@ -892,10 +811,11 @@ export default function ProfessionnelDetailPage() {
     setProfessionalProfileError(null);
     setSavingProfessionalProfile(true);
 
-    if (
-      hasOtherLanguage(professionalProfileForm.pref_languages) &&
-      !getOtherLanguageDetails(professionalProfileForm.pref_languages)
-    ) {
+    if (professionalProfileForm.preferences.pref_languages.some(
+      (language) =>
+        language.startsWith("Autre :") &&
+        !language.slice("Autre :".length).trim(),
+    )) {
       setProfessionalProfileError(
         "Veuillez préciser la langue lorsque vous sélectionnez Autre.",
       );
@@ -918,23 +838,17 @@ export default function ProfessionnelDetailPage() {
           professional_license_number: nullableText(
             professionalProfileForm.professional_license_number,
           ),
-          pref_languages: textareaValueToArray(
-            professionalProfileForm.pref_languages,
+          ...professionalProfileForm.preferences,
+          pref_exclusions: nullableText(
+            professionalProfileForm.preferences.pref_exclusions,
           ),
-          pref_client_types: textareaValueToArray(
-            professionalProfileForm.pref_client_types,
+          pref_matching_notes: nullableText(
+            professionalProfileForm.preferences.pref_matching_notes,
           ),
-          pref_modalities: textareaValueToArray(
-            professionalProfileForm.pref_modalities,
-          ),
-          pref_followup_types: textareaValueToArray(
-            professionalProfileForm.pref_followup_types,
-          ),
-          pref_notes: nullableText(professionalProfileForm.pref_notes),
         })
         .eq("id", professionalId)
         .select(
-          "id, full_name, email, professional_title, professional_phone, professional_license_number, pref_languages, pref_client_types, pref_modalities, pref_followup_types, pref_notes",
+          "id, full_name, email, professional_title, professional_phone, professional_license_number, pref_languages, pref_age_ranges, pref_client_groups, pref_service_types, pref_office_locations, pref_meeting_modes, pref_motifs, pref_exclusions, pref_matching_notes",
         )
         .limit(1)
         .maybeSingle();
@@ -953,14 +867,7 @@ export default function ProfessionnelDetailPage() {
         professional_phone: nextProfile.professional_phone ?? "",
         professional_license_number:
           nextProfile.professional_license_number ?? "",
-        pref_languages:
-          arrayToTextareaValue(nextProfile.pref_languages) || frenchLanguagePreference,
-        pref_client_types: arrayToTextareaValue(nextProfile.pref_client_types),
-        pref_modalities: arrayToTextareaValue(nextProfile.pref_modalities),
-        pref_followup_types: arrayToTextareaValue(
-          nextProfile.pref_followup_types,
-        ),
-        pref_notes: nextProfile.pref_notes ?? "",
+        preferences: normalizeStructuredPreferences(nextProfile),
       });
       setProfessionalProfileMessage("Informations sauvegardées.");
     } catch (caughtError: unknown) {
@@ -3377,9 +3284,9 @@ export default function ProfessionnelDetailPage() {
 
               <SectionCard
                 title="Préférences"
-                description="Informations de préférence utiles au choix des assignations."
+                description="Critères structurés utilisés pour proposer des jumelages cohérents."
               >
-                <dl className="grid gap-4 md:grid-cols-2">
+                <dl className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                   <div>
                     <dt className="text-sm font-medium text-[#8a6f5d]">
                       Langues d&apos;intervention
@@ -3390,34 +3297,58 @@ export default function ProfessionnelDetailPage() {
                   </div>
                   <div>
                     <dt className="text-sm font-medium text-[#8a6f5d]">
-                      Clientèles souhaitées
+                      Âges acceptés
                     </dt>
                     <dd className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">
-                      {formatText(profile.pref_client_types)}
+                      {formatAgeRanges(profile.pref_age_ranges)}
                     </dd>
                   </div>
                   <div>
                     <dt className="text-sm font-medium text-[#8a6f5d]">
-                      Modalités souhaitées
+                      Clientèles
                     </dt>
                     <dd className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">
-                      {formatText(profile.pref_modalities)}
+                      {formatText(getOptionLabels(profile.pref_client_groups, clientGroupOptions))}
                     </dd>
                   </div>
                   <div>
                     <dt className="text-sm font-medium text-[#8a6f5d]">
-                      Types de suivis souhaités
+                      Services
                     </dt>
                     <dd className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">
-                      {formatText(profile.pref_followup_types)}
+                      {formatText(getOptionLabels(profile.pref_service_types, serviceTypeOptions))}
                     </dd>
                   </div>
                   <div>
                     <dt className="text-sm font-medium text-[#8a6f5d]">
-                      Notes / précisions
+                      Bureaux
                     </dt>
                     <dd className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">
-                      {formatText(profile.pref_notes)}
+                      {formatText(getOptionLabels(profile.pref_office_locations, officeLocationOptions))}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-[#8a6f5d]">Modalités</dt>
+                    <dd className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">
+                      {formatText(getOptionLabels(profile.pref_meeting_modes, meetingModeOptions))}
+                    </dd>
+                  </div>
+                  <div className="md:col-span-2 lg:col-span-3">
+                    <dt className="text-sm font-medium text-[#8a6f5d]">Motifs et champs d’intérêt</dt>
+                    <dd className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">
+                      {formatText(getOptionLabels(profile.pref_motifs, motifOptions))}
+                    </dd>
+                  </div>
+                  <div className="md:col-span-2 lg:col-span-3">
+                    <dt className="text-sm font-medium text-[#8a6f5d]">Exclusions ou limites cliniques</dt>
+                    <dd className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">
+                      {formatText(profile.pref_exclusions)}
+                    </dd>
+                  </div>
+                  <div className="md:col-span-2 lg:col-span-3">
+                    <dt className="text-sm font-medium text-[#8a6f5d]">Notes et précisions</dt>
+                    <dd className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">
+                      {formatText(profile.pref_matching_notes)}
                     </dd>
                   </div>
                 </dl>
@@ -3509,143 +3440,17 @@ export default function ProfessionnelDetailPage() {
                       />
                     </label>
 
-                    <div className="rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-4 md:col-span-2">
-                      <p className="text-sm font-medium text-[#5d4a3d]">
-                        Langues d&apos;intervention
-                      </p>
-                      <div className="mt-3 flex flex-wrap gap-4">
-                        <label className="flex items-center gap-2 text-sm text-[#5d4a3d]">
-                          <input
-                            type="checkbox"
-                            checked={textareaValueToArray(
-                              professionalProfileForm.pref_languages,
-                            ).includes(frenchLanguagePreference)}
-                            onChange={(event) =>
-                              updateProfessionalLanguagePreference(
-                                frenchLanguagePreference,
-                                event.target.checked,
-                              )
-                            }
-                            className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
-                          />
-                          Français
-                        </label>
-                        <label className="flex items-center gap-2 text-sm text-[#5d4a3d]">
-                          <input
-                            type="checkbox"
-                            checked={textareaValueToArray(
-                              professionalProfileForm.pref_languages,
-                            ).includes(englishLanguagePreference)}
-                            onChange={(event) =>
-                              updateProfessionalLanguagePreference(
-                                englishLanguagePreference,
-                                event.target.checked,
-                              )
-                            }
-                            className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
-                          />
-                          Anglais
-                        </label>
-                        <label className="flex items-center gap-2 text-sm text-[#5d4a3d]">
-                          <input
-                            type="checkbox"
-                            checked={hasOtherLanguage(
-                              professionalProfileForm.pref_languages,
-                            )}
-                            onChange={(event) =>
-                              updateProfessionalLanguagePreference(
-                                otherLanguagePreference,
-                                event.target.checked,
-                              )
-                            }
-                            className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
-                          />
-                          Autre
-                        </label>
-                      </div>
-                      {hasOtherLanguage(professionalProfileForm.pref_languages) && (
-                        <label className="mt-3 block text-sm font-medium text-[#5d4a3d]">
-                          Préciser la langue
-                          <input
-                            type="text"
-                            value={getOtherLanguageDetails(
-                              professionalProfileForm.pref_languages,
-                            )}
-                            onChange={(event) =>
-                              updateProfessionalOtherLanguageDetails(
-                                event.target.value,
-                              )
-                            }
-                            placeholder="Ex. espagnol, arabe, portugais..."
-                            className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
-                          />
-                        </label>
-                      )}
+                    <div className="md:col-span-2">
+                      <ProfessionalPreferencesEditor
+                        value={professionalProfileForm.preferences}
+                        onChange={(preferences) =>
+                          setProfessionalProfileForm((currentForm) => ({
+                            ...currentForm,
+                            preferences,
+                          }))
+                        }
+                      />
                     </div>
-
-                    <label className="block text-sm font-medium text-[#5d4a3d]">
-                      Clientèles souhaitées
-                      <textarea
-                        value={professionalProfileForm.pref_client_types}
-                        onChange={(event) =>
-                          handleProfessionalProfileFormChange(
-                            "pref_client_types",
-                            event.target.value,
-                          )
-                        }
-                        rows={3}
-                        placeholder="Ex. enfants, adolescents, adultes, familles, fournisseurs CNESST, IVAC"
-                        className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
-                      />
-                    </label>
-
-                    <label className="block text-sm font-medium text-[#5d4a3d]">
-                      Modalités souhaitées
-                      <textarea
-                        value={professionalProfileForm.pref_modalities}
-                        onChange={(event) =>
-                          handleProfessionalProfileFormChange(
-                            "pref_modalities",
-                            event.target.value,
-                          )
-                        }
-                        rows={3}
-                        placeholder="Ex. présentiel, télépratique, domicile, école"
-                        className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
-                      />
-                    </label>
-
-                    <label className="block text-sm font-medium text-[#5d4a3d]">
-                      Types de suivis souhaités
-                      <textarea
-                        value={professionalProfileForm.pref_followup_types}
-                        onChange={(event) =>
-                          handleProfessionalProfileFormChange(
-                            "pref_followup_types",
-                            event.target.value,
-                          )
-                        }
-                        rows={3}
-                        placeholder="Ex. suivi individuel, coaching parental, évaluation, intervention familiale"
-                        className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
-                      />
-                    </label>
-
-                    <label className="block text-sm font-medium text-[#5d4a3d]">
-                      Notes / précisions
-                      <textarea
-                        value={professionalProfileForm.pref_notes}
-                        onChange={(event) =>
-                          handleProfessionalProfileFormChange(
-                            "pref_notes",
-                            event.target.value,
-                          )
-                        }
-                        rows={3}
-                        placeholder="Ex. disponibilités particulières, secteurs desservis, exclusions ou limites cliniques"
-                        className="mt-2 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
-                      />
-                    </label>
                   </div>
 
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center">

@@ -115,7 +115,6 @@ export function AppNav({
     displayRole === 'direction'
       ? [
           { href: '/direction', label: 'Dashboard direction', icon: LayoutDashboard },
-          { href: '/direction/assignations', label: 'Assignations', icon: ClipboardList },
           { href: '/direction/liste-attente', label: "Liste d'attente", icon: ListChecks },
           { href: '/direction/calendrier', label: 'Calendrier', icon: CalendarDays },
           { href: '/direction/prospects', label: 'Prospects', icon: UserCheck },
@@ -209,9 +208,7 @@ export function AppNav({
         displayRole === 'direction'
           ? link.href === '/direction'
             ? pathname === '/direction'
-            : link.href === '/direction/assignations'
-              ? pathname === '/direction/assignations'
-              : link.href === '/direction/liste-attente'
+            : link.href === '/direction/liste-attente'
                 ? pathname?.startsWith('/direction/liste-attente')
               : link.href === '/direction/calendrier'
                 ? pathname?.startsWith('/direction/calendrier')
