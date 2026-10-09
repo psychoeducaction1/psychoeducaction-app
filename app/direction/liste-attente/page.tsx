@@ -2,6 +2,7 @@
 
 import { type FormEvent, type RefObject, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { Sparkles, X } from 'lucide-react'
 import { AppNav } from '@/components/AppNav'
 import {
   EmailComposerModal,
@@ -35,6 +36,11 @@ import {
   buildClientAssignmentEmailTemplate,
   buildProfessionalAssignmentEmailTemplate,
 } from '@/lib/assignmentEmailTemplates'
+import {
+  isProfessionalSuggested,
+  rankProfessionalMatches,
+} from '@/lib/professionalMatching'
+import { hasSpecialProgramMarker } from '@/lib/waitingListFilters'
 
 type WaitingListClient = {
   id: string
@@ -68,6 +74,10 @@ type Professional = {
   professional_title: string | null
   professional_phone: string | null
   professional_license_number: string | null
+  pref_client_types: string[] | null
+  pref_modalities: string[] | null
+  pref_followup_types: string[] | null
+  pref_notes: string | null
 }
 
 type AuditActor = {
@@ -464,6 +474,13 @@ export default function DirectionListeAttentePage() {
   const [editingClientId, setEditingClientId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<WaitingListForm>(emptyWaitingListForm)
   const [assigningClientId, setAssigningClientId] = useState<string | null>(null)
+  const [suggestionClientId, setSuggestionClientId] = useState<string | null>(null)
+  const [administrativeTaskClientId, setAdministrativeTaskClientId] =
+    useState<string | null>(null)
+  const [administrativeTaskProfessionalId, setAdministrativeTaskProfessionalId] =
+    useState('')
+  const [creatingAdministrativeTask, setCreatingAdministrativeTask] = useState(false)
+  const [administrativeTaskError, setAdministrativeTaskError] = useState('')
   const [selectedProfessionalId, setSelectedProfessionalId] = useState('')
   const [savingClient, setSavingClient] = useState(false)
   const [savingEdit, setSavingEdit] = useState(false)
@@ -489,6 +506,8 @@ export default function DirectionListeAttentePage() {
   const [minimumAgeFilter, setMinimumAgeFilter] = useState('')
   const [maximumAgeFilter, setMaximumAgeFilter] = useState('')
   const [modalityFilter, setModalityFilter] = useState<string[]>([])
+  const [suggestedProfessionalFilter, setSuggestedProfessionalFilter] = useState('all')
+  const [hideSpecialProgramClients, setHideSpecialProgramClients] = useState(false)
   const [expandedMotifIds, setExpandedMotifIds] = useState<Record<string, boolean>>({})
   const [notifyProfessional, setNotifyProfessional] = useState(false)
   const [notifyClient, setNotifyClient] = useState(false)
@@ -577,7 +596,7 @@ export default function DirectionListeAttentePage() {
       const { data: professionalsData, error: professionalsError } = await supabase
         .from('profiles')
         .select(
-          'id, full_name, email, professional_title, professional_phone, professional_license_number'
+          'id, full_name, email, professional_title, professional_phone, professional_license_number, pref_client_types, pref_modalities, pref_followup_types, pref_notes'
         )
         .eq('role', 'professionnel')
         .eq('is_active', true)
@@ -741,11 +760,12 @@ export default function DirectionListeAttentePage() {
     setEditForm(clientToForm(client))
     setShowForm(false)
     setAssigningClientId(null)
+    setSuggestionClientId(null)
     setFormError('')
     setFormMessage('')
   }
 
-  const startAssigning = (client: WaitingListClient) => {
+  const startAssigning = (client: WaitingListClient, suggestedProfessionalId = '') => {
     if (client.status !== 'waiting') {
       setFormError('Ce client est déjà assigné ou n’est plus en attente.')
       setFormMessage('')
@@ -753,6 +773,7 @@ export default function DirectionListeAttentePage() {
     }
 
     setAssigningClientId(client.id)
+    setSuggestionClientId(null)
     setEditingClientId(null)
     setShowForm(false)
     setFormError('')
@@ -760,10 +781,121 @@ export default function DirectionListeAttentePage() {
     setNotifyProfessional(false)
     setNotifyClient(false)
     setSelectedProfessionalId(
-      client.assigned_professional_id ||
+      suggestedProfessionalId ||
+        client.assigned_professional_id ||
         selectedProfessionalId ||
         professionals[0]?.id ||
         ''
+    )
+  }
+
+  const openAdministrativeTask = (client: WaitingListClient) => {
+    setAdministrativeTaskClientId(client.id)
+    setAdministrativeTaskProfessionalId(
+      client.assigned_professional_id || selectedProfessionalId || professionals[0]?.id || ''
+    )
+    setAdministrativeTaskError('')
+    setSuggestionClientId(null)
+  }
+
+  const createAdministrativeTask = async () => {
+    if (!administrativeTaskClientId || creatingAdministrativeTask) return
+
+    const client = clients.find((item) => item.id === administrativeTaskClientId)
+    const professional = professionals.find(
+      (item) => item.id === administrativeTaskProfessionalId
+    )
+    if (!client || !professional) {
+      setAdministrativeTaskError('Choisissez un professionnel pour cette tâche.')
+      return
+    }
+
+    setCreatingAdministrativeTask(true)
+    setAdministrativeTaskError('')
+    setFormMessage('')
+
+    const professionalName =
+      professional.full_name || professional.email || 'Professionnel sans nom'
+    const clientName = client.client_name?.trim() || 'Client sans nom'
+    const description = [
+      `Client : ${clientName}`,
+      `Professionnel visé : ${professionalName}`,
+      `Premier contact : ${formatDate(client.contact_date ?? client.created_at)}`,
+      `Service demandé : ${formatText(client.service_requested)}`,
+      `Modalités : ${formatModalities(client.meeting_modality)}`,
+      `Disponibilités : ${formatText(client.availability)}`,
+      `Coordonnées : ${[...getContactEmails(client), ...getContactPhones(client)].join(' · ') || '-'}`,
+      `Motif : ${formatText(client.consultation_reason)}`,
+      client.internal_notes?.trim()
+        ? `Notes internes : ${client.internal_notes.trim()}`
+        : '',
+    ].filter(Boolean).join('\n')
+
+    const { data: task, error: insertError } = await supabase
+      .from('administrative_tasks')
+      .insert({
+        title: `Assigner ${clientName} à ${professionalName}`,
+        description,
+        assigned_to: 'both',
+        status: 'pending',
+        source_type: 'waiting_list_assignment',
+        source_id: client.id,
+        created_by: auditActor?.id ?? null,
+      })
+      .select('id')
+      .limit(1)
+      .maybeSingle()
+
+    if (insertError || !task) {
+      setAdministrativeTaskError(
+        insertError?.code === '23505'
+          ? 'Une tâche administrative existe déjà pour ce client.'
+          : insertError?.message ?? 'La tâche administrative n’a pas pu être créée.'
+      )
+      setCreatingAdministrativeTask(false)
+      return
+    }
+
+    let notificationSent = true
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) throw new Error('Session expirée.')
+      const response = await fetch('/api/direction/administrative-task-notification', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ taskId: task.id }),
+      })
+      if (!response.ok) notificationSent = false
+    } catch {
+      notificationSent = false
+    }
+
+    if (auditActor) {
+      void logAudit({
+        supabase,
+        actor: auditActor,
+        action: 'administrative_assignment_task_created',
+        entityType: 'administrative_task',
+        entityId: task.id,
+        description: `Tâche créée pour assigner ${clientName} à ${professionalName}.`,
+        metadata: {
+          waiting_list_client_id: client.id,
+          professional_id: professional.id,
+          professional_name: professionalName,
+          notification_sent: notificationSent,
+        },
+      })
+    }
+
+    setAdministrativeTaskClientId(null)
+    setCreatingAdministrativeTask(false)
+    setFormMessage(
+      notificationSent
+        ? 'Tâche administrative créée et notification envoyée.'
+        : 'Tâche administrative créée, mais la notification par courriel a échoué.'
     )
   }
 
@@ -1718,6 +1850,33 @@ export default function DirectionListeAttentePage() {
   const inputClass =
     'w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] shadow-sm outline-none transition duration-200 placeholder:text-[#b09c8a] focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]'
 
+  const matchingProfessionals = professionals.map((professional) => ({
+    id: professional.id,
+    name: professional.full_name || professional.email || 'Professionnel sans nom',
+    professionalTitle: professional.professional_title,
+    preferredClientTypes: professional.pref_client_types,
+    preferredModalities: professional.pref_modalities,
+    preferredFollowupTypes: professional.pref_followup_types,
+    preferenceNotes: professional.pref_notes,
+    remainingPlaces: activeRequests
+      .filter((request) => request.professional_id === professional.id)
+      .reduce(
+        (total, request) => total + Math.max(request.remaining_count ?? 0, 0),
+        0
+      ),
+  }))
+  const getProfessionalSuggestions = (client: WaitingListClient) =>
+    rankProfessionalMatches(
+      {
+        birthDate: client.birth_date,
+        serviceRequested: client.service_requested,
+        meetingModalities: getMeetingModalities(client.meeting_modality),
+        city: client.city,
+        consultationReason: client.consultation_reason,
+      },
+      matchingProfessionals
+    )
+
   const normalizedSearchQuery = searchQuery.trim().toLowerCase()
   const minimumAge = minimumAgeFilter === '' ? null : Number(minimumAgeFilter)
   const maximumAge = maximumAgeFilter === '' ? null : Number(maximumAgeFilter)
@@ -1726,7 +1885,9 @@ export default function DirectionListeAttentePage() {
     statusFilter !== 'all' ||
     minimumAgeFilter !== '' ||
     maximumAgeFilter !== '' ||
-    modalityFilter.length > 0
+    modalityFilter.length > 0 ||
+    suggestedProfessionalFilter !== 'all' ||
+    hideSpecialProgramClients
   const filteredClients = clients.filter((client) => {
     if (activeAssignmentProcessClientIds.has(client.id)) return false
     if (normalizedSearchQuery && !clientMatchesSearch(client, normalizedSearchQuery)) {
@@ -1738,12 +1899,16 @@ export default function DirectionListeAttentePage() {
     if (statusFilter !== 'all' && client.status !== statusFilter) {
       return false
     }
+    if (hideSpecialProgramClients && hasSpecialProgramMarker(client)) {
+      return false
+    }
     if (minimumAge !== null || maximumAge !== null) {
       const clientAge = calculateAge(client.birth_date)
 
-      if (clientAge === null) return false
-      if (minimumAge !== null && clientAge < minimumAge) return false
-      if (maximumAge !== null && clientAge > maximumAge) return false
+      if (clientAge !== null) {
+        if (minimumAge !== null && clientAge < minimumAge) return false
+        if (maximumAge !== null && clientAge > maximumAge) return false
+      }
     }
     if (modalityFilter.length > 0) {
       const clientModalities = getMeetingModalities(client.meeting_modality)
@@ -1751,6 +1916,14 @@ export default function DirectionListeAttentePage() {
         clientModalities.includes(modality)
       )
       if (!hasMatchingModality) return false
+    }
+    if (suggestedProfessionalFilter !== 'all') {
+      const professionalMatch = getProfessionalSuggestions(client).find(
+        (match) => match.professionalId === suggestedProfessionalFilter
+      )
+      if (!professionalMatch || !isProfessionalSuggested(professionalMatch)) {
+        return false
+      }
     }
     return true
   })
@@ -1784,6 +1957,17 @@ export default function DirectionListeAttentePage() {
   const selectedAssignmentClientHasEmail = Boolean(
     selectedAssignmentClient && getContactEmails(selectedAssignmentClient).length > 0
   )
+  const suggestionClient = suggestionClientId
+    ? clients.find((client) => client.id === suggestionClientId) ?? null
+    : null
+  const professionalSuggestions = suggestionClient
+    ? getProfessionalSuggestions(suggestionClient)
+        .filter(isProfessionalSuggested)
+        .slice(0, 5)
+    : []
+  const administrativeTaskClient = administrativeTaskClientId
+    ? clients.find((client) => client.id === administrativeTaskClientId) ?? null
+    : null
   const getPageCount = (totalCount: number, pageSize = CLIENTS_PER_PAGE) =>
     Math.max(Math.ceil(totalCount / pageSize), 1)
   const getPaginatedClients = (
@@ -1968,6 +2152,14 @@ export default function DirectionListeAttentePage() {
                           </button>
                           <button
                             type="button"
+                            className={`${buttonClass('secondary')} !min-h-8 !w-full justify-center whitespace-nowrap px-2 py-1 text-xs`}
+                            onClick={() => setSuggestionClientId(client.id)}
+                          >
+                            <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                            Suggestions
+                          </button>
+                          <button
+                            type="button"
                             disabled={startingAssignmentProcessClientId === client.id}
                             className="min-h-8 w-full rounded-lg border border-[#d7a83e] bg-[#fff3c4] px-2 py-1 text-xs font-semibold leading-tight text-[#6f4c00] transition hover:bg-[#ffe9a0] disabled:cursor-wait disabled:opacity-60"
                             onClick={() => void handleStartAssignmentProcess(client)}
@@ -1975,6 +2167,13 @@ export default function DirectionListeAttentePage() {
                             {startingAssignmentProcessClientId === client.id
                               ? 'Déplacement...'
                               : 'Démarrer une assignation'}
+                          </button>
+                          <button
+                            type="button"
+                            className="min-h-8 w-full rounded-lg border border-[#c9b8a7] bg-[#f8f3ed] px-2 py-1 text-xs font-semibold leading-tight text-[#5d4a3d] transition hover:border-[#9b6a3d] hover:bg-[#f1e6da]"
+                            onClick={() => openAdministrativeTask(client)}
+                          >
+                            Tâche administrative
                           </button>
                         </>
                       )}
@@ -2454,6 +2653,207 @@ export default function DirectionListeAttentePage() {
           onSend={handleSendComposedEmails}
         />
       )}
+      {suggestionClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="professional-suggestions-title"
+            className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-[#eadfd2] bg-[#fffdf9] shadow-xl"
+          >
+            <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-[#eadfd2] bg-[#fffdf9] px-5 py-4">
+              <div>
+                <h2 id="professional-suggestions-title" className="text-xl font-semibold text-[#332820]">
+                  Professionnels suggérés
+                </h2>
+                <p className="mt-1 text-sm text-[#7a6859]">
+                  {formatText(suggestionClient.client_name)} · {formatText(suggestionClient.service_requested)}
+                </p>
+              </div>
+              <button
+                type="button"
+                title="Fermer"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#6c5a4d] transition hover:bg-[#f5ebe0]"
+                onClick={() => setSuggestionClientId(null)}
+              >
+                <X className="h-5 w-5" aria-hidden="true" />
+              </button>
+            </header>
+
+            {professionalSuggestions.length === 0 ? (
+              <div className="p-5">
+                <EmptyState
+                  title="Aucune suggestion suffisamment forte"
+                  description={
+                    matchingProfessionals.some((professional) => professional.remainingPlaces > 0)
+                      ? 'Des professionnels ont des places, mais leurs préférences actuelles ne correspondent pas suffisamment à ce dossier.'
+                      : 'Aucune demande active ne comporte actuellement de place restante.'
+                  }
+                />
+              </div>
+            ) : (
+              <div className="divide-y divide-[#eadfd2]">
+                {professionalSuggestions.map((suggestion, index) => {
+                  const professional = professionals.find(
+                    (item) => item.id === suggestion.professionalId
+                  )
+                  const scoreTone: BadgeTone =
+                    suggestion.score >= 75
+                      ? 'success'
+                      : suggestion.score >= 55
+                        ? 'warning'
+                        : 'muted'
+
+                  return (
+                    <article key={suggestion.professionalId} className="p-5">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-semibold text-[#9b6a3d]">#{index + 1}</span>
+                            <h3 className="font-semibold text-[#332820]">
+                              {suggestion.professionalName}
+                            </h3>
+                            <Badge tone={scoreTone}>Indice {suggestion.score}%</Badge>
+                          </div>
+                          {professional?.professional_title && (
+                            <p className="mt-1 text-sm text-[#7a6859]">
+                              {professional.professional_title}
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          className={buttonClass('primary')}
+                          onClick={() =>
+                            startAssigning(suggestionClient, suggestion.professionalId)
+                          }
+                        >
+                          Choisir
+                        </button>
+                      </div>
+
+                      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                        <div>
+                          <p className="text-xs font-semibold uppercase text-[#6f673a]">
+                            Correspondances
+                          </p>
+                          <ul className="mt-2 space-y-1.5 text-sm text-[#5f5932]">
+                            {suggestion.reasons.map((reason) => (
+                              <li key={reason} className="flex gap-2">
+                                <span aria-hidden="true">✓</span>
+                                <span>{reason}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold uppercase text-[#8a6f5d]">
+                            À vérifier
+                          </p>
+                          {suggestion.cautions.length > 0 ? (
+                            <ul className="mt-2 space-y-1.5 text-sm text-[#7a6859]">
+                              {suggestion.cautions.map((caution) => (
+                                <li key={caution} className="flex gap-2">
+                                  <span aria-hidden="true">•</span>
+                                  <span>{caution}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="mt-2 text-sm text-[#7a6859]">Aucun élément signalé.</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {professional?.pref_notes?.trim() && (
+                        <details className="mt-4 border-t border-[#eee3d8] pt-3">
+                          <summary className="cursor-pointer text-sm font-medium text-[#6d3f1f]">
+                            Notes du professionnel
+                          </summary>
+                          <p className="mt-2 whitespace-pre-wrap text-sm text-[#6c5a4d]">
+                            {professional.pref_notes.trim()}
+                          </p>
+                        </details>
+                      )}
+                    </article>
+                  )
+                })}
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+      {administrativeTaskClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="administrative-task-title"
+            className="w-full max-w-xl rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-xl"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 id="administrative-task-title" className="text-xl font-semibold text-[#332820]">
+                  Créer une tâche administrative
+                </h2>
+                <p className="mt-1 text-sm text-[#7a6859]">
+                  {formatText(administrativeTaskClient.client_name)}
+                </p>
+              </div>
+              <button
+                type="button"
+                title="Fermer"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#6c5a4d] transition hover:bg-[#f5ebe0]"
+                onClick={() => setAdministrativeTaskClientId(null)}
+                disabled={creatingAdministrativeTask}
+              >
+                <X className="h-5 w-5" aria-hidden="true" />
+              </button>
+            </div>
+
+            <label className="mt-5 block text-sm font-medium text-[#5d4a3d]">
+              Professionnel visé
+              <select
+                value={administrativeTaskProfessionalId}
+                onChange={(event) => setAdministrativeTaskProfessionalId(event.target.value)}
+                className={`${inputClass} mt-2`}
+              >
+                <option value="">Choisir un professionnel</option>
+                {professionals.map((professional) => (
+                  <option key={professional.id} value={professional.id}>
+                    {professional.full_name || professional.email || 'Sans nom'}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {administrativeTaskError && (
+              <p className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {administrativeTaskError}
+              </p>
+            )}
+
+            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                className={buttonClass('secondary')}
+                onClick={() => setAdministrativeTaskClientId(null)}
+                disabled={creatingAdministrativeTask}
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                className={buttonClass('primary')}
+                onClick={() => void createAdministrativeTask()}
+                disabled={creatingAdministrativeTask || !administrativeTaskProfessionalId}
+              >
+                {creatingAdministrativeTask ? 'Création...' : 'Créer et notifier'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       <main className="min-h-screen px-4 py-8 sm:px-6 lg:ml-72 lg:px-10">
         <div className="mx-auto max-w-7xl">
           <div className="mb-8">
@@ -2497,7 +2897,7 @@ export default function DirectionListeAttentePage() {
                   />
                 </label>
 
-                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                   <label className="block text-sm font-medium text-[#5d4a3d]">
                     Service demandé
                     <select
@@ -2537,6 +2937,29 @@ export default function DirectionListeAttentePage() {
                           {statusLabels[option] ?? option}
                         </option>
                       ))}
+                    </select>
+                  </label>
+
+                  <label className="block text-sm font-medium text-[#5d4a3d]">
+                    Professionnel suggéré
+                    <select
+                      value={suggestedProfessionalFilter}
+                      onChange={(event) => {
+                        setSuggestedProfessionalFilter(event.target.value)
+                        setWaitingPage(0)
+                        setAssignedPage(0)
+                        setHistoryPage(0)
+                      }}
+                      className={`${inputClass} mt-2`}
+                    >
+                      <option value="all">Tous les professionnels</option>
+                      {matchingProfessionals
+                        .filter((professional) => professional.remainingPlaces > 0)
+                        .map((professional) => (
+                          <option key={professional.id} value={professional.id}>
+                            {professional.name}
+                          </option>
+                        ))}
                     </select>
                   </label>
 
@@ -2611,6 +3034,21 @@ export default function DirectionListeAttentePage() {
                   </div>
                 </div>
 
+                <label className="mt-4 flex items-center gap-2 text-sm font-medium text-[#5d4a3d]">
+                  <input
+                    type="checkbox"
+                    checked={hideSpecialProgramClients}
+                    onChange={(event) => {
+                      setHideSpecialProgramClients(event.target.checked)
+                      setWaitingPage(0)
+                      setAssignedPage(0)
+                      setHistoryPage(0)
+                    }}
+                    className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
+                  />
+                  Masquer les dossiers IVAC, PAE et CNESST
+                </label>
+
                 {hasActiveFilters && (
                   <button
                     type="button"
@@ -2620,6 +3058,8 @@ export default function DirectionListeAttentePage() {
                       setMinimumAgeFilter('')
                       setMaximumAgeFilter('')
                       setModalityFilter([])
+                      setSuggestedProfessionalFilter('all')
+                      setHideSpecialProgramClients(false)
                       setWaitingPage(0)
                       setAssignedPage(0)
                       setHistoryPage(0)

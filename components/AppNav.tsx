@@ -15,6 +15,7 @@ import {
   ListChecks,
   ListTodo,
   PhoneCall,
+  SlidersHorizontal,
   UserCheck,
   Users,
   type LucideIcon,
@@ -155,6 +156,11 @@ export function AppNav({
             { href: '/professionnel/clients', label: 'Mes assignations', icon: UserCheck },
             { href: '/professionnel/demande', label: 'Ma demande', icon: ClipboardList },
             { href: '/professionnel/historique', label: 'Historique', icon: History },
+            {
+              href: '/professionnel/preferences',
+              label: 'Mes préférences',
+              icon: SlidersHorizontal,
+            },
             ...(administrativePayrollAuthorized
               ? [
                   {

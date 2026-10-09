@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { CheckCircle2, Clock3, Plus, Send } from 'lucide-react'
 import { AppNav } from '@/components/AppNav'
@@ -289,6 +290,14 @@ export default function AdministrativeTasksPage() {
                     </div>
                     {task.description && <p className="mt-4 whitespace-pre-wrap text-sm text-[#4f4035]">{task.description}</p>}
                     <p className={`mt-4 flex items-center gap-2 text-sm ${overdue ? 'font-semibold text-red-700' : 'text-[#7a6859]'}`}><Clock3 className="h-4 w-4" />{overdue ? 'En retard · ' : ''}{formatDateTime(task.due_at)}</p>
+                    {task.source_type === 'waiting_list_assignment' && task.source_id && (
+                      <Link
+                        href={`/direction/liste-attente?client=${encodeURIComponent(task.source_id)}`}
+                        className="mt-3 inline-flex text-sm font-semibold text-[#8a5633] underline decoration-[#d9b591] underline-offset-2"
+                      >
+                        Ouvrir le dossier dans la liste d’attente
+                      </Link>
+                    )}
                     {(task.status === 'pending' || task.status === 'in_progress') && (
                       <div className="mt-4 flex flex-wrap gap-2">
                         {task.status === 'pending' && <button type="button" disabled={saving} onClick={() => void updateStatus(task, 'in_progress')} className={buttonClass('secondary')}>Commencer</button>}

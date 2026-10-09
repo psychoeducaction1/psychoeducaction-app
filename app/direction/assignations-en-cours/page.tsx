@@ -146,13 +146,13 @@ const inputClass =
 function formatDateTime(value: string | null | undefined) {
   if (!value) return '-'
   const hasTime = value.includes('T')
-  const date = new Date(hasTime ? value : `${value}T00:00:00`)
+  const date = new Date(hasTime ? value : `${value}T12:00:00Z`)
   if (Number.isNaN(date.getTime())) return value
   return new Intl.DateTimeFormat(
     'fr-CA',
     hasTime
-      ? { dateStyle: 'medium', timeStyle: 'short' }
-      : { dateStyle: 'medium' }
+      ? { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Toronto' }
+      : { dateStyle: 'medium', timeZone: 'America/Toronto' }
   ).format(date)
 }
 
@@ -1017,9 +1017,14 @@ export default function AssignmentProcessesPage() {
                           <h2 className="text-lg font-semibold text-[#332820]">{client?.client_name ?? 'Client introuvable'}</h2>
                           <Badge tone={statusTones[process.status]}>{statusLabels[process.status]}</Badge>
                         </div>
-                        <p className="mt-2 text-sm text-[#7a6859]">
-                          Début de la démarche : {formatDateTime(process.started_at)}
-                        </p>
+                        <div className="mt-2 space-y-1 text-sm text-[#7a6859]">
+                          <p>
+                            Premier contact : {formatDateTime(client?.contact_date ?? client?.created_at)}
+                          </p>
+                          <p>
+                            Début de la démarche : {formatDateTime(process.started_at)}
+                          </p>
+                        </div>
                       </div>
                       <p className="text-sm text-[#7a6859]">Responsable : {profilesById.get(process.responsible_profile_id ?? '')?.full_name ?? 'Non défini'}</p>
                     </div>
