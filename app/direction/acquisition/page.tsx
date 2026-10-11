@@ -111,6 +111,7 @@ export default function AcquisitionPage() {
   const [events, setEvents] = useState<AcquisitionEventRow[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [syncing, setSyncing] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [platform, setPlatform] = useState<'google_ads' | 'meta_ads'>('google_ads')
@@ -233,6 +234,40 @@ export default function AcquisitionPage() {
     }
   }
 
+  const syncExpenses = async () => {
+    setSyncing(true)
+    setError('')
+    setMessage('')
+    try {
+      const response = await authenticatedFetch('/api/direction/acquisition/sync', {
+        method: 'POST',
+        body: JSON.stringify({ days: 90 }),
+      })
+      const payload = await response.json() as {
+        results?: Array<{ platform: string; status: string; amount: number; currency: string | null; message: string }>
+        error?: string
+      }
+      if (!response.ok && response.status !== 207) {
+        throw new Error(payload.error ?? 'Synchronisation impossible.')
+      }
+      const summary = (payload.results ?? []).map((item) =>
+        `${platformLabel(item.platform)} : ${item.status === 'success'
+          ? formatCurrency(item.amount)
+          : item.message}`
+      ).join(' · ')
+      if ((payload.results ?? []).some((item) => item.status === 'error')) {
+        setError(summary || 'Une plateforme n’a pas pu être synchronisée.')
+      } else {
+        setMessage(summary || 'Synchronisation terminée.')
+      }
+      await load()
+    } catch (syncError) {
+      setError(syncError instanceof Error ? syncError.message : 'Synchronisation impossible.')
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   return <>
     <AppNav />
     <main className="min-h-screen px-4 py-8 sm:px-6 lg:ml-72 lg:px-10">
@@ -274,8 +309,14 @@ export default function AcquisitionPage() {
         </section>
 
         <section className="mt-6 rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5">
-          <div className="flex items-center gap-2"><DollarSign className="h-5 w-5 text-[#8a5633]" /><h2 className="font-semibold text-[#332820]">Dépenses publicitaires mensuelles</h2></div>
-          <p className="mt-1 text-sm text-[#7a6859]">L’enregistrement crée ou remplace une dépense variable du même mois et de la même plateforme dans le budget.</p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2"><DollarSign className="h-5 w-5 text-[#8a5633]" /><h2 className="font-semibold text-[#332820]">Dépenses publicitaires mensuelles</h2></div>
+            <button type="button" disabled={syncing} onClick={() => void syncExpenses()} className={buttonClass('secondary')}>
+              <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+              {syncing ? 'Synchronisation...' : 'Synchroniser Meta et Google'}
+            </button>
+          </div>
+          <p className="mt-1 text-sm text-[#7a6859]">Les dépenses sont synchronisées quotidiennement depuis les plateformes et remplacent le total du mois dans le budget. La saisie manuelle reste disponible comme solution de secours.</p>
           <div className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_1fr_1.4fr_auto] md:items-end">
             <label className="text-sm font-semibold text-[#5d4a3d]">Plateforme<select value={platform} onChange={(event) => setPlatform(event.target.value as typeof platform)} className={`${inputClass} mt-2`}><option value="google_ads">Google Ads</option><option value="meta_ads">Meta Ads</option></select></label>
             <label className="text-sm font-semibold text-[#5d4a3d]">Mois<input type="month" value={expenseMonth} onChange={(event) => setExpenseMonth(event.target.value)} className={`${inputClass} mt-2`} /></label>

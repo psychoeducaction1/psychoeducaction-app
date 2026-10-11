@@ -206,6 +206,33 @@ actuelle utilise l'API publique et son propre `conversion_event_id`.
 ## Routes internes authentifiées
 
 - `GET /api/direction/intake-calendar?from=<ISO>&to=<ISO>`
+
+## Synchronisation des dépenses publicitaires
+
+Le cron `GET /api/cron/ad-spend-sync` récupère chaque jour les dépenses par
+campagne et par date depuis Google Ads et Meta Ads. Les lignes sont conservées
+dans `ad_spend_daily`, puis le total mensuel de chaque plateforme remplace la
+dépense variable correspondante dans le budget.
+
+Variables Vercel requises pour Google Ads :
+
+- `GOOGLE_ADS_CUSTOMER_ID`
+- `GOOGLE_ADS_DEVELOPER_TOKEN`
+- `GOOGLE_ADS_CLIENT_ID`
+- `GOOGLE_ADS_CLIENT_SECRET`
+- `GOOGLE_ADS_REFRESH_TOKEN`
+- `GOOGLE_ADS_LOGIN_CUSTOMER_ID` seulement si le compte passe par un compte gestionnaire
+- `GOOGLE_ADS_API_VERSION` facultatif, valeur par défaut `v25`
+
+Variables Vercel requises pour Meta Ads :
+
+- `META_AD_ACCOUNT_ID`
+- `META_ADS_ACCESS_TOKEN`
+- `META_GRAPH_API_VERSION` facultatif, valeur par défaut `v24.0`
+
+Les jetons sont strictement côté serveur. Le bouton de synchronisation manuelle
+de la page Acquisition utilise la même logique que le cron et récupère 90 jours
+pour la première mise en service.
 - `POST /api/direction/intake-calendar/blocks`
 - `DELETE /api/direction/intake-calendar/blocks/:id`
 - `PATCH /api/direction/intake-appointments/:id`
