@@ -26,7 +26,9 @@ function main() {
   ].join(' ');
   const rows = [];
 
-  for (const row of AdsApp.search(query)) {
+  const iterator = AdsApp.search(query);
+  while (iterator.hasNext()) {
+    const row = iterator.next();
     const amount = Number(row.metrics.costMicros || 0) / 1000000;
     if (!amount) continue;
     rows.push({
