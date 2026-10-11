@@ -5,6 +5,7 @@ import {
   cleanAdsAccountId,
   getAdSpendRange,
   monthKeysBetween,
+  parseGoogleAdsIngestPayload,
   roundCurrency,
 } from '../lib/adSpend.ts'
 
@@ -27,6 +28,32 @@ test('énumère les mois touchés par une synchronisation', () => {
 
 test('arrondit les dépenses en cents', () => {
   assert.equal(roundCurrency(12.345), 12.35)
+})
+
+test('valide et normalise un envoi Google Ads Script', () => {
+  assert.deepEqual(parseGoogleAdsIngestPayload({
+    accountId: '669-393-0653',
+    currency: 'cad',
+    from: '2026-10-01',
+    to: '2026-10-10',
+    rows: [{ date: '2026-10-09', campaignId: '12', campaignName: 'Prospects', amount: 4.567 }],
+  }), {
+    accountId: '6693930653',
+    currency: 'CAD',
+    from: '2026-10-01',
+    to: '2026-10-10',
+    rows: [{ date: '2026-10-09', campaignId: '12', campaignName: 'Prospects', amount: 4.57 }],
+  })
+})
+
+test('refuse une ligne Google Ads hors de la plage annoncée', () => {
+  assert.throws(() => parseGoogleAdsIngestPayload({
+    accountId: '6693930653',
+    currency: 'CAD',
+    from: '2026-10-01',
+    to: '2026-10-10',
+    rows: [{ date: '2026-09-30', campaignId: '12', campaignName: 'Prospects', amount: 4 }],
+  }), /Date invalide/)
 })
 
 test('le cron exige un secret et les fournisseurs utilisent les rapports officiels', async () => {

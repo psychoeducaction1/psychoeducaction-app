@@ -246,6 +246,45 @@ async function refreshMonthlyBudget(platform: AdPlatform, from: string, to: stri
   }
 }
 
+export async function ingestGoogleAdsSpend(input: {
+  accountId: string
+  currency: string
+  from: string
+  to: string
+  rows: Array<{ date: string; campaignId: string; campaignName: string; amount: number }>
+}) {
+  const rows: AdSpendRow[] = input.rows
+    .filter((row) => row.amount > 0)
+    .map((row) => ({
+      platform: 'google_ads',
+      accountId: input.accountId,
+      spendDate: row.date,
+      campaignId: row.campaignId,
+      campaignName: row.campaignName,
+      amount: row.amount,
+      currency: input.currency,
+    }))
+
+  await replaceSpendRows('google_ads', input.accountId, input.from, input.to, rows)
+  await refreshMonthlyBudget('google_ads', input.from, input.to)
+
+  const result: SyncResult = {
+    platform: 'google_ads',
+    status: 'success',
+    rows: rows.length,
+    amount: roundCurrency(rows.reduce((sum, row) => sum + row.amount, 0)),
+    currency: input.currency,
+    message: `${rows.length} ligne(s) synchronisée(s) par Google Ads Script.`,
+  }
+  await getSupabaseAdmin().from('ad_spend_sync_runs').insert({
+    range_start: input.from,
+    range_end: input.to,
+    status: 'success',
+    details: [result],
+  })
+  return result
+}
+
 function isGoogleConfigured() {
   return [
     'GOOGLE_ADS_CUSTOMER_ID',

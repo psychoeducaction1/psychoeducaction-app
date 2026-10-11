@@ -10,6 +10,54 @@ export type AdSpendRow = {
   currency: string
 }
 
+export type GoogleAdsIngestPayload = {
+  accountId: string
+  currency: string
+  from: string
+  to: string
+  rows: Array<{
+    date: string
+    campaignId: string
+    campaignName: string
+    amount: number
+  }>
+}
+
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+
+export function parseGoogleAdsIngestPayload(value: unknown): GoogleAdsIngestPayload {
+  if (!value || typeof value !== 'object') throw new Error('Corps JSON invalide.')
+  const payload = value as Partial<GoogleAdsIngestPayload>
+  const accountId = cleanAdsAccountId(String(payload.accountId ?? ''))
+  const currency = String(payload.currency ?? '').trim().toUpperCase()
+  const from = String(payload.from ?? '')
+  const to = String(payload.to ?? '')
+  if (!accountId) throw new Error('Identifiant Google Ads manquant.')
+  if (!/^[A-Z]{3}$/.test(currency)) throw new Error('Devise Google Ads invalide.')
+  if (!ISO_DATE_PATTERN.test(from) || !ISO_DATE_PATTERN.test(to) || from > to) {
+    throw new Error('Plage de dates invalide.')
+  }
+  if (!Array.isArray(payload.rows) || payload.rows.length > 10000) {
+    throw new Error('Lignes Google Ads invalides.')
+  }
+
+  const rows = payload.rows.map((raw, index) => {
+    const date = String(raw?.date ?? '')
+    const campaignId = String(raw?.campaignId ?? '').trim()
+    const campaignName = String(raw?.campaignName ?? '').trim()
+    const amount = Number(raw?.amount)
+    if (!ISO_DATE_PATTERN.test(date) || date < from || date > to) {
+      throw new Error(`Date invalide à la ligne ${index + 1}.`)
+    }
+    if (!campaignId || !campaignName || !Number.isFinite(amount) || amount < 0) {
+      throw new Error(`Donnée invalide à la ligne ${index + 1}.`)
+    }
+    return { date, campaignId, campaignName, amount: roundCurrency(amount) }
+  })
+
+  return { accountId, currency, from, to, rows }
+}
+
 export function cleanAdsAccountId(value: string): string {
   return value.replace(/[^0-9]/g, '')
 }

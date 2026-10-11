@@ -216,6 +216,16 @@ dépense variable correspondante dans le budget.
 
 Variables Vercel requises pour Google Ads :
 
+Méthode recommandée pour ce compte : installer le script
+`scripts/google-ads-spend-sync.js` dans Google Ads et le planifier chaque jour.
+Il utilise seulement :
+
+- `GOOGLE_ADS_CUSTOMER_ID`
+- `GOOGLE_ADS_INGEST_SECRET`
+
+La méthode API directe demeure disponible si le compte obtient plus tard un
+jeton développeur Google Ads :
+
 - `GOOGLE_ADS_CUSTOMER_ID`
 - `GOOGLE_ADS_DEVELOPER_TOKEN`
 - `GOOGLE_ADS_CLIENT_ID`
