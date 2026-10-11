@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   BriefcaseBusiness,
+  ChartNoAxesCombined,
   CalendarDays,
   ClipboardList,
   ChartPie,
@@ -119,6 +120,9 @@ export function AppNav({
           { href: '/direction/liste-attente', label: "Liste d'attente", icon: ListChecks },
           { href: '/direction/calendrier', label: 'Calendrier', icon: CalendarDays },
           { href: '/direction/prospects', label: 'Prospects', icon: UserCheck },
+          ...(budgetAuthorized
+            ? [{ href: '/direction/acquisition', label: 'Acquisition', icon: ChartNoAxesCombined }]
+            : []),
           {
             href: '/direction/assignations-en-cours',
             label: 'Assignations en cours',
@@ -216,6 +220,8 @@ export function AppNav({
                 ? pathname?.startsWith('/direction/calendrier')
               : link.href === '/direction/prospects'
                 ? pathname?.startsWith('/direction/prospects')
+              : link.href === '/direction/acquisition'
+                ? pathname?.startsWith('/direction/acquisition')
               : link.href === '/direction/assignations-en-cours'
                 ? pathname?.startsWith('/direction/assignations-en-cours')
               : link.href === '/direction/taches-administratives'

@@ -72,10 +72,25 @@ create table if not exists public.budget_variable_expenses (
   amount numeric not null check (amount >= 0),
   expense_date date not null,
   notes text,
+  ad_platform text check (ad_platform is null or ad_platform in ('google_ads', 'meta_ads')),
+  expense_month date,
   created_by uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.budget_variable_expenses
+add column if not exists ad_platform text;
+
+alter table public.budget_variable_expenses
+add column if not exists expense_month date;
+
+alter table public.budget_variable_expenses
+drop constraint if exists budget_variable_expenses_ad_platform_check;
+
+alter table public.budget_variable_expenses
+add constraint budget_variable_expenses_ad_platform_check
+check (ad_platform is null or ad_platform in ('google_ads', 'meta_ads'));
 
 create index if not exists budget_periods_accounting_month_idx
 on public.budget_periods (accounting_month);
@@ -91,6 +106,10 @@ on public.budget_fixed_expenses (start_month, end_month);
 
 create index if not exists budget_variable_expenses_date_idx
 on public.budget_variable_expenses (expense_date);
+
+create unique index if not exists budget_variable_expenses_ad_platform_month_idx
+on public.budget_variable_expenses(ad_platform, expense_month)
+where ad_platform is not null and expense_month is not null;
 
 alter table public.budget_periods enable row level security;
 alter table public.budget_period_professionals enable row level security;

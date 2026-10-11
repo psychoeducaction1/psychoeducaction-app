@@ -41,6 +41,28 @@ function cleanText(value: unknown, maxLength: number) {
   return value.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, maxLength)
 }
 
+export function sanitizePublicAttribution(value: unknown): Record<string, string> {
+  const input = value && typeof value === 'object'
+    ? value as Record<string, unknown>
+    : {}
+  return Object.fromEntries(
+    [
+      'source',
+      'medium',
+      'campaign',
+      'term',
+      'content',
+      'id',
+      'gclid',
+      'gbraid',
+      'wbraid',
+      'fbclid',
+    ]
+      .map((key) => [key, cleanText(input[key], 120)] as const)
+      .filter(([, item]) => Boolean(item))
+  )
+}
+
 export function normalizePublicIntakeEmail(value: string) {
   return value.trim().toLowerCase()
 }
@@ -119,14 +141,7 @@ export function validatePublicIntakePayload(
     return { error: 'Le type de contact ne correspond pas à cette action.' }
   }
 
-  const rawUtm = input.utm && typeof input.utm === 'object'
-    ? input.utm as Record<string, unknown>
-    : {}
-  const utm = Object.fromEntries(
-    ['source', 'medium', 'campaign', 'term', 'content']
-      .map((key) => [key, cleanText(rawUtm[key], 120)] as const)
-      .filter(([, item]) => Boolean(item))
-  )
+  const utm = sanitizePublicAttribution(input.utm)
 
   return {
     data: {

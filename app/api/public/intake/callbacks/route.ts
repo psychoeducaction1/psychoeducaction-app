@@ -64,6 +64,7 @@ export async function POST(request: NextRequest) {
     return publicIntakeJson(request, {
       success: true,
       status: 'RAPID_CALLBACK_REQUESTED',
+      conversionEventId: data.conversionEventId,
       notificationPending,
     }, data.reused ? 200 : 201)
   } catch {

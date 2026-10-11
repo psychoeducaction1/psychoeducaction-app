@@ -15,6 +15,8 @@ export type BudgetVariableExpense = {
   amount: number
   expense_date: string
   notes: string | null
+  ad_platform?: 'google_ads' | 'meta_ads' | null
+  expense_month?: string | null
   created_at: string
 }
 

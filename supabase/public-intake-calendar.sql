@@ -5,6 +5,7 @@ begin;
 
 create table if not exists public.public_intake_prospects (
   id uuid primary key default gen_random_uuid(),
+  conversion_event_id uuid not null default gen_random_uuid(),
   status text not null default 'new' check (
     status in (
       'new', 'scheduled', 'callback_requested', 'contacted',
@@ -98,6 +99,28 @@ where status = 'scheduled';
 create index if not exists intake_appointments_prospect_idx
 on public.intake_appointments(prospect_id, start_at desc);
 
+alter table public.public_intake_prospects
+add column if not exists conversion_event_id uuid;
+
+alter table public.public_intake_prospects
+alter column conversion_event_id set default gen_random_uuid();
+
+update public.public_intake_prospects as prospect
+set conversion_event_id = appointment.conversion_event_id
+from public.intake_appointments as appointment
+where appointment.prospect_id = prospect.id
+  and prospect.conversion_event_id is null;
+
+update public.public_intake_prospects
+set conversion_event_id = gen_random_uuid()
+where conversion_event_id is null;
+
+alter table public.public_intake_prospects
+alter column conversion_event_id set not null;
+
+create unique index if not exists public_intake_prospects_conversion_event_id_idx
+on public.public_intake_prospects(conversion_event_id);
+
 create table if not exists public.intake_slot_holds (
   id uuid primary key default gen_random_uuid(),
   start_at timestamptz not null,
@@ -165,6 +188,24 @@ create table if not exists public.public_intake_rate_limits (
   primary key (key_hash, action)
 );
 
+create table if not exists public.public_acquisition_events (
+  id uuid primary key default gen_random_uuid(),
+  conversion_event_id uuid not null default gen_random_uuid(),
+  idempotency_key text not null unique,
+  event_type text not null check (
+    event_type in ('contact_form_submitted', 'phone_click')
+  ),
+  source text not null default 'Site web',
+  utm jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists public_acquisition_events_conversion_event_id_idx
+on public.public_acquisition_events(conversion_event_id);
+
+create index if not exists public_acquisition_events_created_at_idx
+on public.public_acquisition_events(created_at desc);
+
 alter table public.public_intake_prospects enable row level security;
 alter table public.intake_appointments enable row level security;
 alter table public.intake_slot_holds enable row level security;
@@ -172,6 +213,7 @@ alter table public.intake_calendar_blocks enable row level security;
 alter table public.intake_appointment_events enable row level security;
 alter table public.public_intake_requests enable row level security;
 alter table public.public_intake_rate_limits enable row level security;
+alter table public.public_acquisition_events enable row level security;
 
 drop policy if exists "public_intake_prospects_direction_all" on public.public_intake_prospects;
 create policy "public_intake_prospects_direction_all"
@@ -455,6 +497,7 @@ declare
   duplicate_prospect_id uuid;
   duplicate_waiting_id uuid;
   prospect_id uuid;
+  prospect_conversion_event_id uuid;
   response_payload jsonb;
 begin
   perform pg_advisory_xact_lock(84202);
@@ -501,7 +544,8 @@ begin
     coalesce(p_payload->'utm', '{}'::jsonb),
     duplicate_prospect_id is not null or duplicate_waiting_id is not null,
     duplicate_prospect_id, duplicate_waiting_id
-  ) returning id into prospect_id;
+  ) returning id, conversion_event_id
+    into prospect_id, prospect_conversion_event_id;
 
   insert into public.administrative_tasks (
     title, description, assigned_to, status, due_at,
@@ -528,6 +572,7 @@ begin
   response_payload := jsonb_build_object(
     'success', true,
     'prospectId', prospect_id,
+    'conversionEventId', prospect_conversion_event_id,
     'status', 'RAPID_CALLBACK_REQUESTED',
     'potentialDuplicate', duplicate_prospect_id is not null or duplicate_waiting_id is not null
   );

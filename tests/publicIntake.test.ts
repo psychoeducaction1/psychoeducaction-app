@@ -75,6 +75,14 @@ test("l'API expose un identifiant de conversion distinct du rendez-vous", async 
   assert.doesNotMatch(route, /bookingEventId/)
 })
 
+test("l'API de rappel expose l'identifiant de conversion du prospect", async () => {
+  const route = await readFile(
+    new URL('../app/api/public/intake/callbacks/route.ts', import.meta.url),
+    'utf8'
+  )
+  assert.match(route, /conversionEventId:\s*data\.conversionEventId/)
+})
+
 test('conserve les dates et heures du calendrier dans le fuseau de Toronto', () => {
   const appointment = new Date('2026-10-09T17:00:00Z')
   assert.equal(dateKeyInToronto(appointment), '2026-10-09')
@@ -163,9 +171,68 @@ test('valide les clés d’idempotence et les soumissions complètes', () => {
     requesterNames: [],
     modalities: ['telehealth'],
     contactType: 'rapid_callback',
+    utm: {
+      source: 'google',
+      campaign: 'automne',
+      gclid: 'test-click-id',
+      fbclid: 'meta-click-id',
+      unknown: 'ignored',
+    },
   }, 'rapid_callback')
   assert.equal(result.error, undefined)
   assert.equal(result.data?.normalizedPhone, '5145550101')
+  assert.equal(result.data?.utm.gclid, 'test-click-id')
+  assert.equal(result.data?.utm.fbclid, 'meta-click-id')
+  assert.equal(result.data?.utm.unknown, undefined)
+})
+
+test('le rappel rapide crée et réutilise un identifiant de conversion', async () => {
+  const sql = await readFile(
+    new URL('../supabase/acquisition-tracking.sql', import.meta.url),
+    'utf8'
+  )
+  assert.match(sql, /conversion_event_id uuid/i)
+  assert.match(sql, /returning id, conversion_event_id\s+into prospect_id, prospect_conversion_event_id/i)
+  assert.match(sql, /'conversionEventId', prospect_conversion_event_id/i)
+  assert.match(sql, /if found then return existing_response \|\| jsonb_build_object\('reused', true\)/i)
+})
+
+test('le journal d’acquisition est anonyme et idempotent', async () => {
+  const route = await readFile(
+    new URL('../app/api/public/acquisition-events/route.ts', import.meta.url),
+    'utf8'
+  )
+  const sql = await readFile(
+    new URL('../supabase/acquisition-tracking.sql', import.meta.url),
+    'utf8'
+  )
+  assert.match(route, /contact_form_submitted/)
+  assert.match(route, /phone_click/)
+  assert.match(route, /conversionEventId:\s*existing\.conversion_event_id/)
+  assert.match(sql, /idempotency_key text not null unique/i)
+  assert.match(sql, /conversion_event_id uuid not null default gen_random_uuid\(\)/i)
+  const eventTable = sql.match(
+    /create table if not exists public\.public_acquisition_events[\s\S]*?\n\);/
+  )?.[0] ?? ''
+  assert.doesNotMatch(eventTable, /first_name|last_name|phone text|email text|consultation_reason/)
+})
+
+test('le suivi WordPress exclut les données de formulaire et le formulaire de réservation historique', async () => {
+  const tracking = await readFile(
+    new URL('../docs/wordpress-acquisition-tracking.js', import.meta.url),
+    'utf8'
+  )
+  assert.match(tracking, /CONTACT_FORM_IDS = \['598', '1009', '2527'\]/)
+  assert.doesNotMatch(tracking, /CONTACT_FORM_IDS[^\n]*3824/)
+  assert.match(tracking, /wpformsAjaxSubmitSuccess/)
+  assert.match(tracking, /jQuery\(document\)\.on\('wpformsAjaxSubmitSuccess'/)
+  assert.match(tracking, /data\.data\.form_id/)
+  assert.match(tracking, /a\[href\^="tel:"\]/)
+  const requestBody = tracking.match(/body: JSON\.stringify\(\{[\s\S]*?\}\)/)?.[0] ?? ''
+  assert.match(requestBody, /eventType/)
+  assert.match(requestBody, /source/)
+  assert.match(requestBody, /utm/)
+  assert.doesNotMatch(requestBody, /firstName|lastName|phone|email|consultationReason|address/)
 })
 
 test('la migration protège les doubles soumissions et doubles réservations', async () => {

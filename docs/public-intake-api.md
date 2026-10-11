@@ -28,8 +28,9 @@ valeurs aléatoires différentes d’au moins 32 caractères.
 - Chaque `POST` exige un en-tête `Idempotency-Key` unique de 16 à 128 caractères.
 - Les routes de mutation exigent un jeton Turnstile dans le corps.
 - Fuseau horaire : `America/Toronto`.
-- Les paramètres UTM permis sont `source`, `medium`, `campaign`, `term` et
-  `content`. Ils ne doivent jamais contenir de renseignements personnels.
+- Les paramètres d’attribution permis sont `source`, `medium`, `campaign`,
+  `term`, `content`, `id`, `gclid`, `gbraid`, `wbraid` et `fbclid`. Ils ne
+  doivent jamais contenir de renseignements personnels.
 
 ## Disponibilités
 
@@ -147,9 +148,60 @@ Le corps contient `turnstileToken` et le même objet `intake`, avec
 {
   "success": true,
   "status": "RAPID_CALLBACK_REQUESTED",
+  "conversionEventId": "uuid",
   "notificationPending": false
 }
 ```
+
+Le formulaire public émet `rapid_callback_submitted` uniquement après cette
+réponse positive. Il utilise `conversionEventId` pour empêcher les doublons,
+selon le même mécanisme de stockage local que la réservation.
+
+```javascript
+window.dataLayer.push({
+  event: "rapid_callback_submitted",
+  conversion_event_id: result.conversionEventId
+});
+```
+
+Le helper `utm()` du formulaire doit lire les paramètres UTM et identifiants
+publicitaires conservés dans `localStorage` par le suivi global WordPress. Il
+ne doit jamais y ajouter les valeurs des champs du formulaire.
+
+Les autres actions publiques doivent utiliser des événements distincts :
+`contact_form_submitted` après confirmation serveur d’un formulaire de contact
+et `phone_click` au clic sur un lien `tel:`. Un clic téléphonique est une
+intention et doit rester une conversion secondaire; le suivi Google des appels
+avec numéro de transfert permet de mesurer les appels réellement connectés.
+
+## Journal anonyme des autres conversions
+
+`POST /api/public/acquisition-events`
+
+Cette route ne reçoit aucune donnée personnelle ou clinique. Le corps contient
+uniquement `eventType` (`contact_form_submitted` ou `phone_click`), `source` et
+les paramètres d’attribution autorisés dans `utm`. L’en-tête
+`Idempotency-Key` est obligatoire.
+
+Réponse :
+
+```json
+{
+  "success": true,
+  "conversionEventId": "uuid",
+  "reused": false
+}
+```
+
+Le même `Idempotency-Key` retourne toujours le même `conversionEventId`. Le
+site peut ensuite pousser au `dataLayer` uniquement le type d’événement et cet
+UUID. Les noms, téléphones, courriels, réponses et motifs sont exclus.
+
+Le fichier `docs/wordpress-acquisition-tracking.js` contient le branchement
+global prévu pour WPCode. Il suit les confirmations AJAX des formulaires
+WPForms 598, 1009 et 2527, ainsi que les clics sur les liens `tel:`. Le formulaire
+WPForms historique 3824 est volontairement exclu, puisque la réservation
+actuelle utilise l'API publique et son propre `conversion_event_id`.
 
 ## Routes internes authentifiées
 

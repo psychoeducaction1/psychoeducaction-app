@@ -379,7 +379,7 @@ export default function DirectionBudgetPage() {
           .order('name', { ascending: true }),
         supabase
           .from('budget_variable_expenses')
-          .select('id, name, category, amount, expense_date, notes, created_at')
+          .select('id, name, category, amount, expense_date, notes, ad_platform, expense_month, created_at')
           .order('expense_date', { ascending: false }),
         supabase
           .from('administrative_payroll_months')
