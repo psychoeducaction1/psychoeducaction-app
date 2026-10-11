@@ -16,6 +16,7 @@ import {
   ListTodo,
   PhoneCall,
   SlidersHorizontal,
+  Star,
   UserCheck,
   Users,
   type LucideIcon,
@@ -132,6 +133,7 @@ export function AppNav({
             ? [{ href: '/marketing', label: 'Marketing', icon: BriefcaseBusiness }]
             : []),
           { href: '/direction/professionnels', label: 'Professionnels', icon: Users },
+          { href: '/direction/satisfaction', label: 'Satisfaction', icon: Star },
           ...(payrollAuthorized
             ? [{ href: '/direction/paie', label: 'Paie', icon: DollarSign }]
             : []),
@@ -231,6 +233,8 @@ export function AppNav({
                   ? pathname === '/direction/paie'
                 : link.href === '/direction/budget'
                   ? pathname?.startsWith('/direction/budget')
+                : link.href === '/direction/satisfaction'
+                  ? pathname?.startsWith('/direction/satisfaction')
                 : pathname?.startsWith('/direction/journal-audit')
           : displayRole === 'marketing' && link.href === '/marketing'
             ? pathname === '/marketing'
