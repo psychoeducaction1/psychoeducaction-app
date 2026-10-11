@@ -4,11 +4,10 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { Star } from 'lucide-react'
 
-// TODO : remplacer par le vrai lien « Laisser un avis Google » de la clinique.
-// Ce lien est affiché de façon NEUTRE à tous les répondants, quelle que soit
-// leur note, sans sélectionner uniquement les clients satisfaits.
-const GOOGLE_REVIEW_URL =
-  'https://www.google.com/maps/search/?api=1&query=PsychoEducAction'
+// Lien « Laisser un avis Google » de la clinique.
+// Affiché de façon NEUTRE à tous les répondants, quelle que soit leur note,
+// sans sélectionner uniquement les clients satisfaits.
+const GOOGLE_REVIEW_URL = 'https://g.page/r/CVVLMQwVgjl_EAE/review'
 
 const NOTE_LABELS: Record<number, string> = {
   1: 'Très insatisfait',
