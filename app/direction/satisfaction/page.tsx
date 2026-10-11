@@ -36,6 +36,7 @@ type EligibleRow = {
   client_nom: string
   destinataire_nom: string
   destinataire_email: string | null
+  destinataire_emails: string[]
   professionnel: string | null
   nb_rencontres: number
   derniere_rencontre: string | null
@@ -656,7 +657,10 @@ export default function DirectionSatisfactionPage() {
                               </div>
                             ) : hasEmail ? (
                               <p className="text-xs text-[#8a6f5d]">
-                                {row.destinataire_email}
+                                {(row.destinataire_emails?.length
+                                  ? row.destinataire_emails
+                                  : [row.destinataire_email]
+                                ).filter(Boolean).join(', ')}
                               </p>
                             ) : (
                               <button
@@ -824,7 +828,10 @@ export default function DirectionSatisfactionPage() {
                 Aperçu du courriel — {previewRow.destinataire_nom}
               </h2>
               <p className="mt-1 text-sm text-[#8a6f5d]">
-                Destinataire : {previewRow.destinataire_email ?? 'courriel manquant'}
+                Destinataire : {(previewRow.destinataire_emails?.length
+                  ? previewRow.destinataire_emails
+                  : [previewRow.destinataire_email]
+                ).filter(Boolean).join(', ') || 'courriel manquant'}
               </p>
               <div className="mt-4 rounded-2xl border border-[#eadfd2] bg-white p-4">
                 <p className="text-sm font-semibold text-[#332820]">

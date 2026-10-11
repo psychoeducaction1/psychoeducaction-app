@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { readFile } from 'node:fs/promises'
 import {
   SATISFACTION_MIN_ENCOUNTERS,
   buildEligibleList,
@@ -12,6 +13,7 @@ import {
   normalizeClientName,
   parseSatisfactionDate,
   resolveDestinataire,
+  resolveUniqueSatisfactionRecipients,
   type SatisfactionClientGroup,
 } from '../lib/satisfaction.ts'
 
@@ -184,4 +186,58 @@ test('getFirstName extrait le prénom', () => {
   assert.equal(getFirstName('Marie Côté'), 'Marie')
   assert.equal(getFirstName('  Jean  Tremblay  '), 'Jean')
   assert.equal(getFirstName(''), 'à vous')
+})
+
+test('resolveUniqueSatisfactionRecipients accepte une seule fiche et tous ses courriels', () => {
+  const match = resolveUniqueSatisfactionRecipients('lea martin', [
+    {
+      clientName: 'Léa Martin',
+      requesterNames: ['Sophie Martin', 'Alex Martin'],
+      emails: ['SOPHIE@example.com', 'alex@example.com', 'sophie@example.com'],
+    },
+  ])
+
+  assert.deepEqual(match, {
+    names: ['Sophie Martin', 'Alex Martin'],
+    emails: ['sophie@example.com', 'alex@example.com'],
+  })
+})
+
+test('resolveUniqueSatisfactionRecipients bloque une homonymie', () => {
+  const match = resolveUniqueSatisfactionRecipients('lea martin', [
+    { clientName: 'Léa Martin', requesterNames: [], emails: ['a@example.com'] },
+    { clientName: 'Lea Martin', requesterNames: [], emails: ['b@example.com'] },
+  ])
+
+  assert.equal(match, null)
+})
+
+test('la migration et la route empêchent deux envois au même client', async () => {
+  const [sql, route] = await Promise.all([
+    readFile(
+      new URL('../supabase/satisfaction-clients-hardening.sql', import.meta.url),
+      'utf8'
+    ),
+    readFile(
+      new URL('../app/api/satisfaction/send/route.ts', import.meta.url),
+      'utf8'
+    ),
+  ])
+
+  assert.match(sql, /satisfaction_one_contact_per_client_idx/i)
+  assert.match(sql, /where statut in \('en_cours', 'envoye'\)/i)
+  assert.match(route, /update\(\{ statut: 'en_cours' \}\)/)
+  assert.match(route, /\.eq\('statut', 'en_attente'\)/)
+})
+
+test('le désabonnement exige une confirmation POST', async () => {
+  const route = await readFile(
+    new URL('../app/api/satisfaction/unsubscribe/route.ts', import.meta.url),
+    'utf8'
+  )
+  const getHandler = route.split('export async function POST')[0]
+
+  assert.match(getHandler, /<form method="post"/i)
+  assert.doesNotMatch(getHandler, /\.upsert\(/)
+  assert.match(route, /export async function POST/)
 })

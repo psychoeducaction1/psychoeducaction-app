@@ -5,7 +5,7 @@ import {
   buildEligibleList,
   generateSatisfactionToken,
   groupEncountersByClient,
-  normalizeClientName,
+  resolveUniqueSatisfactionRecipients,
   type SatisfactionEncounter,
 } from '@/lib/satisfaction'
 
@@ -29,25 +29,19 @@ function isValidEmail(value: string) {
 
 type WaitingListEmailRow = {
   client_name: string | null
+  first_requester_name: string | null
+  second_requester_name: string | null
   contact_email: string | null
   contact_emails: string[] | string | null
 }
 
-function pickContactEmail(row: WaitingListEmailRow): string | null {
-  const direct = normalizeText(row.contact_email)
-  if (direct) return direct
-
-  const list = row.contact_emails
-  if (Array.isArray(list)) {
-    const first = list.map((email) => normalizeText(email)).find(Boolean)
-    return first ?? null
-  }
-  if (typeof list === 'string') {
-    const first = normalizeText(list)
-    return first || null
-  }
-
-  return null
+function getContactEmails(row: WaitingListEmailRow): string[] {
+  const list = Array.isArray(row.contact_emails)
+    ? row.contact_emails
+    : typeof row.contact_emails === 'string'
+      ? [row.contact_emails]
+      : []
+  return [row.contact_email, ...list].map((email) => normalizeText(email))
 }
 
 async function logAudit(params: {
@@ -141,7 +135,7 @@ export async function POST(request: NextRequest) {
     const { data: solicitedRows, error: solicitedError } = await supabaseAdmin
       .from('satisfaction_eligibles')
       .select('client_nom_normalise')
-      .eq('statut', 'envoye')
+      .in('statut', ['en_cours', 'envoye'])
 
     if (solicitedError) throw solicitedError
 
@@ -162,17 +156,19 @@ export async function POST(request: NextRequest) {
     // Appariement des courriels via les fiches de la liste d'attente.
     const { data: waitingListRows, error: waitingListError } = await supabaseAdmin
       .from('waiting_list_clients')
-      .select('client_name, contact_email, contact_emails')
+      .select(
+        'client_name, first_requester_name, second_requester_name, contact_email, contact_emails'
+      )
 
     if (waitingListError) throw waitingListError
 
-    const emailByNormalizedName = new Map<string, string>()
-    for (const row of (waitingListRows ?? []) as WaitingListEmailRow[]) {
-      const normalized = normalizeClientName(row.client_name)
-      if (!normalized || emailByNormalizedName.has(normalized)) continue
-      const email = pickContactEmail(row)
-      if (email) emailByNormalizedName.set(normalized, email)
-    }
+    const contactRows = ((waitingListRows ?? []) as WaitingListEmailRow[]).map(
+      (row) => ({
+        clientName: row.client_name,
+        requesterNames: [row.first_requester_name, row.second_requester_name],
+        emails: getContactEmails(row),
+      })
+    )
 
     const { data: importRow, error: importError } = await supabaseAdmin
       .from('satisfaction_imports')
@@ -188,20 +184,30 @@ export async function POST(request: NextRequest) {
 
     if (importError) throw importError
 
-    const eligibleInserts = eligibleGroups.map((group) => ({
-      import_id: importRow.id,
-      client_nom: group.clientNom,
-      client_nom_normalise: group.clientNomNormalise,
-      destinataire_nom: group.destinataireNom,
-      destinataire_email:
-        emailByNormalizedName.get(group.clientNomNormalise) ?? null,
-      professionnel: group.professionnel,
-      nb_rencontres: group.nbRencontres,
-      derniere_rencontre: group.derniereRencontre,
-      statut: 'en_attente',
-      jeton_reponse: generateSatisfactionToken(),
-      jeton_desabonnement: generateSatisfactionToken(),
-    }))
+    const eligibleInserts = eligibleGroups.map((group) => {
+      const match = resolveUniqueSatisfactionRecipients(
+        group.clientNomNormalise,
+        contactRows
+      )
+      const recipientNames = match?.names.length
+        ? match.names
+        : [group.destinataireNom]
+
+      return {
+        import_id: importRow.id,
+        client_nom: group.clientNom,
+        client_nom_normalise: group.clientNomNormalise,
+        destinataire_nom: recipientNames.join(' / '),
+        destinataire_email: match?.emails[0] ?? null,
+        destinataire_emails: match?.emails ?? [],
+        professionnel: group.professionnel,
+        nb_rencontres: group.nbRencontres,
+        derniere_rencontre: group.derniereRencontre,
+        statut: 'en_attente',
+        jeton_reponse: generateSatisfactionToken(),
+        jeton_desabonnement: generateSatisfactionToken(),
+      }
+    })
 
     let eligibles: Record<string, unknown>[] = []
 
@@ -210,7 +216,7 @@ export async function POST(request: NextRequest) {
         .from('satisfaction_eligibles')
         .insert(eligibleInserts)
         .select(
-          'id, client_nom, destinataire_nom, destinataire_email, professionnel, nb_rencontres, derniere_rencontre, statut, jeton_reponse, jeton_desabonnement'
+          'id, client_nom, destinataire_nom, destinataire_email, destinataire_emails, professionnel, nb_rencontres, derniere_rencontre, statut, jeton_reponse, jeton_desabonnement'
         )
         .order('destinataire_nom', { ascending: true })
 
@@ -286,7 +292,7 @@ export async function GET(request: NextRequest) {
       const { data: eligibles, error } = await supabaseAdmin
         .from('satisfaction_eligibles')
         .select(
-          'id, import_id, client_nom, destinataire_nom, destinataire_email, professionnel, nb_rencontres, derniere_rencontre, statut, jeton_reponse, jeton_desabonnement, created_at'
+          'id, import_id, client_nom, destinataire_nom, destinataire_email, destinataire_emails, professionnel, nb_rencontres, derniere_rencontre, statut, jeton_reponse, jeton_desabonnement, created_at'
         )
         .eq('import_id', importId)
         .order('destinataire_nom', { ascending: true })
@@ -412,7 +418,7 @@ export async function PATCH(request: NextRequest) {
     return jsonResponse({ error: 'eligibleId est requis.' }, 400)
   }
 
-  const updates: Record<string, string | null> = {}
+  const updates: Record<string, string | string[] | null> = {}
 
   if (body.statut !== undefined) {
     const statut = normalizeText(body.statut)
@@ -428,6 +434,7 @@ export async function PATCH(request: NextRequest) {
       return jsonResponse({ error: 'Courriel invalide.' }, 400)
     }
     updates.destinataire_email = email || null
+    updates.destinataire_emails = email ? [email] : []
   }
 
   if (Object.keys(updates).length === 0) {
@@ -457,7 +464,7 @@ export async function PATCH(request: NextRequest) {
       .update(updates)
       .eq('id', eligibleId)
       .select(
-        'id, client_nom, destinataire_nom, destinataire_email, professionnel, nb_rencontres, derniere_rencontre, statut'
+        'id, client_nom, destinataire_nom, destinataire_email, destinataire_emails, professionnel, nb_rencontres, derniere_rencontre, statut'
       )
       .single()
 

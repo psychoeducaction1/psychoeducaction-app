@@ -7,7 +7,7 @@ export async function sendResendEmail({
   text,
   html,
 }: {
-  to: string
+  to: string | string[]
   cc?: string[]
   subject: string
   text: string
@@ -28,7 +28,7 @@ export async function sendResendEmail({
     },
     body: JSON.stringify({
       from,
-      to: [to],
+      to: Array.isArray(to) ? to : [to],
       ...(cc && cc.length > 0 ? { cc } : {}),
       subject,
       text,

@@ -276,6 +276,48 @@ export type SatisfactionEmailContent = {
   html: string
 }
 
+export type SatisfactionContactRecord = {
+  clientName: string | null
+  requesterNames: Array<string | null | undefined>
+  emails: Array<string | null | undefined>
+}
+
+export type SatisfactionRecipientMatch = {
+  names: string[]
+  emails: string[]
+}
+
+/**
+ * Retourne les coordonnées uniquement lorsqu'une seule fiche correspond au
+ * client. Une homonymie doit être vérifiée manuellement avant tout envoi.
+ */
+export function resolveUniqueSatisfactionRecipients(
+  normalizedClientName: string,
+  records: SatisfactionContactRecord[]
+): SatisfactionRecipientMatch | null {
+  const matches = records.filter(
+    (record) => normalizeClientName(record.clientName) === normalizedClientName
+  )
+
+  if (matches.length !== 1) return null
+
+  const record = matches[0]
+  const emails = [...new Set(
+    record.emails
+      .map((email) => (email ?? '').trim().toLowerCase())
+      .filter((email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+  )]
+  const names = [...new Set(
+    record.requesterNames
+      .map((name) => (name ?? '').trim())
+      .filter(Boolean)
+  )]
+
+  if (emails.length === 0) return null
+
+  return { names, emails }
+}
+
 /**
  * Construit le courriel d'invitation au sondage (texte + HTML).
  * Utilisé à l'identique pour l'aperçu côté direction et pour l'envoi.

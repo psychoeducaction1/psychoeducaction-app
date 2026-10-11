@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
   const { data: eligible, error: eligibleError } = await supabaseAdmin
     .from('satisfaction_eligibles')
     .select(
-      'id, client_nom, destinataire_nom, destinataire_email, statut, jeton_reponse, jeton_desabonnement'
+      'id, client_nom, destinataire_nom, destinataire_email, destinataire_emails, statut, jeton_reponse, jeton_desabonnement'
     )
     .eq('id', eligibleId)
     .maybeSingle()
@@ -80,15 +80,42 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const recipientEmail = normalizeText(eligible.destinataire_email)
+  const recipientEmails = [...new Set(
+    (Array.isArray(eligible.destinataire_emails)
+      ? eligible.destinataire_emails
+      : [eligible.destinataire_email]
+    )
+      .map((email) => normalizeText(email).toLowerCase())
+      .filter(Boolean)
+  )]
 
-  if (!recipientEmail) {
+  if (recipientEmails.length === 0) {
     return jsonResponse(
       {
         error:
           'Courriel introuvable : complétez le courriel du destinataire avant l’envoi.',
       },
       400
+    )
+  }
+
+  // Réserve atomiquement cet envoi. Deux clics ou requêtes simultanées ne
+  // peuvent pas obtenir le même dossier en état « en_attente ».
+  const { data: claimed, error: claimError } = await supabaseAdmin
+    .from('satisfaction_eligibles')
+    .update({ statut: 'en_cours' })
+    .eq('id', eligible.id)
+    .eq('statut', 'en_attente')
+    .select('id')
+    .maybeSingle()
+
+  if (claimError) {
+    return jsonResponse({ error: claimError.message }, 500)
+  }
+  if (!claimed) {
+    return jsonResponse(
+      { error: 'Cet envoi est déjà en cours ou a déjà été effectué.' },
+      409
     )
   }
 
@@ -104,7 +131,7 @@ export async function POST(request: NextRequest) {
 
   try {
     await sendResendEmail({
-      to: recipientEmail,
+      to: recipientEmails,
       subject: email.subject,
       text: email.text,
       html: email.html,
@@ -116,7 +143,7 @@ export async function POST(request: NextRequest) {
     try {
       await supabaseAdmin.from('satisfaction_envois').insert({
         eligible_id: eligible.id,
-        destinataire_email: recipientEmail,
+        destinataire_email: recipientEmails.join(', '),
         sujet: email.subject,
         statut: 'erreur',
         erreur: errorMessage,
@@ -134,7 +161,7 @@ export async function POST(request: NextRequest) {
         metadata: {
           eligible_id: eligible.id,
           destinataire_nom: eligible.destinataire_nom,
-          destinataire_email: recipientEmail,
+          destinataire_email: recipientEmails,
           erreur: errorMessage,
         },
       })
@@ -145,13 +172,27 @@ export async function POST(request: NextRequest) {
       })
     }
 
+
+    const { error: releaseError } = await supabaseAdmin
+      .from('satisfaction_eligibles')
+      .update({ statut: 'en_attente' })
+      .eq('id', eligible.id)
+      .eq('statut', 'en_cours')
+
+    if (releaseError) {
+      console.error('[satisfaction-send] Impossible de libérer l’envoi:', {
+        eligibleId: eligible.id,
+        message: releaseError.message,
+      })
+    }
+
     return jsonResponse({ error: errorMessage }, 500)
   }
 
   try {
     await supabaseAdmin.from('satisfaction_envois').insert({
       eligible_id: eligible.id,
-      destinataire_email: recipientEmail,
+      destinataire_email: recipientEmails.join(', '),
       sujet: email.subject,
       statut: 'envoye',
       envoye_par: actor.user.id,
@@ -161,6 +202,7 @@ export async function POST(request: NextRequest) {
       .from('satisfaction_eligibles')
       .update({ statut: 'envoye' })
       .eq('id', eligible.id)
+      .eq('statut', 'en_cours')
 
     if (updateError) throw updateError
 
@@ -176,7 +218,7 @@ export async function POST(request: NextRequest) {
         eligible_id: eligible.id,
         client_nom: eligible.client_nom,
         destinataire_nom: eligible.destinataire_nom,
-        destinataire_email: recipientEmail,
+        destinataire_email: recipientEmails,
       },
     })
   } catch (error) {

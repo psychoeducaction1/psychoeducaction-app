@@ -24,10 +24,11 @@ create table if not exists public.satisfaction_eligibles (
   client_nom_normalise text not null,
   destinataire_nom text not null,
   destinataire_email text null,
+  destinataire_emails text[] not null default '{}',
   professionnel text null,
   nb_rencontres integer not null check (nb_rencontres >= 4),
   derniere_rencontre date null,
-  statut text not null default 'en_attente' check (statut in ('en_attente', 'envoye', 'exclu', 'desabonne')),
+  statut text not null default 'en_attente' check (statut in ('en_attente', 'en_cours', 'envoye', 'exclu', 'desabonne')),
   jeton_reponse text not null unique,
   jeton_desabonnement text not null unique,
   created_at timestamptz not null default now(),
@@ -77,6 +78,23 @@ create index if not exists satisfaction_eligibles_nom_normalise_idx
   on public.satisfaction_eligibles (client_nom_normalise);
 create index if not exists satisfaction_envois_eligible_id_idx
   on public.satisfaction_envois (eligible_id);
+create unique index if not exists satisfaction_envois_unique_success_idx
+  on public.satisfaction_envois (eligible_id) where statut = 'envoye';
+create unique index if not exists satisfaction_one_contact_per_client_idx
+  on public.satisfaction_eligibles (client_nom_normalise)
+  where statut in ('en_cours', 'envoye');
+
+-- Mise à niveau si une première version du script a déjà été exécutée.
+alter table public.satisfaction_eligibles
+  add column if not exists destinataire_emails text[] not null default '{}';
+update public.satisfaction_eligibles
+set destinataire_emails = array[destinataire_email]
+where cardinality(destinataire_emails) = 0 and destinataire_email is not null;
+alter table public.satisfaction_eligibles
+  drop constraint if exists satisfaction_eligibles_statut_check;
+alter table public.satisfaction_eligibles
+  add constraint satisfaction_eligibles_statut_check
+  check (statut in ('en_attente', 'en_cours', 'envoye', 'exclu', 'desabonne'));
 
 -- Les pages publiques (réponse, désabonnement) passent par des routes API qui
 -- utilisent la clé service-role après validation du jeton : aucun accès
