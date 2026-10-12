@@ -31,9 +31,9 @@ Un test de fetch doit simuler et restaurer son mock explicitement.
 ## Controles adaptes au changement
 | Domaine | Automatisation disponible | Verification complementaire |
 | --- | --- | --- |
-| Assignation | `assignmentWorkflow.test.ts`: statuts, compteurs, attente, service pris, echec insert. | Concurrence, annulation/reouverture et echecs partiels en base. |
-| Droits | `accessRules.test.ts`: helpers super admin, paie, demandes et taches. | Routes par role, RLS/JWT, URLs directes et Storage. |
-| Prospects | `prospectValidation.test.ts`: contacts, champs requis/facultatifs, attribution. | Transfert avec motif/priorite, classement et dossier unique; SQL local. |
+| Assignation | `assignmentWorkflow.test.ts`, `waitingListFilters.test.ts`: statuts, compteurs, attente, service pris, echec insert, historique avec motif et notes apres assignation/classement. | Concurrence, annulation/reouverture et echecs partiels en base. |
+| Droits | `accessRules.test.ts`: helpers super admin, paie, demandes et taches. `restrictedSections.test.ts`: vraies API Acquisition/Satisfaction, comptes non autorises, profil absent et super administrateur, dependances simulees hors ligne. | Routes par role, RLS/JWT, URLs directes et Storage. |
+| Prospects | `prospectValidation.test.ts`, `prospectsWorkspace.test.ts`, `prospectCallWorkflow.test.ts`: validation, journee Toronto, ordre des rappels/prochain appel, anciens liens, droits et suivi. | Fiche commune, transfert, resultat et nouveau rendez-vous atomiques, nettoyage ponctuel; SQL local. |
 | Rendez-vous | Tests existants horaires/contrats; SQL local hold/retry/annulation/deplacement. | WordPress de test, Turnstile, concurrence et deduplication marketing. |
 | Paie pro | `payrollCalculation.test.ts`: vrais calculateurs, durees, rapports, seuils, annulations. | DOCX, quantites/totaux, destinataires sans vrai envoi. |
 | Budget/adjointes | `budgetExpenses.test.ts`: bornes, lien paie et types d'heures. | Sauvegarde/remplacement, separation salaires et vacances multimois. |
@@ -59,6 +59,12 @@ Prerequis manuels:
    compte local autorise a executer les RPC.
 4. Scripts d'admission, `conversion-event-id.sql` et corrections de transfert pertinents
    appliques dans cette base isolee, apres revue de l'ordre; rien n'est installe par les tests.
+   Le scenario de nettoyage exige aussi `assignment-processes.sql`, puis
+   `supabase/prospects-and-calls.sql` APRES les scripts d'admission, et un profil direction
+   fictif dans la base locale. Ne pas reinstaller ensuite la politique `direction_all`
+   de l'ancien script: elle autoriserait de nouveau le DELETE direct.
+   Installer aussi `supabase/prospect-call-workflow.sql` apres les scripts d'admission
+   et le transfert pour les resultats atomiques et le nouveau rendez-vous de suivi.
 5. Variable `LOCAL_TEST_DATABASE_URL` reservee a cette base locale.
 
 Exemple fictif PowerShell, a remplacer seulement par des acces LOCAUX:
@@ -74,10 +80,38 @@ identifiants, doublons potentiels, deplacement, annulation et transfert idempote
 Donnees fictives, aucun courriel, aucune migration, transaction terminee par `ROLLBACK`.
 Avec ON_ERROR_STOP, une erreur ferme la connexion et annule aussi la transaction.
 Le succes ne couvre pas la concurrence multi-session ni toutes les RLS utilisateur.
+`tests/integration/prospects-and-calls.sql` est lance ensuite: refus sans marquage,
+controle de l'acteur, marquage reversible, nettoyage des liens, protection d'un client
+transfere et rollback integral si l'audit echoue. Le trigger fictif et toutes les donnees
+sont dans une transaction terminee par `ROLLBACK`. Aucun scenario n'installe de migration.
+`tests/integration/prospect-call-workflow.sql` est lance ensuite: autorisations, refus de
+conflit de plage, rollback si l'audit echoue, conservation de la meme fiche, retry sans
+doublon, completion de l'appel et protection du dossier transfere. Transaction annulee.
 Scenario prepare mais non execute au 12 octobre 2026: base de tests non configuree
 et client `psql` non disponible lors de la mise en place.
 
+Pour livrer Prospects et appels, valider en environnement isole les trois onglets,
+les liens `/direction/calendrier?...` et `/direction/prospects?prospect=...`, les heures
+Toronto (hiver/ete), la fiche ouverte par la liste et le calendrier, les blocages,
+l'affichage des anciens rendez-vous, le resultat et le transfert.
+Verifier aussi Aujourd'hui/Demain aux bornes de minuit Toronto, la priorite des rappels
+recus un autre jour, l'absence de commandes Modifier/Test dans la fiche, les trois choix
+de resultat directement visibles et Autre/precision/nouveau rendez-vous sur la meme fiche.
+Tester les URLs API avec direction, professionnel, marketing et sans session,
+puis les RLS effectives avec des JWT distincts.
+Le SQL de nettoyage doit etre revu et applique manuellement avec autorisation explicite;
+La fiche ne propose plus de gestion de tests; le nettoyage ponctuel exige des identifiants
+explicitement confirmes. Le SQL du parcours d'appel doit aussi etre installe avec autorisation;
+les nouveaux resultats et reservations de suivi en dependent.
+
 ## Avant la mise en production
+Pour la restriction Acquisition/Satisfaction: verifier menu et URLs directes avec les comptes
+super administrateur et adjointes. Appliquer avec autorisation uniquement le correctif RLS
+`supabase/satisfaction-super-admin-access.sql` sur une base existante (apres le schema Satisfaction).
+Il ne modifie aucune donnee. Les tests Node verifient les API et le contrat du SQL, pas son execution.
+Verifier ensuite les cinq tables Satisfaction avec des JWT distincts et le parcours public par jeton;
+aucun envoi reel de courriel sans autorisation. Aucun SQL distant execute pour cette modification.
+
 1. Lire `git status` et le diff; seuls les fichiers attendus doivent changer.
 2. Executer `npm run check:full`. Distinguer avertissements/echecs preexistants et nouveaux.
 3. Valider le parcours concerne, donnees fictives et environnement isole.

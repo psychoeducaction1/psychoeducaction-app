@@ -118,8 +118,7 @@ export function AppNav({
       ? [
           { href: '/direction', label: 'Dashboard direction', icon: LayoutDashboard },
           { href: '/direction/liste-attente', label: "Liste d'attente", icon: ListChecks },
-          { href: '/direction/calendrier', label: 'Calendrier', icon: CalendarDays },
-          { href: '/direction/prospects', label: 'Prospects', icon: UserCheck },
+          { href: '/direction/prospects', label: 'Prospects et appels', icon: CalendarDays },
           ...(budgetAuthorized
             ? [{ href: '/direction/acquisition', label: 'Acquisition', icon: ChartNoAxesCombined }]
             : []),
@@ -137,7 +136,9 @@ export function AppNav({
             ? [{ href: '/marketing', label: 'Marketing', icon: BriefcaseBusiness }]
             : []),
           { href: '/direction/professionnels', label: 'Professionnels', icon: Users },
-          { href: '/direction/satisfaction', label: 'Satisfaction', icon: Star },
+          ...(budgetAuthorized
+            ? [{ href: '/direction/satisfaction', label: 'Satisfaction', icon: Star }]
+            : []),
           ...(payrollAuthorized
             ? [{ href: '/direction/paie', label: 'Paie', icon: DollarSign }]
             : []),
@@ -216,10 +217,8 @@ export function AppNav({
             ? pathname === '/direction'
             : link.href === '/direction/liste-attente'
                 ? pathname?.startsWith('/direction/liste-attente')
-              : link.href === '/direction/calendrier'
-                ? pathname?.startsWith('/direction/calendrier')
               : link.href === '/direction/prospects'
-                ? pathname?.startsWith('/direction/prospects')
+                ? pathname?.startsWith('/direction/prospects') || pathname?.startsWith('/direction/calendrier')
               : link.href === '/direction/acquisition'
                 ? pathname?.startsWith('/direction/acquisition')
               : link.href === '/direction/assignations-en-cours'

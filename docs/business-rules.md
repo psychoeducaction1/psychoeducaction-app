@@ -20,6 +20,10 @@ Ne pas recopier d'identites, de courriels prives ou de donnees de dossiers ici.
 - Confirmer directement un service cree `contacted=true`, `is_active=true` et recalcule.
 - Reouvrir une demarche historique ou retourner un client en attente doit annuler
   l'assignation liee si necessaire, recalculer et conserver les traces historiques.
+- Les demarches terminees (`assigned`, `classified`, `returned`) ne masquent plus
+  le dossier source dans la liste des clients. Seules les demarches encore actives le masquent.
+- Historique clients inclut les statuts `assigned`, `active`, `closed`, `blacklisted`;
+  les assignes restent aussi dans Clients assignes. Motif et notes du dossier source sont conserves.
 - Texto: saisie manuelle de l'envoi, pas d'envoi Twilio. Les contacts complementaires
   sont disponibles apres un statut sans reponse. Une relance a 48 heures cree une tache
   interne, pas un second texto/courriel client automatique.
@@ -51,7 +55,8 @@ Sources: `lib/professionalPreferences.ts`, `lib/professionalMatching.ts`,
   passe a `transferred_to_waiting_list`; un retry retourne le meme client.
   La route PATCH accepte aussi `service_taken`: elle ne transfere pas elle-meme un dossier.
 - `service_not_taken` et `other` exigent une justification. Historique de l'interface:
-  prospects refuses et transferes; les autres restent a traiter.
+  resultats `other`, `service_not_taken`, `service_taken` historique et prospects transferes.
+  Un suivi planifie repasse le prospect a `scheduled` en conservant la precision precedente.
 - Reservation: hold non expire, puis booking idempotent. Conserver verrous SQL et
   contraintes anti-doublon; un controle UI ne les remplace pas.
 - `appointmentId` interne. `conversionEventId` = UUID distinct, stable au retry,
@@ -61,12 +66,40 @@ Sources: `lib/professionalPreferences.ts`, `lib/professionalMatching.ts`,
 - Fuseau Toronto; lundi-vendredi de 8 h a 18 h, samedi de 12 h a 15 h 30, dimanche ferme.
   Pas de reservation dans les deux prochaines heures; appel 15 min + tampon 15 min.
 - Deplacement: identifiants conserves. Annulation: rendez-vous inactif.
+- « Prospects et appels » reunit calendrier, a traiter et historique. La meme fiche
+  expose directement Service pris, Service non pris et Autre, sans commandes de modification
+  du rendez-vous ni de gestion des tests. La reception (`created_at`) n'est
+  jamais utilisee comme date du rendez-vous (`start_at`); fuseau Toronto pour les deux.
+- A traiter = appels planifies dans la journee choisie (Toronto, aujourd'hui/demain) et
+  rappels rapides sans rendez-vous actif, meme recus anterieurement. Les rappels rapides
+  passent avant le prochain appel a partir de l'heure courante, puis les autres appels
+  futurs en ordre chronologique; les heures passees du jour restent a traiter en dessous.
+  Un prospect avec un resultat enregistre n'est plus dans cette file.
+- Rappel sans rendez-vous: « Rappel des que possible ». Autre/refus enregistres par le
+  RPC cloturent l'appel selectionne et terminent les taches de rappel liees. Le service
+  pris conserve le transfert existant. Les annulations historiques gardent date/statut.
+- Creer un autre rendez-vous pour Autre: precision requise, meme prospect, resultat et
+  nouveau rendez-vous dans une transaction; aucun nouveau client/prospect. Retry idempotent,
+  autorisation direction, horaire Toronto, preavis, verrous et conflits avec appels, holds
+  et blocages. Aucun courriel automatique dans ce parcours interne.
+- Suppression de test: direction authentifiee, marquage `is_test` explicite et confirmation
+  distincte obligatoires. Les RPC controlent aussi le role de l'acteur en base. Aucun
+  marquage retroactif automatique des demandes publiques ni reconnaissance par le nom.
+- Un prospect lie a un client ou au statut `transferred_to_waiting_list` ne peut etre
+  supprime ici. La suppression transactionnelle retire demandes idempotentes, taches de
+  rappel/notes, rendez-vous/evenements et prospect; detache les references de doublons.
+  Elle conserve les audits et n'efface ni client, ni assignation, ni plage bloquee, ni hold.
+  Les cles idempotentes retirees ne sont plus reutilisables comme preuve de reception:
+  ne pas rejouer une ancienne soumission de test apres nettoyage.
 - Doublon potentiel = contact normalise deja present; avertissement distinct d'une
   soumission idempotente. Ne pas fusionner des dossiers sur un nom seul.
 
 Sources: `lib/publicIntakeSchedule.ts`, `lib/publicIntakeValidation.ts`,
 `lib/publicIntakeSecurity.ts`, routes `app/api/public/intake/`,
 `supabase/public-intake-calendar.sql`, `supabase/prospect-direct-waiting-list-transfer.sql`.
+Complement: `lib/prospectsWorkspace.ts`, `lib/prospectTestActions.ts`,
+`supabase/prospects-and-calls.sql`.
+Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workflow.sql`.
 
 ## Remuneration, facture et budget
 - Export: DATE, PROFESSIONNEL, CLIENT, REQUERANT, DESCRIPTION, DETAIL,
@@ -106,6 +139,12 @@ Sources: `lib/publicIntakeSchedule.ts`, `lib/publicIntakeValidation.ts`,
   soustraites. Pas un calcul de 4 % des salaires reels.
 - Ne pas confondre role direction, super administrateur et listes d'acces metier.
   Les helpers de navigation ne remplacent pas API + RLS + Storage.
+- Acquisition et gestion Satisfaction sont reservees au compte super administrateur avec
+  profil direction charge. Les adjointes n'ont pas acces, y compris par URL ou API directe.
+  Import/lecture/modification/envoi Satisfaction exigent `getSuperAdminContext` avant acces
+  privilegie. Le profil absent est refuse. Les reponses et desabonnements publics par jeton
+  conservent leur parcours. Les RLS Satisfaction verifient aussi le role et l'email du JWT signe;
+  le correctif `supabase/satisfaction-super-admin-access.sql` exige une application autorisee.
 - Satisfaction: au moins quatre rencontres dans la periode importee; correspondance
   unique du client; tous les destinataires autorises du dossier; pas de nouvelle sollicitation
   d'un client deja contacte/desabonne. Les contraintes SQL participent a cette garantie.

@@ -17,6 +17,10 @@ import {
   type AssignableWaitingListClient,
 } from '../lib/waitingListAssignment.ts'
 import { createSupabaseStub } from './helpers/supabaseStub.ts'
+import {
+  getActiveAssignmentProcessClientIds,
+  getWaitingListClientSections,
+} from '../lib/waitingListFilters.ts'
 
 const request = {
   id: 'request-test', professional_id: 'professional-test', is_active: true,
@@ -141,6 +145,34 @@ test('le service pris direct complete la derniere place sans attendre le profess
   assert.equal(stub.rows('assignment_requests')[0].assigned_count, 1)
   assert.equal(stub.rows('assignment_requests')[0].remaining_count, 0)
   assert.equal(stub.rows('assignment_requests')[0].is_active, false)
+})
+
+test('le service pris depuis une démarche conserve le dossier source dans l’historique clients', async () => {
+  const sourceClient = {
+    ...client, status: 'assignment_in_progress', internal_notes: 'Note fictive de la demande',
+  }
+  const stub = createSupabaseStub({
+    assignment_requests: [request], assigned_clients: [], waiting_list_clients: [sourceClient],
+  })
+  await createAssignmentFromWaitingListClient({
+    supabase: stub.client, client: sourceClient,
+    professionalId: request.professional_id, outcome: 'service_taken',
+  })
+  const updatedClient = stub.rows('waiting_list_clients')[0] as typeof sourceClient & {
+    assigned_professional_id: string | null
+  }
+  const sections = getWaitingListClientSections([updatedClient],
+    getActiveAssignmentProcessClientIds([
+      { waiting_list_client_id: client.id, status: 'assigned' },
+    ])
+  )
+
+  assert.equal(sections.waiting.length, 0)
+  assert.equal(sections.history.length, 1)
+  assert.equal(sections.history[0].status, 'assigned')
+  assert.equal(sections.history[0].consultation_reason, client.consultation_reason)
+  assert.equal(sections.history[0].internal_notes, sourceClient.internal_notes)
+  assert.equal(sections.history[0].assigned_professional_id, request.professional_id)
 })
 
 test('un echec de creation ne marque pas la fiche source comme assignee', async () => {

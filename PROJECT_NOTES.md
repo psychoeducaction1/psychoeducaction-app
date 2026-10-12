@@ -35,6 +35,10 @@ pas une verification des migrations, variables ou balises presentes en productio
   Les droits de paie, de taches et de demandes ne sont pas identiques entre modules.
 - Les routes direction utilisent `getDirectionContext` ou un controle equivalent;
   certaines actions ajoutent un controle super administrateur ou une liste d'acces.
+- Acquisition et gestion Satisfaction: super administrateur uniquement, menu et API compris.
+  Les liens publics de reponse/desabonnement au sondage restent accessibles par jeton.
+  Pour une base existante, appliquer avec autorisation `supabase/satisfaction-super-admin-access.sql`;
+  le depot prepare les nouvelles RLS, sans les installer automatiquement.
 - `lib/supabaseClient.ts`: configuration publique et session utilisateur.
   `lib/supabaseAdmin.ts`: cle de service exclusivement cote serveur.
 - Les scripts RLS existent; leur presence ne prouve pas leur application a la base distante.
@@ -54,8 +58,8 @@ pas une verification des migrations, variables ou balises presentes en productio
 | Suggestions | Comparaison deterministe des preferences; filtre par pro et actions dans une fenetre. |
 | Assignations | Demandes professionnelles, attribution, statut du service et historique. |
 | Demarches | `/direction/assignations-en-cours`: contacts, texto declare manuellement, courriel et relance. |
-| Prospects | `/direction/prospects`: qualification, justification, historique et transfert volontaire. |
-| Calendrier | `/direction/calendrier`: appels reserves, rappels, deplacement, annulation et plages bloquees. |
+| Prospects et appels | `/direction/prospects`: onglets Calendrier, A traiter et Historique, fiche commune, qualification et transfert volontaire. |
+| Ancien calendrier | `/direction/calendrier` redirige vers l'onglet Calendrier en conservant les parametres. |
 | Taches admin | Affectation aux adjointes, statuts, notes et notification a la boite partagee configuree. |
 | Marketing | Taches, notes, pieces jointes privees, notifications et calendrier de travail modifiable. |
 | Paie pro | Import Excel, categories, calculs, factures DOCX et courriel avec CC comptable configuree. |
@@ -76,6 +80,8 @@ pas une verification des migrations, variables ou balises presentes en productio
    Notifications client/professionnel et historique restent des actions a verifier.
 6. Les demarches historiques peuvent etre rouvertes ou retournees en attente;
    les liens, compteurs et traces doivent suivre ces transitions.
+7. Les dossiers assignes ou classes depuis une demarche restent consultables dans
+   Historique clients de la liste d'attente, avec leur motif et leurs notes.
 
 Sources: `app/professionnel/shared.ts`, `lib/waitingListAssignment.ts`,
 `lib/assignmentRequestsServer.ts`, pages de liste d'attente/fiche pro et leurs routes.
@@ -89,6 +95,22 @@ Les ecritures clientes d'assignation ne sont pas toutes transactionnelles.
   et priorite; le RPC cree la fiche et classe le prospect de facon atomique.
 - Rendez-vous dans `intake_appointments`, avec historique; calendrier en heure de Toronto,
   stockage des instants en UTC.
+- La fiche commune et la liste distinguent rendez-vous et reception. Un rappel sans
+  rendez-vous affiche « Rappel des que possible »; les anciens liens `?prospect=...` restent valides.
+- A traiter: rendez-vous du jour choisi (Aujourd'hui/Demain, Toronto) et rappels rapides
+  sans rendez-vous actif. Rappels rapides en premier, puis prochain appel futur;
+  les appels du jour dont l'heure est passee restent visibles. Rafraichissement chaque
+  minute quand aucune fiche n'est ouverte; l'heure de classement avance aux 30 secondes.
+- Un clic ouvre une seule fiche. Service pris, Service non pris et Autre sont visibles
+  directement. La fiche ne propose plus de modifier le rendez-vous ni de gerer les tests.
+- Autre exige une precision; un bouton cree un nouveau rendez-vous sur le meme prospect.
+  `supabase/prospect-call-workflow.sql` doit etre installe manuellement avant utilisation:
+  resultat/refus et completion de l'appel sont atomiques; nouveau rendez-vous idempotent
+  avec verification des conflits. Aucun courriel automatique pour ce suivi interne.
+- Nettoyage des tests: marquage explicite puis confirmation, direction seulement.
+  RPC transactionnels prepares dans `supabase/prospects-and-calls.sql`, non appliques
+  par le code. Dossiers transferes proteges; audit minimal conserve. Les API de nettoyage
+  restent disponibles pour un nettoyage ponctuel, mais aucune commande n'apparait dans la fiche.
 - Le formulaire utilise un `conversionEventId` distinct de l'identifiant interne du
   rendez-vous. Le suivi technique ne transmet pas les informations du dossier.
 - Une notification en echec n'annule pas une reservation deja creee.
@@ -113,7 +135,8 @@ Les ecritures clientes d'assignation ne sont pas toutes transactionnelles.
   sans cumuler a chaque synchronisation.
 
 ## Limites et sujets envisages
-- Fusion calendrier/prospects et nettoyage des tests: proposition, pas encore implementes.
+- Fusion calendrier/prospects implementee dans le depot; nettoyage des tests soumis
+  a l'installation manuelle de `supabase/prospects-and-calls.sql` et aux validations locales.
 - Synchronisation Meta: code present; connexion externe non attestee par ce document.
 - Messages/Parametres masques dans les menus, mais leurs routes existent encore.
 - La page direction d'assignations distincte n'existe plus; l'espace pro reste present.

@@ -110,6 +110,7 @@ export default function AcquisitionPage() {
   const [expenses, setExpenses] = useState<ExpenseRow[]>([])
   const [events, setEvents] = useState<AcquisitionEventRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [authorized, setAuthorized] = useState(false)
   const [saving, setSaving] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [error, setError] = useState('')
@@ -137,9 +138,10 @@ export default function AcquisitionPage() {
     try {
       const response = await authenticatedFetch(`/api/direction/acquisition?from=${from}&to=${to}`)
       const payload = await response.json()
-      if (response.status === 401) { router.push('/login'); return }
-      if (response.status === 403) { router.push('/direction'); return }
+      if (response.status === 401) { setAuthorized(false); router.push('/login'); return }
+      if (response.status === 403) { setAuthorized(false); router.push('/direction'); return }
       if (!response.ok) throw new Error(payload.error ?? 'Chargement impossible.')
+      setAuthorized(true)
       setProspects(payload.prospects ?? [])
       setEvents(payload.events ?? [])
       setExpenses((payload.expenses ?? []).map((item: ExpenseRow) => ({
@@ -267,6 +269,13 @@ export default function AcquisitionPage() {
       setSyncing(false)
     }
   }
+
+  if (!authorized) return <>
+    <AppNav />
+    <main className="min-h-screen px-4 py-8 sm:px-6 lg:ml-72 lg:px-10">
+      <p className="text-sm text-[#7a6859]">{error || 'Vérification de l’accès...'}</p>
+    </main>
+  </>
 
   return <>
     <AppNav />

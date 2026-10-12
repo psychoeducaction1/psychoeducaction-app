@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getDirectionContext } from '@/lib/directionServer'
+import { getSuperAdminContext } from '@/lib/superAdminServer'
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
 import {
   buildEligibleList,
@@ -77,10 +77,10 @@ async function logAudit(params: {
  * Reçoit les rencontres parsées côté client + la période, regroupe par client,
  * applique le seuil (≥ 4), déduplique, exclut les déjà-sollicités et les
  * désabonnés, apparie les courriels via la liste d'attente, puis crée l'import
- * et les éligibles. La direction vérifie la liste AVANT tout envoi.
+ * et les éligibles. Le super administrateur vérifie la liste AVANT tout envoi.
  */
 export async function POST(request: NextRequest) {
-  const directionResult = await getDirectionContext(request)
+  const directionResult = await getSuperAdminContext(request)
 
   if (directionResult.error) {
     return jsonResponse(
@@ -275,7 +275,7 @@ export async function POST(request: NextRequest) {
  * Avec importId : éligibles d'un import précis (pour révision).
  */
 export async function GET(request: NextRequest) {
-  const directionResult = await getDirectionContext(request)
+  const directionResult = await getSuperAdminContext(request)
 
   if (directionResult.error) {
     return jsonResponse(
@@ -394,7 +394,7 @@ export async function GET(request: NextRequest) {
  * un courriel manquant avant l'envoi.
  */
 export async function PATCH(request: NextRequest) {
-  const directionResult = await getDirectionContext(request)
+  const directionResult = await getSuperAdminContext(request)
 
   if (directionResult.error) {
     return jsonResponse(

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getDirectionContext } from '@/lib/directionServer'
+import { getSuperAdminContext } from '@/lib/superAdminServer'
 import { sendResendEmail } from '@/lib/resendEmail'
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
 import {
@@ -26,11 +26,11 @@ function getAppUrl() {
 /**
  * POST /api/satisfaction/send
  * Envoie l'invitation au sondage à UN client éligible, après vérification
- * manuelle par la direction. Chaque envoi est journalisé ; en cas d'échec,
+ * manuelle par le super administrateur. Chaque envoi est journalisé ; en cas d'échec,
  * l'éligible reste « en_attente » pour une nouvelle tentative.
  */
 export async function POST(request: NextRequest) {
-  const directionResult = await getDirectionContext(request)
+  const directionResult = await getSuperAdminContext(request)
 
   if (directionResult.error) {
     return jsonResponse(

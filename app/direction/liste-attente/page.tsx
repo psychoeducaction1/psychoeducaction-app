@@ -40,6 +40,10 @@ import {
   type MatchingProfessional,
 } from '@/lib/professionalMatching'
 import type { ProfessionalStructuredPreferencesRow } from '@/lib/professionalPreferences'
+import {
+  getActiveAssignmentProcessClientIds,
+  getWaitingListClientSections,
+} from '@/lib/waitingListFilters'
 
 type WaitingListClient = {
   id: string
@@ -593,11 +597,7 @@ export default function DirectionListeAttentePage() {
       }
 
       setActiveAssignmentProcessClientIds(
-        new Set(
-          (processData ?? [])
-            .filter((process) => process.status !== 'returned')
-            .map((process) => process.waiting_list_client_id as string)
-        )
+        getActiveAssignmentProcessClientIds(processData ?? [])
       )
 
       const { data: professionalsData, error: professionalsError } = await supabase
@@ -2127,7 +2127,6 @@ export default function DirectionListeAttentePage() {
     professionalFilter !== 'all' ||
     hideThirdPartyClients
   const filteredClients = clients.filter((client) => {
-    if (activeAssignmentProcessClientIds.has(client.id)) return false
     if (normalizedSearchQuery && !clientMatchesSearch(client, normalizedSearchQuery)) {
       return false
     }
@@ -2168,15 +2167,15 @@ export default function DirectionListeAttentePage() {
   })
   const hasSearchQuery = normalizedSearchQuery.length > 0 || hasActiveFilters
   const emptySearchMessage = 'Aucun client ne correspond à cette recherche.'
-  const waitingClients = sortWaitingClients(
-    filteredClients.filter((client) => client.status === 'waiting')
+  const {
+    waiting: filteredWaitingClients,
+    assigned: assignedClients,
+    history: historyClients,
+  } = getWaitingListClientSections(
+    filteredClients,
+    activeAssignmentProcessClientIds
   )
-  const assignedClients = filteredClients.filter(
-    (client) => client.status === 'assigned'
-  )
-  const historyClients = filteredClients.filter((client) =>
-    ['active', 'closed', 'blacklisted'].includes(client.status ?? '')
-  )
+  const waitingClients = sortWaitingClients(filteredWaitingClients)
   const selectedProfessionalHasActiveRequest = activeRequests.some(
     (request) =>
       request.professional_id === selectedProfessionalId &&
@@ -3598,7 +3597,8 @@ export default function DirectionListeAttentePage() {
                     Historique clients ({historyClients.length})
                   </h2>
                   <p className="mt-1 text-sm text-[#7a6859]">
-                    Clients actifs, fermés ou inscrits en liste noire.
+                    Clients assignés, actifs, fermés ou inscrits en liste noire.
+                    Le motif de consultation et les notes restent consultables.
                   </p>
                 </div>
                 {renderClientsTable(

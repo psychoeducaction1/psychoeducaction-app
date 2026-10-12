@@ -42,6 +42,8 @@ function run() {
     '-h', database.hostname.replace(/^\[|\]$/g, ''), '-p', database.port || '5432',
     '-U', decodeURIComponent(database.username), '-d', decodeURIComponent(database.pathname.slice(1)),
     '-f', fileURLToPath(new URL('../tests/integration/public-intake.sql', import.meta.url)),
+    '-f', fileURLToPath(new URL('../tests/integration/prospects-and-calls.sql', import.meta.url)),
+    '-f', fileURLToPath(new URL('../tests/integration/prospect-call-workflow.sql', import.meta.url)),
   ], {
     stdio: 'inherit', timeout: 60_000, windowsHide: true,
     env: {

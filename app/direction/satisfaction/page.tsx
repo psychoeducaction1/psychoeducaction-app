@@ -21,6 +21,7 @@ import {
   tableShellClass,
 } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
+import { isSuperAdmin } from '@/lib/superAdmin'
 import {
   buildSatisfactionEmail,
   detectEncounterPeriod,
@@ -187,7 +188,7 @@ export default function DirectionSatisfactionPage() {
         .limit(1)
         .maybeSingle()
 
-      if (profileError || profile?.role !== 'direction') {
+      if (profileError || !profile || !isSuperAdmin(user, profile)) {
         router.push('/direction')
         return
       }

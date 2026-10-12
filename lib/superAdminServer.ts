@@ -82,7 +82,7 @@ export async function getSuperAdminContext(
     return { error: { message: profileError.message, status: 500 } }
   }
 
-  if (!isSuperAdmin(user, profile)) {
+  if (!profile || !isSuperAdmin(user, profile)) {
     return { error: { message: 'Action réservée au super administrateur.', status: 403 } }
   }
 
