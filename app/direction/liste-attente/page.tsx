@@ -40,6 +40,7 @@ import {
   type MatchingProfessional,
 } from '@/lib/professionalMatching'
 import type { ProfessionalStructuredPreferencesRow } from '@/lib/professionalPreferences'
+import { createWaitingListClient } from '@/lib/waitingListDuplicates'
 import {
   getActiveAssignmentProcessClientIds,
   getWaitingListClientSections,
@@ -467,7 +468,6 @@ export default function DirectionListeAttentePage() {
   const editSectionRef = useRef<HTMLElement | null>(null)
   const assignmentSectionRef = useRef<HTMLElement | null>(null)
   const waitingSectionRef = useRef<HTMLElement | null>(null)
-  const assignedSectionRef = useRef<HTMLElement | null>(null)
   const historySectionRef = useRef<HTMLElement | null>(null)
   const [clients, setClients] = useState<WaitingListClient[]>([])
   const [auditActor, setAuditActor] = useState<AuditActor | null>(null)
@@ -498,7 +498,6 @@ export default function DirectionListeAttentePage() {
   const [formMessage, setFormMessage] = useState('')
   const [formError, setFormError] = useState('')
   const [waitingPage, setWaitingPage] = useState(0)
-  const [assignedPage, setAssignedPage] = useState(0)
   const [historyPage, setHistoryPage] = useState(0)
   const [searchQuery, setSearchQuery] = useState('')
   const [serviceFilter, setServiceFilter] = useState('all')
@@ -1424,18 +1423,26 @@ export default function DirectionListeAttentePage() {
 
     setSavingClient(true)
 
-    const { data, error: insertError } = await supabase
-      .from('waiting_list_clients')
-      .insert({ ...buildPayload(form), status: 'waiting' })
-      .select(waitingListSelect)
-      .limit(1)
-      .maybeSingle()
-
-    setSavingClient(false)
-
-    if (insertError) {
-      setFormError(insertError.message)
+    let data: WaitingListClient
+    try {
+      const result = await createWaitingListClient<WaitingListClient>(
+        supabase, { ...buildPayload(form), status: 'waiting' }, waitingListSelect
+      )
+      data = result.client
+      if (!result.created) {
+        setClients((current) => current.some((client) => client.id === data.id)
+          ? current : sortClientsByContactDate([...current, data]))
+        setShowForm(false)
+        startEditing(data)
+        setFormMessage('Une fiche correspondante existe déjà. Elle a été ouverte ; aucun nouveau dossier n’a été créé.')
+        return
+      }
+    } catch (caught) {
+      setFormError(caught && typeof caught === 'object' && 'message' in caught
+        ? String(caught.message) : 'Impossible de vérifier ou de créer le dossier.')
       return
+    } finally {
+      setSavingClient(false)
     }
 
     if (data) {
@@ -2169,7 +2176,6 @@ export default function DirectionListeAttentePage() {
   const emptySearchMessage = 'Aucun client ne correspond à cette recherche.'
   const {
     waiting: filteredWaitingClients,
-    assigned: assignedClients,
     history: historyClients,
   } = getWaitingListClientSections(
     filteredClients,
@@ -2219,21 +2225,15 @@ export default function DirectionListeAttentePage() {
       currentPage * pageSize + pageSize
     )
   const waitingPageCount = getPageCount(waitingClients.length)
-  const assignedPageCount = getPageCount(assignedClients.length)
   const historyPageCount = getPageCount(
     historyClients.length,
     HISTORY_CLIENTS_PER_PAGE
   )
   const safeWaitingPage = Math.min(waitingPage, waitingPageCount - 1)
-  const safeAssignedPage = Math.min(assignedPage, assignedPageCount - 1)
   const safeHistoryPage = Math.min(historyPage, historyPageCount - 1)
   const paginatedWaitingClients = getPaginatedClients(
     waitingClients,
     safeWaitingPage
-  )
-  const paginatedAssignedClients = getPaginatedClients(
-    assignedClients,
-    safeAssignedPage
   )
   const paginatedHistoryClients = getPaginatedClients(
     historyClients,
@@ -3177,7 +3177,6 @@ export default function DirectionListeAttentePage() {
                     onChange={(event) => {
                       setSearchQuery(event.target.value)
                       setWaitingPage(0)
-                      setAssignedPage(0)
                       setHistoryPage(0)
                     }}
                     placeholder="Rechercher un client, requérant, courriel ou téléphone..."
@@ -3193,7 +3192,6 @@ export default function DirectionListeAttentePage() {
                       onChange={(event) => {
                         setServiceFilter(event.target.value)
                         setWaitingPage(0)
-                        setAssignedPage(0)
                         setHistoryPage(0)
                       }}
                       className={`${inputClass} mt-2`}
@@ -3214,7 +3212,6 @@ export default function DirectionListeAttentePage() {
                       onChange={(event) => {
                         setStatusFilter(event.target.value)
                         setWaitingPage(0)
-                        setAssignedPage(0)
                         setHistoryPage(0)
                       }}
                       className={`${inputClass} mt-2`}
@@ -3239,7 +3236,6 @@ export default function DirectionListeAttentePage() {
                       onChange={(event) => {
                         setMinimumAgeFilter(event.target.value)
                         setWaitingPage(0)
-                        setAssignedPage(0)
                         setHistoryPage(0)
                       }}
                       placeholder="Ex. 18"
@@ -3258,7 +3254,6 @@ export default function DirectionListeAttentePage() {
                       onChange={(event) => {
                         setMaximumAgeFilter(event.target.value)
                         setWaitingPage(0)
-                        setAssignedPage(0)
                         setHistoryPage(0)
                       }}
                       placeholder="Ex. 65"
@@ -3273,7 +3268,6 @@ export default function DirectionListeAttentePage() {
                       onChange={(event) => {
                         setProfessionalFilter(event.target.value)
                         setWaitingPage(0)
-                        setAssignedPage(0)
                         setHistoryPage(0)
                       }}
                       className={`${inputClass} mt-2`}
@@ -3309,7 +3303,6 @@ export default function DirectionListeAttentePage() {
                                 : current.filter((modality) => modality !== option)
                             )
                             setWaitingPage(0)
-                            setAssignedPage(0)
                             setHistoryPage(0)
                           }}
                           className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
@@ -3327,7 +3320,6 @@ export default function DirectionListeAttentePage() {
                     onChange={(event) => {
                       setHideThirdPartyClients(event.target.checked)
                       setWaitingPage(0)
-                      setAssignedPage(0)
                       setHistoryPage(0)
                     }}
                     className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
@@ -3347,7 +3339,6 @@ export default function DirectionListeAttentePage() {
                       setProfessionalFilter('all')
                       setHideThirdPartyClients(false)
                       setWaitingPage(0)
-                      setAssignedPage(0)
                       setHistoryPage(0)
                     }}
                     className="mt-3 text-sm font-semibold text-[#8a5633] underline decoration-[#d9b591] underline-offset-2 hover:decoration-[#9b6a3d]"
@@ -3565,29 +3556,6 @@ export default function DirectionListeAttentePage() {
                   pageCount: waitingPageCount,
                   onPageChange: setWaitingPage,
                   sectionRef: waitingSectionRef,
-                })}
-              </section>
-
-              <section ref={assignedSectionRef} className="scroll-mt-6 space-y-3">
-                <div>
-                  <h2 className="text-base font-semibold text-[#332820]">
-                    Clients assignés ({assignedClients.length})
-                  </h2>
-                  <p className="mt-1 text-sm text-[#7a6859]">
-                    Clients déjà assignés à un professionnel.
-                  </p>
-                </div>
-                {renderClientsTable(
-                  paginatedAssignedClients,
-                  hasSearchQuery ? emptySearchMessage : 'Aucun client assigné.',
-                  false
-                )}
-                {renderPagination({
-                  totalCount: assignedClients.length,
-                  currentPage: safeAssignedPage,
-                  pageCount: assignedPageCount,
-                  onPageChange: setAssignedPage,
-                  sectionRef: assignedSectionRef,
                 })}
               </section>
 

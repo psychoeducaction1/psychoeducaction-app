@@ -1,13 +1,28 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFile } from 'node:fs/promises'
-import { historyStatuses, legacyCalendarUrl, prospectCallLabel, prospectsTab, splitProspectAppointments, type IntakeAppointment } from '../lib/prospectsWorkspace.ts'
+import { historyStatuses, legacyCalendarUrl, prospectCallLabel, prospectsTab, reconcileTransferredAppointment, splitProspectAppointments, type IntakeAppointment } from '../lib/prospectsWorkspace.ts'
 import { runProspectTestAction } from '../lib/prospectTestActions.ts'
 
 const id = '00000000-0000-4000-8000-000000000001'
 const actorId = '00000000-0000-4000-8000-000000000002'
 const appointment = (start_at: string, status: IntakeAppointment['status'] = 'scheduled'): IntakeAppointment => ({
   id, prospect_id: id, start_at, end_at: start_at, status, events: [],
+})
+
+test('un ancien rendez-vous transféré est terminé, mais l’heure seule ne termine jamais un appel', () => {
+  const past = appointment('2026-10-12T13:00:00Z')
+  const now = new Date('2026-10-12T19:00:00Z')
+  const transferred = { status: 'transferred_to_waiting_list', waiting_list_client_id: 'fixture-client' }
+  assert.equal(reconcileTransferredAppointment(past, transferred, now).status, 'completed')
+  assert.equal(past.status, 'scheduled', 'Les données stockées ne sont pas modifiées par la lecture')
+  for (const prospect of [null, {status: 'scheduled'}, {status: 'transferred_to_waiting_list'}]) {
+    assert.equal(reconcileTransferredAppointment(past, prospect, now).status, 'scheduled')
+  }
+  assert.equal(reconcileTransferredAppointment(appointment('2026-10-12T20:00:00Z'), transferred, now).status, 'scheduled')
+  for (const status of ['cancelled', 'no_show', 'completed'] as const) {
+    assert.equal(reconcileTransferredAppointment({...past, status}, transferred, now).status, status)
+  }
 })
 
 test('le libelle de rendez-vous utilise son instant en heure de Toronto, independamment de la reception', () => {

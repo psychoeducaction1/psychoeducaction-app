@@ -23,7 +23,7 @@ Ne pas recopier d'identites, de courriels prives ou de donnees de dossiers ici.
 - Les demarches terminees (`assigned`, `classified`, `returned`) ne masquent plus
   le dossier source dans la liste des clients. Seules les demarches encore actives le masquent.
 - Historique clients inclut les statuts `assigned`, `active`, `closed`, `blacklisted`;
-  les assignes restent aussi dans Clients assignes. Motif et notes du dossier source sont conserves.
+  les assignes apparaissent une seule fois, dans Historique clients. Motif et notes sont conserves.
 - Texto: saisie manuelle de l'envoi, pas d'envoi Twilio. Les contacts complementaires
   sont disponibles apres un statut sans reponse. Une relance a 48 heures cree une tache
   interne, pas un second texto/courriel client automatique.
@@ -53,6 +53,10 @@ Sources: `lib/professionalPreferences.ts`, `lib/professionalMatching.ts`,
   motif non vide et priorite `normal`, `urgent` ou `existing_or_transfer` requis par l'API.
 - `service_taken` dans l'interface utilise le transfert. Le RPC cree/lie le dossier et
   passe a `transferred_to_waiting_list`; un retry retourne le meme client.
+  Le transfert cloture aussi les rendez-vous planifies dont l'appel est passe, dans la
+  meme transaction, avec un evenement unique. Aucun rendez-vous futur n'est cloture.
+  La lecture calendrier/fiche corrige l'affichage des anciens transferts deja confirmes;
+  le seul depassement de l'heure ne termine jamais un appel sans resultat.
   La route PATCH accepte aussi `service_taken`: elle ne transfere pas elle-meme un dossier.
 - `service_not_taken` et `other` exigent une justification. Historique de l'interface:
   resultats `other`, `service_not_taken`, `service_taken` historique et prospects transferes.
@@ -93,6 +97,12 @@ Sources: `lib/professionalPreferences.ts`, `lib/professionalMatching.ts`,
   ne pas rejouer une ancienne soumission de test apres nettoyage.
 - Doublon potentiel = contact normalise deja present; avertissement distinct d'une
   soumission idempotente. Ne pas fusionner des dossiers sur un nom seul.
+- Creation manuelle: lecture fraiche des fiches, meme nom et contact, pas de naissance
+  contradictoire ni de service different. Ouvrir la fiche existante sans modifier ses notes.
+  Les transferts verifient aussi les doublons avant toute ecriture et dans le RPC corrige.
+  Deux services distincts restent deux demandes. La verification manuelle ne garantit pas
+  l'absence de course entre deux creations simultanees; une contrainte unique globale serait
+  incorrecte pour les demandes multiples. Aucun regroupement destructif automatique.
 
 Sources: `lib/publicIntakeSchedule.ts`, `lib/publicIntakeValidation.ts`,
 `lib/publicIntakeSecurity.ts`, routes `app/api/public/intake/`,

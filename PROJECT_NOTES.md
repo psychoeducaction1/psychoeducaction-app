@@ -82,6 +82,7 @@ pas une verification des migrations, variables ou balises presentes en productio
    les liens, compteurs et traces doivent suivre ces transitions.
 7. Les dossiers assignes ou classes depuis une demarche restent consultables dans
    Historique clients de la liste d'attente, avec leur motif et leurs notes.
+   La section Clients assignes separee est retiree pour eviter le double affichage.
 
 Sources: `app/professionnel/shared.ts`, `lib/waitingListAssignment.ts`,
 `lib/assignmentRequestsServer.ts`, pages de liste d'attente/fiche pro et leurs routes.
@@ -114,6 +115,11 @@ Les ecritures clientes d'assignation ne sont pas toutes transactionnelles.
 - Le formulaire utilise un `conversionEventId` distinct de l'identifiant interne du
   rendez-vous. Le suivi technique ne transmet pas les informations du dossier.
 - Une notification en echec n'annule pas une reservation deja creee.
+- Le transfert confirme les anciens appels passes dans le calendrier et la fiche.
+  La version corrigee de `supabase/prospect-direct-waiting-list-transfer.sql` cloture
+  ces rendez-vous atomiquement et refuse les doublons; application manuelle autorisee requise.
+- La creation manuelle verifie les fiches recentes et ouvre une fiche correspondante
+  au lieu de la dupliquer. Les services differents sont conserves comme demandes distinctes.
 - Formulaire live, Complianz, GTM et comptes publicitaires sont hors du depot;
   les fichiers de reference ne prouvent pas leur configuration effective.
 

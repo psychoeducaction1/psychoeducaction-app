@@ -26,6 +26,20 @@ export const pendingStatuses = new Set<ProspectStatus>(['new', 'scheduled', 'cal
 export const appointmentStatusLabels = {
   scheduled: 'Planifié', completed: 'Terminé', cancelled: 'Annulé', no_show: 'Absent',
 }
+
+// Un transfert confirme le service. Compatibilite avec les anciens transferts
+// qui n'ont pas cloture leur rendez-vous; jamais une completion sur l'heure seule.
+export function reconcileTransferredAppointment<T extends {
+  status: IntakeAppointment['status']; end_at: string
+}>(appointment: T, prospect: {
+  status?: string | null; waiting_list_client_id?: string | null
+} | null | undefined, now = new Date()): T {
+  const transferred = prospect?.status === 'transferred_to_waiting_list'
+    && Boolean(prospect.waiting_list_client_id)
+  return appointment.status === 'scheduled' && transferred
+    && Date.parse(appointment.end_at) <= now.getTime()
+    ? { ...appointment, status: 'completed' } : appointment
+}
 export const prospectDateTime = new Intl.DateTimeFormat('fr-CA', {
   dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Toronto',
 })

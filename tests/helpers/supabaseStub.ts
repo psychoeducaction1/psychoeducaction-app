@@ -17,6 +17,7 @@ export function createSupabaseStub(
     private payload: Row = {}
     private single = false
     private maximum = Infinity
+    private offset = 0
     private sort: { column: string; ascending: boolean } | null = null
     private table: string
 
@@ -41,6 +42,7 @@ export function createSupabaseStub(
       return this
     }
     limit(maximum: number) { this.maximum = maximum; return this }
+    range(from: number, to: number) { this.offset = from; this.maximum = to - from + 1; return this }
     insert(payload: Row) { this.operation = 'insert'; this.payload = payload; return this }
     update(payload: Row) { this.operation = 'update'; this.payload = payload; return this }
     maybeSingle() { this.single = true; return Promise.resolve(this.execute()) }
@@ -56,7 +58,7 @@ export function createSupabaseStub(
           String(a[column]).localeCompare(String(b[column])) * (ascending ? 1 : -1)
         )
       }
-      selected = selected.slice(0, this.maximum)
+      selected = selected.slice(this.offset, this.offset + this.maximum)
       if (this.operation === 'insert') {
         const row = { id: `fixture-${++sequence}`, canceled_at: null, ...this.payload }
         rows.push(row)

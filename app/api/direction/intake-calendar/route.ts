@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDirectionContext } from '@/lib/directionServer'
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
+import { reconcileTransferredAppointment } from '@/lib/prospectsWorkspace'
 
 export async function GET(request: NextRequest) {
   const direction = await getDirectionContext(request)
@@ -42,7 +43,7 @@ export async function GET(request: NextRequest) {
   const prospectsResponse = prospectIds.length
     ? await supabase
         .from('public_intake_prospects')
-        .select('id, first_name, last_name, phone, email, potential_duplicate')
+        .select('id, first_name, last_name, phone, email, potential_duplicate, status, waiting_list_client_id')
         .in('id', prospectIds)
     : { data: [], error: null }
   if (prospectsResponse.error) {
@@ -62,7 +63,7 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     appointments: (appointments.data ?? []).map((appointment) => ({
-      ...appointment,
+      ...reconcileTransferredAppointment(appointment, prospects.get(appointment.prospect_id)),
       prospect: prospects.get(appointment.prospect_id) ?? null,
       events: (eventsResponse.data ?? []).filter(
         (event) => event.appointment_id === appointment.id

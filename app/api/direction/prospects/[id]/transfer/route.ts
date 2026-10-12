@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDirectionContext } from '@/lib/directionServer'
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
+import { loadWaitingListDuplicateCandidates } from '@/lib/waitingListDuplicates'
 
 const priorities = new Set(['normal', 'urgent', 'existing_or_transfer'])
 
@@ -34,6 +35,26 @@ export async function POST(
   }
 
   const supabase = getSupabaseAdmin()
+  const { data: prospect, error: prospectError } = await supabase
+    .from('public_intake_prospects')
+    .select('id, first_name, last_name, birth_date, email, phone, waiting_list_client_id')
+    .eq('id', id).maybeSingle()
+  if (prospectError) return NextResponse.json({ error: 'Vérification du dossier impossible.' }, { status: 500 })
+  if (!prospect) return NextResponse.json({ error: 'Prospect introuvable.' }, { status: 404 })
+  if (!prospect.waiting_list_client_id) {
+    try {
+      const matches = await loadWaitingListDuplicateCandidates(supabase, {
+        client_name: [prospect.first_name, prospect.last_name].filter(Boolean).join(' '),
+        birth_date: prospect.birth_date, contact_email: prospect.email, contact_phone: prospect.phone,
+        service_requested: 'Psychoéducation',
+      }, 'id, client_name, birth_date, service_requested, contact_email, contact_emails, contact_phone, contact_phones')
+      if (matches.length) return NextResponse.json({
+        error: 'Une fiche correspondante existe déjà dans la liste des clients. Consultez-la avant de créer un nouveau dossier.',
+      }, { status: 409 })
+    } catch {
+      return NextResponse.json({ error: 'Vérification des doublons impossible. Aucun transfert effectué.' }, { status: 500 })
+    }
+  }
   const { error: updateError } = await supabase
     .from('public_intake_prospects')
     .update({
@@ -61,13 +82,16 @@ export async function POST(
   if (error) {
     const status = error.message.includes('PROSPECT_NOT_FOUND')
       ? 404
-      : 500
+      : error.message.includes('EXISTING_WAITING_LIST_CLIENT') ? 409
+        : error.message.includes('DIRECTION_REQUIRED') ? 403 : 500
     return NextResponse.json(
       {
         error:
           status === 404
             ? 'Prospect introuvable.'
-            : error.message,
+            : status === 409
+              ? 'Une fiche correspondante existe déjà. Consultez la liste des clients avant de transférer.'
+              : status === 403 ? 'Accès réservé à la direction.' : 'Transfert indisponible.',
       },
       { status }
     )

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDirectionContext } from '@/lib/directionServer'
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
+import { reconcileTransferredAppointment } from '@/lib/prospectsWorkspace'
 
 export async function GET(request: NextRequest) {
   const direction = await getDirectionContext(request)
@@ -13,5 +14,10 @@ export async function GET(request: NextRequest) {
     .select('*, appointments:intake_appointments(id, prospect_id, start_at, end_at, status, events:intake_appointment_events(id, event_type, previous_start_at, new_start_at, note, actor_name, created_at))')
     .order('created_at', { ascending: false })
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ prospects: data ?? [] })
+  return NextResponse.json({ prospects: (data ?? []).map((prospect) => ({
+    ...prospect,
+    appointments: (prospect.appointments ?? []).map((appointment: {
+      status: 'scheduled' | 'completed' | 'cancelled' | 'no_show'; end_at: string
+    }) => reconcileTransferredAppointment(appointment, prospect)),
+  })) })
 }

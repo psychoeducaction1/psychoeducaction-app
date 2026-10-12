@@ -31,8 +31,6 @@ export function getWaitingListClientSections<
 
   return {
     waiting: visibleClients.filter((client) => client.status === 'waiting'),
-    assigned: visibleClients.filter((client) => client.status === 'assigned'),
-    // La vue des assignés est aussi un sous-ensemble de l'historique consultable.
     history: visibleClients.filter((client) =>
       ['assigned', 'active', 'closed', 'blacklisted'].includes(client.status ?? '')
     ),

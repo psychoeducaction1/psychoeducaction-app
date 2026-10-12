@@ -4,6 +4,7 @@ begin;
 
 do $$
 declare
+  actor uuid;
   fixture_key text := 'local-test-' || gen_random_uuid()::text;
   slot timestamptz := date_trunc('day', now()) + interval '14 days 10 hours';
   payload jsonb := jsonb_build_object(
@@ -22,11 +23,15 @@ declare
   repeated_transfer jsonb;
   booked_appointment_id uuid;
   second_prospect_id uuid;
+  future_appointment_id uuid := gen_random_uuid();
+  duplicate_callback jsonb;
   conversion_id uuid;
   observed_id uuid;
   observed_status text;
   blocked boolean;
 begin
+  select id into actor from public.profiles where role = 'direction' limit 1;
+  assert actor is not null, 'Seed a fictitious local direction profile first';
   assert not has_function_privilege('anon',
     'public.confirm_public_intake_booking(jsonb,timestamptz,text,text)', 'EXECUTE'),
     'Anonymous database roles must not invoke booking RPC directly';
@@ -109,15 +114,39 @@ begin
   end;
   assert blocked, 'An inactive appointment was cancelled again';
 
-  transfer := public.transfer_prospect_to_waiting_list(second_prospect_id, 'normal', null, 'Direction fictive');
-  repeated_transfer := public.transfer_prospect_to_waiting_list(second_prospect_id, 'normal', null, 'Direction fictive');
+  -- Appel deja passe: le transfert doit cloturer ce rendez-vous dans la meme transaction.
+  update public.intake_appointments set start_at = now() - interval '1 hour',
+    end_at = now() - interval '45 minutes', buffer_end_at = now() - interval '30 minutes'
+    where prospect_id = second_prospect_id;
+  insert into public.intake_appointments (id, prospect_id, start_at, end_at, buffer_end_at)
+  values (future_appointment_id, second_prospect_id, slot + interval '6 hours',
+    slot + interval '375 minutes', slot + interval '390 minutes');
+  transfer := public.transfer_prospect_to_waiting_list(second_prospect_id, 'normal', actor, 'Direction fictive');
+  repeated_transfer := public.transfer_prospect_to_waiting_list(second_prospect_id, 'normal', actor, 'Direction fictive');
   assert transfer->>'waitingListClientId' is not null;
   assert transfer->>'waitingListClientId' = repeated_transfer->>'waitingListClientId';
   assert (repeated_transfer->>'reused')::boolean, 'Transfer retry created another dossier';
   select status into observed_status from public.public_intake_prospects where id = second_prospect_id;
   assert observed_status = 'transferred_to_waiting_list';
+  assert (select status from public.intake_appointments where id =
+    (second_booking->>'appointmentId')::uuid) = 'completed';
+  assert (select status from public.intake_appointments where id = future_appointment_id) = 'scheduled';
+  assert (select count(*) from public.intake_appointment_events where appointment_id =
+    (second_booking->>'appointmentId')::uuid and event_type = 'completed') = 1;
   assert (select internal_notes from public.waiting_list_clients
     where id = (transfer->>'waitingListClientId')::uuid) is null;
+
+  duplicate_callback := public.create_public_callback_request(payload, fixture_key || '-duplicate-transfer');
+  blocked := false;
+  begin
+    perform public.transfer_prospect_to_waiting_list((duplicate_callback->>'prospectId')::uuid, 'normal', actor, 'Direction fictive');
+  exception when raise_exception then
+    if sqlerrm <> 'EXISTING_WAITING_LIST_CLIENT' then raise; end if;
+    blocked := true;
+  end;
+  assert blocked, 'A second prospect created a duplicate waiting-list dossier';
+  assert (select waiting_list_client_id from public.public_intake_prospects
+    where id = (duplicate_callback->>'prospectId')::uuid) is null;
 
   raise notice 'Local integration passed: RPC privileges, holds, booking retries, conversion IDs, duplicates, reschedule, cancellation and transfer.';
 end;

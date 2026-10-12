@@ -20,7 +20,7 @@ test('les dossiers assignés et classés restent consultables après une démarc
 
   assert.equal(activeIds.size, 0)
   assert.deepEqual(sections.waiting, [])
-  assert.deepEqual(sections.assigned, [assignedClient])
+  assert.equal('assigned' in sections, false, 'Un dossier assigné ne doit pas être rendu dans deux sections')
   assert.deepEqual(sections.history, [assignedClient, closedClient])
   assert.strictEqual(sections.history[0], assignedClient)
   assert.equal(sections.history[0].consultation_reason, 'Motif fictif conservé')
@@ -37,7 +37,7 @@ test('une démarche active ou rouverte reste hors des listes même avec une anci
 
   assert.equal(activeIds.has(client.id), true)
   assert.deepEqual(getWaitingListClientSections([client], activeIds), {
-    waiting: [], assigned: [], history: [],
+    waiting: [], history: [],
   })
   // Une ancienne fiche encore marquée waiting ne doit pas pouvoir être assignée deux fois.
   assert.deepEqual(
@@ -52,7 +52,7 @@ test('un retour en attente réaffiche le dossier sans le conserver dans l’hist
     { waiting_list_client_id: client.id, status: 'returned' },
   ])
   assert.deepEqual(getWaitingListClientSections([client], activeIds), {
-    waiting: [client], assigned: [], history: [],
+    waiting: [client], history: [],
   })
 })
 
@@ -62,7 +62,7 @@ test('les assignations directes et les autres dossiers historiques restent visib
   }))
   const sections = getWaitingListClientSections(clients, new Set())
   assert.deepEqual(sections.waiting, [clients[0]])
-  assert.deepEqual(sections.assigned, [clients[1]])
+  assert.equal('assigned' in sections, false)
   assert.deepEqual(sections.history, clients.slice(1))
 })
 

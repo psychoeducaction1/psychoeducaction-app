@@ -32,6 +32,7 @@ Un test de fetch doit simuler et restaurer son mock explicitement.
 | Domaine | Automatisation disponible | Verification complementaire |
 | --- | --- | --- |
 | Assignation | `assignmentWorkflow.test.ts`, `waitingListFilters.test.ts`: statuts, compteurs, attente, service pris, echec insert, historique avec motif et notes apres assignation/classement. | Concurrence, annulation/reouverture et echecs partiels en base. |
+| Liste des clients | `waitingListDuplicates.test.ts`: contacts/nom normalises, naissance/service distincts, relecture paginee, pas d'ecriture en cas d'erreur, fiche existante conservee. | Deux creations concurrentes; regroupement manuel sans perte de motifs, notes ni liens. |
 | Droits | `accessRules.test.ts`: helpers super admin, paie, demandes et taches. `restrictedSections.test.ts`: vraies API Acquisition/Satisfaction, comptes non autorises, profil absent et super administrateur, dependances simulees hors ligne. | Routes par role, RLS/JWT, URLs directes et Storage. |
 | Prospects | `prospectValidation.test.ts`, `prospectsWorkspace.test.ts`, `prospectCallWorkflow.test.ts`: validation, journee Toronto, ordre des rappels/prochain appel, anciens liens, droits et suivi. | Fiche commune, transfert, resultat et nouveau rendez-vous atomiques, nettoyage ponctuel; SQL local. |
 | Rendez-vous | Tests existants horaires/contrats; SQL local hold/retry/annulation/deplacement. | WordPress de test, Turnstile, concurrence et deduplication marketing. |
@@ -59,6 +60,8 @@ Prerequis manuels:
    compte local autorise a executer les RPC.
 4. Scripts d'admission, `conversion-event-id.sql` et corrections de transfert pertinents
    appliques dans cette base isolee, apres revue de l'ordre; rien n'est installe par les tests.
+   Appliquer la version corrigee de `prospect-direct-waiting-list-transfer.sql` apres le
+   schema d'admission: cloture atomique des appels passes et controle des doublons.
    Le scenario de nettoyage exige aussi `assignment-processes.sql`, puis
    `supabase/prospects-and-calls.sql` APRES les scripts d'admission, et un profil direction
    fictif dans la base locale. Ne pas reinstaller ensuite la politique `direction_all`
@@ -91,6 +94,9 @@ Scenario prepare mais non execute au 12 octobre 2026: base de tests non configur
 et client `psql` non disponible lors de la mise en place.
 
 Pour livrer Prospects et appels, valider en environnement isole les trois onglets,
+les transferts anciens encore stockes comme planifies, les appels passes non traites
+et les futurs appels qui doivent rester planifies. Verifier le transfert et son retry,
+le refus d'une fiche existante et l'ouverture du dossier a la creation manuelle.
 les liens `/direction/calendrier?...` et `/direction/prospects?prospect=...`, les heures
 Toronto (hiver/ete), la fiche ouverte par la liste et le calendrier, les blocages,
 l'affichage des anciens rendez-vous, le resultat et le transfert.
