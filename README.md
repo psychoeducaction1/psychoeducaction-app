@@ -20,7 +20,18 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-## Admission publique WordPress
+## Repères De Développement
+
+- [`AGENTS.md`](AGENTS.md) : règles permanentes et démarrage des sessions Codex.
+- [`PROJECT_NOTES.md`](PROJECT_NOTES.md) : architecture et fonctionnalités actuelles.
+- [`docs/business-rules.md`](docs/business-rules.md) : règles métier sensibles.
+- [`docs/development-checks.md`](docs/development-checks.md) : contrôles et tests locaux.
+
+Utiliser Node 24 et `npm ci`, puis `npm run check:full` pour vérifier les types,
+le lint, les tests et la compilation. Les tests SQL restent séparés (`npm run test:db`)
+et exigent une base locale isolée. Ces commandes ne déploient rien.
+
+## Admission Publique WordPress
 
 Le contrat des routes publiques, les variables d’environnement et les étapes
 de configuration sont documentés dans

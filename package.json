@@ -6,8 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "typecheck": "next typegen && tsc --noEmit --incremental false",
     "lint": "eslint",
-    "test": "node --test --test-isolation=none --experimental-strip-types tests/*.test.ts"
+    "test": "node --import ./tests/register-aliases.mjs --test --test-isolation=none --experimental-strip-types tests/*.test.ts",
+    "test:db": "node scripts/test-local-database.mjs",
+    "check": "npm run typecheck && npm run lint && npm test",
+    "check:full": "npm run check && npm run build"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.99.2",

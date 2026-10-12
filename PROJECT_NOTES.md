@@ -1,97 +1,121 @@
-# Notes projet - assignations-app
+# PsychoEducAction - etat du projet
 
-## Objectif de l'application
+Etat verifie dans le code le 12 octobre 2026. Ce fichier decrit le depot,
+pas une verification des migrations, variables ou balises presentes en production.
 
-Plateforme interne de gestion des demandes d'assignation et de suivi des clients pour une clinique.
+## Reperes
+- `AGENTS.md`: regles de travail et demarrage des sessions.
+- `docs/business-rules.md`: invariants et limites metier a conserver.
+- `docs/development-checks.md`: commandes, tests et validation avant livraison.
+- `docs/public-intake-api.md`: contrat public WordPress et configuration des integrations.
+- Les fonctionnalites envisagees ne sont pas des fonctionnalites deployees.
 
-## Stack technique
+## Architecture et outils
+- Next.js App Router / React / TypeScript strict, Tailwind CSS et Lucide.
+- Supabase fournit Auth, PostgreSQL, RLS, RPC et Storage. Resend envoie les courriels.
+- `xlsx` lit les exports d'activites; `docx` genere les factures Word.
+- Versions et dependances: `package.json` et `package-lock.json`; Node 24 recommande.
+- `app/`: pages par espace et routes `app/api/`. La plupart des pages sont clientes.
+- `lib/`: calculateurs, validations, droits et helpers reutilisables.
+- `components/AppNav.tsx`: menus selon les droits; `components/ui/index.tsx`: composants UI.
+  `components/Ui.tsx` assure encore une compatibilite avec les anciens imports.
+- `supabase/`: scripts SQL manuels et corrections successives, pas une chaine complete
+  de migrations initiales. Verifier l'ordre et le schema reel avant execution.
+- `tests/`: tests Node hors ligne et fixtures; `tests/integration/`: scenario SQL local.
+- `scripts/`: synchronisation Google Ads et lanceur des tests SQL locaux.
+- `docs/`: contrats et procedures; `backups/`: copies historiques du site, pas sa source live.
+- `vercel.json`: crons des rappels professionnels et des depenses publicitaires.
+- `.github/workflows/verify.yml`: controles sur PR et push main, sans deploiement.
 
-- Next.js
-- TypeScript
-- Supabase
-- Tailwind
+## Roles et acces
+- Roles de navigation: `direction`, `professionnel`, `marketing`.
+- Super administrateur = privilege associe a un compte configure et au role direction,
+  pas un quatrieme role; voir `lib/superAdmin.ts` et `lib/superAdminServer.ts`.
+- Les adjointes sont identifiees par des listes d'acces et leur fiche de personnel.
+  Les droits de paie, de taches et de demandes ne sont pas identiques entre modules.
+- Les routes direction utilisent `getDirectionContext` ou un controle equivalent;
+  certaines actions ajoutent un controle super administrateur ou une liste d'acces.
+- `lib/supabaseClient.ts`: configuration publique et session utilisateur.
+  `lib/supabaseAdmin.ts`: cle de service exclusivement cote serveur.
+- Les scripts RLS existent; leur presence ne prouve pas leur application a la base distante.
+- Marketing accessible au compte marketing et au super administrateur. L'apercu
+  direction est en lecture seule, sans connexion sous l'identite de l'employee.
+- Les adjointes voient leur propre paie; la direction autorisee a une vue globale.
+  La separation effective des donnees doit aussi etre verifiee en base.
 
-## Roles
+## Fonctionnalites presentes
+| Domaine | Entrees et responsabilites |
+| --- | --- |
+| Connexion | `/login`, invitation, mot de passe oublie et reinitialisation via Supabase Auth. |
+| Direction | Tableau de bord, indicateurs et journal d'audit. |
+| Professionnels | Profils, activite, invitations et renvoi d'acces. |
+| Preferences | Ages structures, services, bureaux, modalites, motifs, exclusions et notes. |
+| Liste d'attente | Creation/modification, contacts multiples, priorite, recherche et filtres. |
+| Suggestions | Comparaison deterministe des preferences; filtre par pro et actions dans une fenetre. |
+| Assignations | Demandes professionnelles, attribution, statut du service et historique. |
+| Demarches | `/direction/assignations-en-cours`: contacts, texto declare manuellement, courriel et relance. |
+| Prospects | `/direction/prospects`: qualification, justification, historique et transfert volontaire. |
+| Calendrier | `/direction/calendrier`: appels reserves, rappels, deplacement, annulation et plages bloquees. |
+| Taches admin | Affectation aux adjointes, statuts, notes et notification a la boite partagee configuree. |
+| Marketing | Taches, notes, pieces jointes privees, notifications et calendrier de travail modifiable. |
+| Paie pro | Import Excel, categories, calculs, factures DOCX et courriel avec CC comptable configuree. |
+| Paie adjointes | Heures pre-remplies/modifiables, feries marocains, conges, MAD/CAD et montants mensuels. |
+| Budget | Import multimois, repartition pro/clinique, historique, frais et paie des adjointes. |
+| Acquisition | Attribution des demandes, evenements techniques, depenses Google Ads/Meta selon configuration. |
+| Satisfaction | Import d'activites, seuil de rencontres, courriels individuels, reponse et desabonnement. |
 
-- direction
-- professionnel
+## Parcours d'assignation
+1. Un professionnel, ou un gestionnaire autorise dans sa fiche, cree/augmente une demande.
+2. Un client en attente est assigne directement, marque hors plateforme, ou place dans une
+   demarche administrative avec un professionnel envisage. Les actions restent distinctes.
+3. Une assignation en attente reserve une place; un service confirme compte comme pris;
+   un service refuse ou une assignation annulee ne reserve plus cette place.
+4. Completion quand les services pris atteignent le nombre demande. Zero place disponible
+   ne signifie pas toujours demande completee: des clients attendent une confirmation.
+5. Confirmer le service pris dans une demarche cree l'assignation avec service deja pris.
+   Notifications client/professionnel et historique restent des actions a verifier.
+6. Les demarches historiques peuvent etre rouvertes ou retournees en attente;
+   les liens, compteurs et traces doivent suivre ces transitions.
 
-## Pages principales
+Sources: `app/professionnel/shared.ts`, `lib/waitingListAssignment.ts`,
+`lib/assignmentRequestsServer.ts`, pages de liste d'attente/fiche pro et leurs routes.
+Les ecritures clientes d'assignation ne sont pas toutes transactionnelles.
 
-- `/login`
-- `/`
-- `/direction` : dashboard resume pour la direction
-- `/direction/professionnels` : gestion detaillee des professionnels
-- `/direction/assignations` : suivi des demandes d'assignation
-- `/direction/parametres` : parametres et informations administratives
-- `/professionnel` : tableau de bord resume du professionnel
-- `/professionnel/clients` : clients ayant pris le service et clients sans reponse / service non pris
-- `/professionnel/demande` : demande d'assignation
-- `/professionnel/preferences` : preferences d'assignation
-- `/professionnel/[id]`
+## Admission WordPress et rendez-vous
+- Le site public appelle `/api/public/intake/{availability,holds,bookings,callbacks}`.
+  Origines, Turnstile, frequence et cles d'idempotence sont controles cote serveur.
+- Une demande publique cree un prospect, pas automatiquement un client en liste d'attente.
+- Confirmer le service dans l'interface prospects passe par le transfert avec motif
+  et priorite; le RPC cree la fiche et classe le prospect de facon atomique.
+- Rendez-vous dans `intake_appointments`, avec historique; calendrier en heure de Toronto,
+  stockage des instants en UTC.
+- Le formulaire utilise un `conversionEventId` distinct de l'identifiant interne du
+  rendez-vous. Le suivi technique ne transmet pas les informations du dossier.
+- Une notification en echec n'annule pas une reservation deja creee.
+- Formulaire live, Complianz, GTM et comptes publicitaires sont hors du depot;
+  les fichiers de reference ne prouvent pas leur configuration effective.
 
-## Tables Supabase
+## Paie, facturation et budget
+- `lib/payrollCalculator.ts` et `lib/budgetCalculator.ts` partagent
+  `lib/professionalCompensation.ts` et `lib/payrollActivity.ts`.
+- Montant reclame = total client; ne pas multiplier encore par la duree.
+- Rapport/redaction facturable: 80 % professionnel / 20 % clinique.
+  Autres taux, seuils, forfaits et exceptions: voir les regles metier.
+- Annulations: montant effectivement facture; deplacements rembourses au professionnel,
+  hors revenu clinique. Factures Word generees puis envoyables avec CC comptable.
+- Le budget detecte dates/mois et remplace le calcul enregistre du mois concerne.
+  Les frais fixes restent mensuels, meme pour une periode d'activites partielle.
+- Paie administrative: taux issu du salaire mensuel et des heures prevues du mois;
+  les heures payables modifient le montant. La sauvegarde alimente le budget.
+- Vacances: solde en heures progressant selon le planning annuel jusqu'a la fin du mois
+  consulte; pas directement selon chaque heure reelle declaree.
+- Depenses publicitaires: lignes quotidiennes puis remplacement du total mensuel,
+  sans cumuler a chaque synchronisation.
 
-- `profiles`
-- `assigned_clients`
-- `assignment_requests`
-
-## Workflow actuel
-
-1. Le professionnel fait une demande d'assignation.
-2. La direction voit les demandes dans un dashboard avec recherche, filtres et tri.
-3. La direction assigne un client.
-4. Le professionnel voit ses clients.
-5. Le professionnel indique :
-   - contact effectue;
-   - service pris oui/non;
-   - motif si non;
-   - commentaire.
-6. Le professionnel peut voir et modifier ses preferences d'assignation :
-   - clienteles souhaitees;
-   - modalites souhaitees;
-   - types de suivis souhaites;
-   - notes / precisions.
-7. La direction voit les statistiques et les preferences d'assignation.
-8. Une demande peut avoir les statuts visuels suivants :
-   - demande inactive;
-   - demande en cours;
-   - demande completee.
-9. Une demande completee reste visible et n'est pas supprimee automatiquement.
-
-## Interface actuelle
-
-- Design global clinique moderne, doux et professionnel.
-- Design system centralise dans `components/ui/index.tsx`.
-- `components/Ui.tsx` existe encore pour compatibilite; la migration progressive vers `components/ui/index.tsx` est en cours.
-- Responsive mobile/tablette ameliore : navigation mobile, tableaux scrollables, boutons, cartes et espacements.
-- `AppNav` gere la navigation conditionnelle selon le role connecte.
-- Navigation laterale sur desktop et navigation compacte sur mobile.
-- Navigation conditionnelle selon le role connecte.
-- Navigation cote direction :
-  - Dashboard direction : `/direction`;
-  - Assignations : `/direction/assignations`;
-  - Professionnels : `/direction/professionnels`;
-  - Parametres : `/direction/parametres`;
-  - Deconnexion.
-- Navigation cote professionnel :
-  - Tableau de bord : `/professionnel`;
-  - Mes clients : `/professionnel/clients`;
-  - Ma demande : `/professionnel/demande`;
-  - Mes preferences : `/professionnel/preferences`;
-  - Deconnexion.
-- Tableaux modernises avec badges, etats vides, meilleur espacement et scroll horizontal.
-- Couleurs inspirees du branding PsychoEducAction : brun chaud, cuivre, beige pale et gris chauds.
-
-## Securite actuelle
-
-- Protection cote client existante.
-- RLS non finalise.
-- RLS a traiter plus tard avant production.
-
-## Regles importantes
-
-- Ne pas modifier les tables Supabase sans validation.
-- Ne pas toucher au login sans raison.
-- Travailler en petites etapes.
-- Tester puis commit apres chaque fonctionnalite stable.
+## Limites et sujets envisages
+- Fusion calendrier/prospects et nettoyage des tests: proposition, pas encore implementes.
+- Synchronisation Meta: code present; connexion externe non attestee par ce document.
+- Messages/Parametres masques dans les menus, mais leurs routes existent encore.
+- La page direction d'assignations distincte n'existe plus; l'espace pro reste present.
+- Tests unitaires/build ne valident pas seuls RLS, concurrence SQL, envois reels,
+  pieces jointes ou WordPress. Voir la matrice de verification.

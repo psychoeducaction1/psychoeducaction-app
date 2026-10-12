@@ -252,8 +252,11 @@ pour la première mise en service.
 
 Ces routes exigent `Authorization: Bearer <jeton Supabase>` et un profil ayant
 le rôle `direction`. Les actions de rendez-vous sont `cancel` et `reschedule`.
-Le transfert d’un prospect exige le statut `service_taken` et une priorité
-`normal`, `urgent` ou `existing_or_transfer`.
+Le transfert d’un prospect exige un motif de consultation non vide et une priorité
+`normal`, `urgent` ou `existing_or_transfer`. L'interface utilise cette action lors
+du choix « Service pris » : le RPC crée la fiche et classe le prospect dans
+`transferred_to_waiting_list` atomiquement, sans imposer un statut préalable.
+Un nouvel appel pour un prospect déjà transféré retourne le même identifiant client.
 
 ## Vie privée et suivi
 

@@ -1,0 +1,82 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
+
+type Row = Record<string, unknown>
+type Result = { data: Row[] | Row | null; error: { message: string } | null }
+type Operation = 'select' | 'insert' | 'update'
+
+export function createSupabaseStub(
+  initialTables: Record<string, Row[]>,
+  failures: Record<string, string> = {}
+) {
+  const tables = structuredClone(initialTables)
+  let sequence = 0
+
+  class Query implements PromiseLike<Result> {
+    private filters: Array<(row: Row) => boolean> = []
+    private operation: Operation = 'select'
+    private payload: Row = {}
+    private single = false
+    private maximum = Infinity
+    private sort: { column: string; ascending: boolean } | null = null
+    private table: string
+
+    constructor(table: string) { this.table = table }
+
+    select() { return this }
+    eq(column: string, value: unknown) {
+      this.filters.push((row) => row[column] === value)
+      return this
+    }
+    is(column: string, value: unknown) { return this.eq(column, value) }
+    gt(column: string, value: number) {
+      this.filters.push((row) => Number(row[column]) > value)
+      return this
+    }
+    in(column: string, values: unknown[]) {
+      this.filters.push((row) => values.includes(row[column]))
+      return this
+    }
+    order(column: string, options: { ascending: boolean }) {
+      this.sort = { column, ascending: options.ascending }
+      return this
+    }
+    limit(maximum: number) { this.maximum = maximum; return this }
+    insert(payload: Row) { this.operation = 'insert'; this.payload = payload; return this }
+    update(payload: Row) { this.operation = 'update'; this.payload = payload; return this }
+    maybeSingle() { this.single = true; return Promise.resolve(this.execute()) }
+
+    private execute(): Result {
+      const failure = failures[`${this.table}:${this.operation}`]
+      if (failure) return { data: null, error: { message: failure } }
+      const rows = tables[this.table] ??= []
+      let selected = rows.filter((row) => this.filters.every((filter) => filter(row)))
+      if (this.sort) {
+        const { column, ascending } = this.sort
+        selected = [...selected].sort((a, b) =>
+          String(a[column]).localeCompare(String(b[column])) * (ascending ? 1 : -1)
+        )
+      }
+      selected = selected.slice(0, this.maximum)
+      if (this.operation === 'insert') {
+        const row = { id: `fixture-${++sequence}`, canceled_at: null, ...this.payload }
+        rows.push(row)
+        selected = [row]
+      } else if (this.operation === 'update') {
+        selected.forEach((row) => Object.assign(row, this.payload))
+      }
+      return { data: structuredClone(this.single ? selected[0] ?? null : selected), error: null }
+    }
+
+    then<TResult1 = Result, TResult2 = never>(
+      onfulfilled?: ((value: Result) => TResult1 | PromiseLike<TResult1>) | null,
+      onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null
+    ): Promise<TResult1 | TResult2> {
+      return Promise.resolve(this.execute()).then(onfulfilled, onrejected)
+    }
+  }
+
+  return {
+    client: { from: (table: string) => new Query(table) } as unknown as SupabaseClient,
+    rows: (table: string) => structuredClone(tables[table] ?? []),
+  }
+}
