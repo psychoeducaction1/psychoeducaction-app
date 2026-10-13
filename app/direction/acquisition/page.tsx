@@ -19,6 +19,7 @@ import {
   tableShellClass,
 } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
+import { acquisitionAttributionFor } from '@/lib/acquisitionAttribution'
 
 type ProspectRow = {
   created_at: string
@@ -76,22 +77,12 @@ function platformLabel(platform: string) {
   if (platform === 'google_ads') return 'Google Ads'
   if (platform === 'meta_ads') return 'Meta Ads'
   if (platform === 'google') return 'Google'
-  if (platform === 'facebook' || platform === 'instagram' || platform === 'meta') return 'Meta'
-  return platform || 'Accès direct / inconnu'
+  if (['facebook', 'instagram', 'meta', 'fb', 'ig'].includes(platform)) return 'Meta'
+  return platform === 'direct' ? 'Origine non déterminée' : platform
 }
 
 function attributionFor(prospect: ProspectRow) {
-  const utm = prospect.utm ?? {}
-  const rawSource = (utm.source || '').trim().toLowerCase()
-  const platform = rawSource || (utm.gclid || utm.gbraid || utm.wbraid
-    ? 'google'
-    : utm.fbclid
-      ? 'meta'
-      : 'direct')
-  return {
-    platform,
-    campaign: utm.campaign?.trim() || '(campagne non renseignée)',
-  }
+  return acquisitionAttributionFor(prospect)
 }
 
 function eventAttribution(event: AcquisitionEventRow) {
@@ -204,6 +195,7 @@ export default function AcquisitionPage() {
   const bookingCount = prospects.filter((item) => item.contact_request_type === 'scheduled_call').length
   const callbackCount = prospects.filter((item) => item.contact_request_type === 'rapid_callback').length
   const serviceTakenCount = prospects.filter((item) => ['service_taken', 'transferred_to_waiting_list'].includes(item.status)).length
+  const attributedCount = prospects.filter((item) => attributionFor(item).platform !== 'direct').length
   const contactFormCount = events.filter((item) => item.event_type === 'contact_form_submitted').length
   const phoneClickCount = events.filter((item) => item.event_type === 'phone_click').length
 
@@ -307,6 +299,7 @@ export default function AcquisitionPage() {
         <section className="mt-6 rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5">
           <div className="flex items-center gap-2"><BarChart3 className="h-5 w-5 text-[#8a5633]" /><h2 className="font-semibold text-[#332820]">Origines et campagnes</h2></div>
           <p className="mt-1 text-sm text-[#7a6859]">Une origine inconnue signifie que le visiteur est arrivé directement ou que les paramètres publicitaires n’ont pas été conservés.</p>
+          <p className="mt-2 text-sm font-semibold text-[#5d4a3d]">{attributedCount} demande{attributedCount > 1 ? 's' : ''} avec une provenance sur {prospects.length}. Les demandes sans provenance ne peuvent pas être attribuées rétroactivement aux publicités.</p>
           <div className={`${tableShellClass} mt-4`}>
             <table className={`${tableClass} w-full`}>
               <thead className={tableHeaderClass}><tr><th className={tableHeadCellClass}>Plateforme</th><th className={tableHeadCellClass}>Campagne</th><th className={tableHeadCellClass}>Prospects</th><th className={tableHeadCellClass}>Réservations</th><th className={tableHeadCellClass}>Rappels</th><th className={tableHeadCellClass}>Contacts</th><th className={tableHeadCellClass}>Clics tél.</th><th className={tableHeadCellClass}>Services pris</th></tr></thead>

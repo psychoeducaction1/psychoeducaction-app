@@ -1,0 +1,17 @@
+<script>
+(function () {
+  var id = '{{DLV - conversion_event_id}}';
+  var uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuid.test(id)) return;
+  var state = window.__peaMetaLeadState = window.__peaMetaLeadState || { pending: [], sent: [] };
+  try {
+    var stored = JSON.parse(window.sessionStorage.getItem('pea_pending_meta_leads') || '[]');
+    if (Array.isArray(stored)) stored.forEach(function (value) {
+      if (typeof value === 'string' && uuid.test(value) && state.pending.indexOf(value) === -1) state.pending.push(value);
+    });
+  } catch (e) {}
+  if (state.pending.indexOf(id) === -1) state.pending.push(id);
+  state.pending = state.pending.slice(-100);
+  try { window.sessionStorage.setItem('pea_pending_meta_leads', JSON.stringify(state.pending)); } catch (e) {}
+})();
+</script>

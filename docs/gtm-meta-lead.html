@@ -1,0 +1,50 @@
+<script>
+(function () {
+  var direct = '{{DLV - conversion_event_id}}';
+  var uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  var state = window.__peaMetaLeadState = window.__peaMetaLeadState || { pending: [], sent: [] };
+  function merge(key, target) {
+    try {
+      var stored = JSON.parse(window.sessionStorage.getItem(key) || '[]');
+      if (Array.isArray(stored)) stored.forEach(function (id) {
+        if (typeof id === 'string' && uuid.test(id) && target.indexOf(id) === -1) target.push(id);
+      });
+    } catch (e) {}
+  }
+  merge('pea_pending_meta_leads', state.pending);
+  merge('pea_sent_meta_leads', state.sent);
+  if (uuid.test(direct) && state.pending.indexOf(direct) === -1 && state.sent.indexOf(direct) === -1) {
+    state.pending.push(direct);
+  }
+  state.pending = state.pending.slice(-100);
+  function persist() {
+    try {
+      window.sessionStorage.setItem('pea_pending_meta_leads', JSON.stringify(state.pending));
+      window.sessionStorage.setItem('pea_sent_meta_leads', JSON.stringify(state.sent));
+    } catch (e) {}
+  }
+  var attempts = 0;
+  function flush() {
+    // Additional GTM consent checks remain enabled; this also protects delayed retries.
+    try {
+      if (typeof window.cmplz_has_consent !== 'function' || !window.cmplz_has_consent('marketing')) return;
+    } catch (e) { return; }
+    if (typeof window.fbq !== 'function') {
+      if (attempts++ < 40) window.setTimeout(flush, 250);
+      return;
+    }
+    state.pending = state.pending.filter(function (id) {
+      if (state.sent.indexOf(id) !== -1) return false;
+      try {
+        window.fbq('track', 'Lead', {}, { eventID: id });
+        state.sent.push(id);
+        return false;
+      } catch (e) { return true; }
+    });
+    state.sent = state.sent.slice(-500);
+    persist();
+  }
+  persist();
+  flush();
+})();
+</script>

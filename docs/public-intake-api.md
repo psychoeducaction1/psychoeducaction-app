@@ -167,6 +167,12 @@ window.dataLayer.push({
 Le helper `utm()` du formulaire doit lire les paramètres UTM et identifiants
 publicitaires conservés dans `localStorage` par le suivi global WordPress. Il
 ne doit jamais y ajouter les valeurs des champs du formulaire.
+Le branchement teste est dans `wordpress-intake-form-tracking.js`: appeler
+`emitIntakeSubmitted(result, type)` apres succes pour les deux types de demande.
+Le suivi global conserve une seule provenance pour 30 jours avec consentement
+marketing et efface cette conservation lors du retrait. Acquisition affiche
+la plateforme, la campagne et la couverture d'attribution. Installation et
+verification externes: `conversion-tracking-release.md`.
 
 Les autres actions publiques doivent utiliser des événements distincts :
 `contact_form_submitted` après confirmation serveur d’un formulaire de contact

@@ -1,9 +1,10 @@
 /*
- * Suivi anonyme des formulaires de contact WPForms et des liens telephoniques.
+ * Attribution globale et confirmations anonymes des demandes publiques.
  * A installer dans WPCode apres le deploiement de /api/public/acquisition-events.
  * Aucun champ de formulaire n'est lu ou transmis.
  */
 (function () {
+  if (window.peaAcquisition) return;
   var API = 'https://app.psychoeducaction.com/api/public/acquisition-events';
   var CONTACT_FORM_IDS = ['598', '1009', '2527'];
   var ATTRIBUTION_KEYS = [
@@ -24,22 +25,72 @@
     return 'pea-' + Date.now() + '-' + Math.random().toString(36).slice(2);
   }
 
+  var ATTRIBUTION_STORAGE_KEY = 'pea.acquisition';
+  var ATTRIBUTION_MAX_AGE = 30 * 24 * 60 * 60 * 1000;
+  var currentAttribution = null;
+  var emittedEvents = {};
+
+  function marketingAllowed() {
+    try {
+      if (typeof window.cmplz_has_consent === 'function') return window.cmplz_has_consent('marketing') === true;
+      // The global helper may run before the deferred Complianz script.
+      // Only its existing explicit consent cookie permits cross-page storage.
+      return /(?:^|;\s*)cmplz_marketing=allow(?:;|$)/.test(document.cookie || '');
+    } catch { return false; }
+  }
+
+  function cleanAttribution(raw) {
+    var clean = {};
+    ATTRIBUTION_KEYS.forEach(function (key) {
+      if (raw && typeof raw[key] === 'string') {
+        var value = raw[key].replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 120);
+        if (value) clean[key] = value;
+      }
+    });
+    return clean;
+  }
+
   function rememberAttribution() {
     var query = new URLSearchParams(window.location.search);
-    var stored = {};
-    try {
-      stored = JSON.parse(window.localStorage.getItem('pea.acquisition') || '{}');
-    } catch {}
-
+    var incoming = {};
     ATTRIBUTION_KEYS.forEach(function (key) {
       var value = query.get(key);
-      if (value) stored[key] = value.slice(0, 120);
+      if (value) incoming[key] = value;
     });
-
+    incoming = cleanAttribution(incoming);
+    if (Object.keys(incoming).length) {
+      // A new campaign replaces the previous touch: never mix Google and Meta IDs.
+      currentAttribution = { capturedAt: Date.now(), parameters: incoming };
+    }
+    var allowed = marketingAllowed();
+    if (!allowed) {
+      try { window.localStorage.removeItem(ATTRIBUTION_STORAGE_KEY); } catch {}
+      // Parameters already present on this page may accompany the business request.
+      // Cross-page marketing storage is only used with consent.
+      return incoming;
+    }
+    if (!currentAttribution) {
+      try {
+        var stored = JSON.parse(window.localStorage.getItem(ATTRIBUTION_STORAGE_KEY) || 'null');
+        if (stored && stored.version === 2 && typeof stored.capturedAt === 'number' &&
+          stored.capturedAt <= Date.now() && Date.now() - stored.capturedAt < ATTRIBUTION_MAX_AGE) {
+          currentAttribution = { capturedAt: stored.capturedAt, parameters: cleanAttribution(stored.parameters) };
+        }
+      } catch {}
+    }
+    if (currentAttribution && Date.now() - currentAttribution.capturedAt >= ATTRIBUTION_MAX_AGE) {
+      currentAttribution = null;
+    }
     try {
-      window.localStorage.setItem('pea.acquisition', JSON.stringify(stored));
+      if (currentAttribution) {
+        window.localStorage.setItem(ATTRIBUTION_STORAGE_KEY, JSON.stringify({
+          version: 2,
+          capturedAt: currentAttribution.capturedAt,
+          parameters: currentAttribution.parameters
+        }));
+      } else window.localStorage.removeItem(ATTRIBUTION_STORAGE_KEY);
     } catch {}
-    return stored;
+    return currentAttribution ? currentAttribution.parameters : {};
   }
 
   function attribution() {
@@ -75,20 +126,39 @@
   }
 
   function pushOnce(eventName, conversionEventId) {
-    if (!conversionEventId) return;
+    if (typeof conversionEventId !== 'string' ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(conversionEventId)) return false;
     var storageKey = 'pea.' + eventName + '.' + conversionEventId;
+    if (emittedEvents[storageKey]) return false;
     try {
-      if (window.sessionStorage.getItem(storageKey)) return;
-      window.sessionStorage.setItem(storageKey, '1');
+      if (window.sessionStorage.getItem(storageKey)) return false;
     } catch {}
     window.dataLayer = window.dataLayer || [];
     window.dataLayer.push({
       event: eventName,
       conversion_event_id: conversionEventId
     });
+    emittedEvents[storageKey] = true;
+    try { window.sessionStorage.setItem(storageKey, '1'); } catch {}
+    return true;
   }
 
+  window.peaAcquisition = {
+    attribution: attribution,
+    emitIntakeSuccess: function (result, contactType) {
+      if (!result || result.success !== true) return false;
+      var eventName = contactType === 'scheduled_call' ? 'booking_form_submitted' :
+        contactType === 'rapid_callback' ? 'rapid_callback_submitted' : null;
+      return eventName ? pushOnce(eventName, result.conversionEventId) : false;
+    }
+  };
   rememberAttribution();
+  document.addEventListener('cmplz_status_change', rememberAttribution);
+  document.addEventListener('cmplz_enable_category', rememberAttribution);
+  document.addEventListener('cmplz_revoke', function () {
+    currentAttribution = null;
+    try { window.localStorage.removeItem(ATTRIBUTION_STORAGE_KEY); } catch {}
+  });
 
   if (window.jQuery) window.jQuery(document).on('wpformsAjaxSubmitSuccess', function (_event, data) {
     var formId = String(

@@ -122,6 +122,14 @@ Les ecritures clientes d'assignation ne sont pas toutes transactionnelles.
   au lieu de la dupliquer. Les services differents sont conserves comme demandes distinctes.
 - Formulaire live, Complianz, GTM et comptes publicitaires sont hors du depot;
   les fichiers de reference ne prouvent pas leur configuration effective.
+- Suivi reservations/rappels: helpers WordPress et balises Meta testes hors ligne,
+  provenance conservee entre pages avec consentement et conservation de 30 jours.
+  `docs/conversion-tracking-release.md` decrit le branchement du formulaire, GTM
+  et les parametres publicitaires publies avec autorisation le 12 octobre 2026
+  (WPCode 7674, GTM version 17). Meta classe le site en sante avec `Core setup: On`:
+  le comptage Lead ne peut pas etre garanti sans validation des restrictions.
+  Aucune provenance
+  retroactive inventee pour les anciennes demandes; Acquisition affiche la couverture.
 
 ## Paie, facturation et budget
 - `lib/payrollCalculator.ts` et `lib/budgetCalculator.ts` partagent
