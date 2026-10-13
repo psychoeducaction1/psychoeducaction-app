@@ -323,9 +323,10 @@ export function getAssignmentRequestMetrics({
     normalizedRequestedCount > 0 &&
     normalizedAcceptedCount >= normalizedRequestedCount
   const isCurrentlyActive =
-    normalizedRequestedCount > 0
+    isActive === true &&
+    (normalizedRequestedCount > 0
       ? !isCompleted
-      : isActive === true && normalizedRemainingCount > 0
+      : normalizedRemainingCount > 0)
   const state: AssignmentRequestState = isCompleted
     ? 'completed'
     : isCurrentlyActive

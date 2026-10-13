@@ -76,6 +76,8 @@ pas une verification des migrations, variables ou balises presentes en productio
    un service refuse ou une assignation annulee ne reserve plus cette place.
 4. Completion quand les services pris atteignent le nombre demande. Zero place disponible
    ne signifie pas toujours demande completee: des clients attendent une confirmation.
+   Une demande inactive reste inactive a l'affichage, meme si ses clients de test ont
+   ete supprimes. Les compteurs seuls ne rouvrent pas une demande historique.
 5. Confirmer le service pris dans une demarche cree l'assignation avec service deja pris.
    Notifications client/professionnel et historique restent des actions a verifier.
 6. Les demarches historiques peuvent etre rouvertes ou retournees en attente;
@@ -118,16 +120,33 @@ Les ecritures clientes d'assignation ne sont pas toutes transactionnelles.
 - Le transfert confirme les anciens appels passes dans le calendrier et la fiche.
   La version corrigee de `supabase/prospect-direct-waiting-list-transfer.sql` cloture
   ces rendez-vous atomiquement et refuse les doublons; application manuelle autorisee requise.
-- La creation manuelle verifie les fiches recentes et ouvre une fiche correspondante
-  au lieu de la dupliquer. Les services differents sont conserves comme demandes distinctes.
+- La creation manuelle compare les renseignements complets de la demande, dont naissance,
+  motif, tous les contacts, requerants, adresse, modalites, disponibilites et notes.
+  Un nom seul ne bloque jamais; les homonymes ou demandes differentes sont autorises.
+  Une demande identique ouvre la fiche existante. Les dates/status/priorite sont exclus
+  de la comparaison. Le transfert API utilise aussi le motif saisi et les champs inseres.
+  Le RPC de `prospect-direct-waiting-list-transfer.sql` est prepare pour cette meme regle;
+  cette revision n'a pas ete appliquee en production (aucun SQL distant execute).
 - Formulaire live, Complianz, GTM et comptes publicitaires sont hors du depot;
   les fichiers de reference ne prouvent pas leur configuration effective.
+- Reservation mobile: WPCode 7681 actif (HTML dans l'en-tete), reference
+  `docs/wordpress-booking-layout.html`. Limite a `body.page-id-2129`: sept libelles
+  de jours distincts, boutons du calendrier sans padding/arrondi herites du theme,
+  banniere flottante masquee uniquement sur la page de reservation. Formulaire,
+  horaires et conversions inchanges; rendu et selection date/heure verifies.
 - Suivi reservations/rappels: helpers WordPress et balises Meta testes hors ligne,
   provenance conservee entre pages avec consentement et conservation de 30 jours.
   `docs/conversion-tracking-release.md` decrit le branchement du formulaire, GTM
   et les parametres publicitaires publies avec autorisation le 12 octobre 2026
-  (WPCode 7674, GTM version 17). Meta classe le site en sante avec `Core setup: On`:
-  le comptage Lead ne peut pas etre garanti sans validation des restrictions.
+  (WPCode 7674, GTM version 17, puis version 18 pour la suspension Meta).
+  Meta classe le site en sante avec `Core setup: On`: le blocage de `Lead` par Meta
+  est confirme. Les balises Meta 46/47 sont en pause dans GTM version 18;
+  ne pas les reactiver ni renommer l'evenement pour contourner cette restriction.
+  Les demandes et leur provenance restent mesurees dans Acquisition.
+  Campagne Meta Leads mise en pause et remplacee, avec autorisation, par Trafic
+  `120247859031510766`, optimisee pour les visites de page, 20 CAD/jour,
+  Quebec 25-60 et meme creation/provenance. Annonce en examen lors de la relecture;
+  voir le document de livraison pour les identifiants et l'etat des brouillons.
   Aucune provenance
   retroactive inventee pour les anciennes demandes; Acquisition affiche la couverture.
 

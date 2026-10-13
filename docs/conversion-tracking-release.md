@@ -2,7 +2,70 @@
 
 Correctif publie le 12 octobre 2026 apres autorisation explicite de l'utilisateur.
 La validation locale ne prouve pas une reception par les plateformes.
-Aucun budget, enchere, ciblage ou SQL distant a modifier.
+Aucun budget, enchere, ciblage ou SQL distant a modifier sans autorisation specifique.
+
+## Verification Meta et correction du 12 octobre, apres publication initiale
+
+- Attestation `I acknowledge` acceptee apres confirmation explicite de l'utilisateur.
+- `Manage event blocking > Blocked > Lead > View details` confirme: evenement standard
+  `Lead` bloque par Meta selon la categorie de la source. Il ne s'agit donc plus
+  seulement d'une absence de reception a verifier. Aucune demande de revision deposee:
+  le site offre effectivement des services de sante, et aucune erreur de classement
+  n'a ete etablie. Ne pas renommer la reservation en un autre evenement pour contourner
+  cette restriction, ni utiliser Conversions API pour la contourner.
+- GTM version **18** publiee, `Meta — suspension Lead bloqué — 2026-10-12`:
+  uniquement les balises 46 et 47 mises en pause. Les scripts ci-dessous restent
+  des references techniques; **ne pas reactiver ces balises** sans nouvelle validation
+  des restrictions applicables. Google Ads, GA4, les declencheurs et le consentement
+  sont inchanges. La provenance interne WordPress/application reste active.
+- PageView est actif dans Meta Events Manager, derniere reception indiquee une heure
+  avant la verification. Ceci prouve une reception recente de visites, pas des reservations.
+- Campagne `120247734032640766` relue: active, 20 CAD/jour, objectif `OUTCOME_LEADS`,
+  ensemble `120247734034450766` en `OFFSITE_CONVERSIONS`, evenement `LEAD`.
+  L'editeur verrouille la destination, le but de performance, le pixel et l'evenement
+  de cet ensemble publie. Les parametres de provenance de l'annonce sont confirmes.
+- Remplacement autorise explicitement puis effectue a budget inchange:
+  - Nouvelle campagne `120247859031510766`, `Psychologue en ligne – Québec – Trafic`,
+    `OUTCOME_TRAFFIC`, active, budget de campagne 20 CAD/jour.
+  - Ensemble `120247859031540766`, `Québec 25-60 – Site web – Visites de page`,
+    actif, `LANDING_PAGE_VIEWS`, Quebec (region 535), ages 25-60, tous genres,
+    toutes langues, Advantage+ audience desactive et extension geographique desactivee.
+  - Annonce `120247859105180766`, `Psychologue en ligne – Créatif principal`,
+    meme image (asset `bd451851a979e4fbf300a5f32a7df4fa`), texte, titre, bouton
+    `SEE_DETAILS` et destination `/psychologue-en-ligne/`. UTM relus sur l'annonce
+    publiee, suivi Website events avec le pixel existant. En examen par Meta lors
+    de la derniere verification; activation ne prouve pas encore une diffusion.
+  - Nouvelle campagne publiee en pause et relue; ancienne campagne
+    `120247734032640766` mise en pause et relue; nouvelle campagne activee ensuite.
+    Aucun chevauchement de campagnes actives lors de cette bascule, aucun changement
+    des budgets Google ni des autres campagnes Meta.
+  - Le changement d'objectif dans le brouillon Meta reinitialisait budget et ciblage:
+    valeurs par defaut corrigees AVANT publication. L'annonce a ete recopiee directement
+    depuis l'originale vers le nouvel ensemble pour conserver son contenu.
+    Les exclusions pays hors Canada ne pouvaient pas etre selectionnees dans le
+    nouvel editeur, car deja hors des controles d'audience du compte; inclusion
+    uniquement Quebec confirmee dans le recapitulatif et par le connecteur.
+  - Quatre brouillons preexistants conserves. Brouillon vide de copie
+    `120247859031520766` jamais publie; annulation irreversible soumise a confirmation
+    distincte, encore en attente lors de cette verification.
+  Les demandes reelles doivent etre mesurees dans Acquisition avec leurs UTM;
+  une visite Meta ne doit jamais etre presentee comme une reservation.
+- Controle local apres cette intervention: `npm run check:full` reussi, 142 tests,
+  types et build verts. Lint sans erreur: avertissement existant de connexion et
+  deux avertissements de fonctions inutilisees dans le fichier temporaire ignore
+  `.env.wordpress-intake-helpers-served-20261012.js`. Aucune nouvelle modification
+  de code applicatif; seules cette documentation et `PROJECT_NOTES.md` changent.
+
+Source: [restrictions Meta selon la categorie](https://business.facebook.com/business/help/511197658391698).
+
+## Exclusions Google autorisees le 12 octobre 2026
+
+- Campagne `24325990045`, `Psychoéducation – Montréal`: ajout au niveau campagne
+  de `[psychoéducation udem]` et `[udem psychoéducation]`, en correspondance exacte.
+  Aucun terme generique ni autre recherche exclu sur la base des conversions historiques
+  incompletes. Les onze exclusions existantes sont conservees (treize apres ajout).
+- Relecture dans Google Ads puis via le connecteur: deux exclusions exactes presentes,
+  budget toujours 20 CAD/jour, statut, encheres et autres criteres de ciblage inchanges.
 
 ## Etat de livraison et limites verifiees
 
@@ -30,7 +93,7 @@ Aucun budget, enchere, ciblage ou SQL distant a modifier.
   aucun Lead. Le detail des evenements bloques exige `I acknowledge` sur les
   conditions Meta Business Tools: cette attestation n'a pas ete acceptee par l'agent.
   Aucun contournement des restrictions ni changement de categorie demande.
-  La reception/attribution des prochains Lead Meta reste donc a confirmer.
+  Cet etat initial est remplace par la verification et la suspension documentees ci-dessus.
 
 ## WordPress
 

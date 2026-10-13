@@ -51,20 +51,44 @@ begin
 
   if exists (
     select 1 from public.waiting_list_clients as client
-    where regexp_replace(lower(client.client_name), '[^[:alnum:]]', '', 'g')
-      = regexp_replace(lower(concat_ws(' ', prospect.first_name, prospect.last_name)), '[^[:alnum:]]', '', 'g')
-      and (client.birth_date is null or prospect.birth_date is null or client.birth_date = prospect.birth_date)
-      and (client.service_requested is null or client.service_requested = 'Psychoéducation')
-      and (
-        lower(trim(client.contact_email)) = lower(trim(prospect.email))
-        or lower(trim(prospect.email)) = any(
-          select lower(trim(item)) from unnest(coalesce(client.contact_emails, array[]::text[])) as item
-        )
-        or exists (
-          select 1 from unnest(array[client.contact_phone] || coalesce(client.contact_phones, array[]::text[])) as item
-          where regexp_replace(item, '[^0-9]', '', 'g') in
-            (prospect.normalized_phone, '1' || prospect.normalized_phone)
-        )
+    -- Meme contenu de demande, pas seulement un homonyme ou un contact partage.
+    -- Les dates de gestion, la priorite et le statut ne sont pas des identifiants.
+    where nullif(trim(prospect.consultation_reason), '') is not null
+      and client.birth_date is not distinct from prospect.birth_date
+      and not exists (
+        select 1 from (values
+          (client.client_name, concat_ws(' ', prospect.first_name, prospect.last_name)),
+          (client.service_requested, 'Psychoéducation'),
+          (client.consultation_reason, prospect.consultation_reason),
+          (client.first_requester_name, nullif(prospect.requester_names[1], '')),
+          (client.second_requester_name, nullif(prospect.requester_names[2], '')),
+          (client.city, concat_ws(', ', prospect.service_address, prospect.service_city, prospect.service_postal_code)),
+          (client.availability, null::text), (client.internal_notes, null::text)
+        ) as fields(existing, incoming)
+        where regexp_replace(lower(trim(coalesce(existing, ''))), '\s+', ' ', 'g')
+          <> regexp_replace(lower(trim(coalesce(incoming, ''))), '\s+', ' ', 'g')
+      )
+      and array(
+        select distinct lower(trim(item)) as value
+        from unnest(array[client.contact_email] || coalesce(client.contact_emails, array[]::text[])) as item
+        where nullif(trim(item), '') is not null order by value
+      ) = array[lower(trim(prospect.email))]
+      and array(
+        select distinct case when length(digits) = 11 and left(digits, 1) = '1'
+          then substr(digits, 2) else digits end as value
+        from (
+          select regexp_replace(item, '[^0-9]', '', 'g') as digits
+          from unnest(array[client.contact_phone] || coalesce(client.contact_phones, array[]::text[])) as item
+        ) as numbers where digits <> '' order by value
+      ) = array[prospect.normalized_phone]
+      and array(
+        select distinct regexp_replace(lower(trim(item)), '\s+', ' ', 'g') as value
+        from unnest(coalesce(client.meeting_modality, array[]::text[])) as item
+        where nullif(trim(item), '') is not null order by value
+      ) = array(
+        select distinct regexp_replace(lower(trim(item)), '\s+', ' ', 'g') as value
+        from unnest(coalesce(prospect.modalities, array[]::text[])) as item
+        where nullif(trim(item), '') is not null order by value
       )
   ) then raise exception 'EXISTING_WAITING_LIST_CLIENT'; end if;
 

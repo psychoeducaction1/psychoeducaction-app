@@ -148,6 +148,22 @@ begin
   assert (select waiting_list_client_id from public.public_intake_prospects
     where id = (duplicate_callback->>'prospectId')::uuid) is null;
 
+  -- Un homonyme au meme contact mais avec un autre motif est une autre demande.
+  update public.public_intake_prospects set consultation_reason = 'Autre motif fictif'
+    where id = (duplicate_callback->>'prospectId')::uuid;
+  repeated_transfer := public.transfer_prospect_to_waiting_list(
+    (duplicate_callback->>'prospectId')::uuid, 'normal', actor, 'Direction fictive');
+  assert repeated_transfer->>'waitingListClientId' <> transfer->>'waitingListClientId',
+    'A shared name/contact prevented a distinct consultation request';
+
+  duplicate_callback := public.create_public_callback_request(payload, fixture_key || '-different-birth');
+  update public.public_intake_prospects set birth_date = '2000-01-01'
+    where id = (duplicate_callback->>'prospectId')::uuid;
+  repeated_transfer := public.transfer_prospect_to_waiting_list(
+    (duplicate_callback->>'prospectId')::uuid, 'normal', actor, 'Direction fictive');
+  assert repeated_transfer->>'waitingListClientId' <> transfer->>'waitingListClientId',
+    'A shared name/contact prevented a distinct birth date';
+
   raise notice 'Local integration passed: RPC privileges, holds, booking retries, conversion IDs, duplicates, reschedule, cancellation and transfer.';
 end;
 $$;

@@ -40,16 +40,17 @@ export async function GET(
   if (clientsError) return jsonResponse({ error: clientsError.message }, 500)
 
   const assignedClients = clients ?? []
+  const summary = {
+    linkedClients: assignedClients.length,
+    serviceTaken: assignedClients.filter((client) => client.is_active === true).length,
+    serviceNotTaken: assignedClients.filter((client) => client.is_active === false).length,
+    pending: assignedClients.filter((client) => client.is_active === null).length,
+  }
 
   return jsonResponse(
     {
-      linkedClients: assignedClients.length,
-      serviceTaken: assignedClients.filter((client) => client.is_active === true)
-        .length,
-      serviceNotTaken: assignedClients.filter(
-        (client) => client.is_active === false
-      ).length,
-      pending: assignedClients.filter((client) => client.is_active === null).length,
+      ...summary,
+      summary,
     },
     200
   )

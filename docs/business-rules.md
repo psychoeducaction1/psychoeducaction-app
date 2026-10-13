@@ -13,6 +13,9 @@ Ne pas recopier d'identites, de courriels prives ou de donnees de dossiers ici.
 - Services pris = uniquement `is_active === true`. Une demande peut etre active et
   avoir zero place restante quand tous les clients attendent une confirmation.
 - Completion = services pris >= nombre demande, si le nombre demande est positif.
+- Une demande enregistree inactive ne redevient pas active a la lecture lorsque ses
+  clients sont retires ou que ses compteurs sont recalcules. Seul `is_active=true`
+  permet de l'afficher comme active; une completion confirmee reste historique.
 - Une demande active avec place restante est requise avant creation de l'assignation;
   les actions de suggestion ne creent pas silencieusement une demande en plus.
 - Un refus exige un motif; `Autre` exige une precision. Utiliser les helpers de
@@ -97,10 +100,18 @@ Sources: `lib/professionalPreferences.ts`, `lib/professionalMatching.ts`,
   ne pas rejouer une ancienne soumission de test apres nettoyage.
 - Doublon potentiel = contact normalise deja present; avertissement distinct d'une
   soumission idempotente. Ne pas fusionner des dossiers sur un nom seul.
-- Creation manuelle: lecture fraiche des fiches, meme nom et contact, pas de naissance
-  contradictoire ni de service different. Ouvrir la fiche existante sans modifier ses notes.
-  Les transferts verifient aussi les doublons avant toute ecriture et dans le RPC corrige.
-  Deux services distincts restent deux demandes. La verification manuelle ne garantit pas
+- Creation manuelle: lecture fraiche des fiches; bloquer uniquement une demande identique:
+  nom, naissance (une absence n'est pas un joker), motif, service, tous les contacts,
+  requerants, adresse, modalites, disponibilites et notes internes. Ignorer casse/espaces
+  et format des contacts; les ensembles de contacts/modalites ignorent ordre et repetitions.
+  Nom et motif non vides, avec naissance ou contact, requis pour affirmer un doublon.
+  Le nom seul, un contact partage ou un motif different ne bloquent pas la creation.
+  Statut, priorite, dates de gestion et identifiants ne definissent pas la demande.
+  Ouvrir la fiche identique sans la modifier. Les transferts utilisent le motif saisi
+  et les champs qui seront inseres, avant toute ecriture et dans le RPC corrige.
+  `prospect-direct-waiting-list-transfer.sql` doit etre applique avec autorisation pour
+  aligner une base existante; la verification TypeScript ne remplace pas le RPC distant.
+  La verification manuelle ne garantit pas
   l'absence de course entre deux creations simultanees; une contrainte unique globale serait
   incorrecte pour les demandes multiples. Aucun regroupement destructif automatique.
 

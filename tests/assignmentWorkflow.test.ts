@@ -71,6 +71,23 @@ test('les compteurs incoherents ne produisent jamais de places negatives', () =>
   assert.equal(empty.remainingCount, 0)
 })
 
+test('une demande clôturée ne redevient pas active après le retrait de ses clients de test', () => {
+  for (const isActive of [false, null, undefined]) {
+    const metrics = getAssignmentRequestMetrics({
+      isActive, requestedCount: 2, acceptedCount: 0, occupiedCount: 0, remainingCount: 2,
+    })
+    assert.equal(metrics.state, 'inactive')
+    assert.equal(metrics.isActive, false)
+    assert.equal(metrics.isCompleted, false)
+    assert.equal(metrics.remainingCount, 2)
+  }
+  const active = getAssignmentRequestMetrics({
+    isActive: true, requestedCount: 2, acceptedCount: 0, occupiedCount: 0,
+  })
+  assert.equal(active.state, 'active')
+  assert.equal(active.remainingCount, 2)
+})
+
 test('un refus exige un motif et Autre exige une precision', () => {
   assert.notEqual(getNonServiceReasonError(null), '')
   assert.notEqual(getNonServiceReasonError('Autre'), '')

@@ -1434,7 +1434,7 @@ export default function DirectionListeAttentePage() {
           ? current : sortClientsByContactDate([...current, data]))
         setShowForm(false)
         startEditing(data)
-        setFormMessage('Une fiche correspondante existe déjà. Elle a été ouverte ; aucun nouveau dossier n’a été créé.')
+        setFormMessage('Une demande avec les mêmes renseignements existe déjà. Sa fiche a été ouverte ; aucun nouveau dossier n’a été créé.')
         return
       }
     } catch (caught) {

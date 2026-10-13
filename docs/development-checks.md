@@ -31,11 +31,12 @@ Un test de fetch doit simuler et restaurer son mock explicitement.
 ## Controles adaptes au changement
 | Domaine | Automatisation disponible | Verification complementaire |
 | --- | --- | --- |
-| Assignation | `assignmentWorkflow.test.ts`, `waitingListFilters.test.ts`: statuts, compteurs, attente, service pris, echec insert, historique avec motif et notes apres assignation/classement. | Concurrence, annulation/reouverture et echecs partiels en base. |
-| Liste des clients | `waitingListDuplicates.test.ts`: contacts/nom normalises, naissance/service distincts, relecture paginee, pas d'ecriture en cas d'erreur, fiche existante conservee. | Deux creations concurrentes; regroupement manuel sans perte de motifs, notes ni liens. |
+| Assignation | `assignmentWorkflow.test.ts`, `waitingListFilters.test.ts`: statuts, compteurs, demande inactive apres retrait des tests, attente, service pris, echec insert et historique. `assignmentRequestSummary.test.ts`: vraie API, compteurs de confirmation, assignations annulees exclues, contrat compatible et droits. | Concurrence, annulation/reouverture et echecs partiels en base. |
+| Liste des clients | `waitingListDuplicates.test.ts`: demande identique, homonymes, naissance/motif/contacts/requerants/adresse/modalites/disponibilites/notes differents, champs absents, relecture paginee et erreurs. `prospectTransferCompletion.test.ts`: vraie API de transfert, motif saisi, autorisations et absence d'ecriture si doublon/erreur. | Deux creations concurrentes; regroupement manuel sans perte de motifs, notes ni liens. RPC distant a aligner avec autorisation. |
 | Droits | `accessRules.test.ts`: helpers super admin, paie, demandes et taches. `restrictedSections.test.ts`: vraies API Acquisition/Satisfaction, comptes non autorises, profil absent et super administrateur, dependances simulees hors ligne. | Routes par role, RLS/JWT, URLs directes et Storage. |
 | Prospects | `prospectValidation.test.ts`, `prospectsWorkspace.test.ts`, `prospectCallWorkflow.test.ts`: validation, journee Toronto, ordre des rappels/prochain appel, anciens liens, droits et suivi. | Fiche commune, transfert, resultat et nouveau rendez-vous atomiques, nettoyage ponctuel; SQL local. |
 | Rendez-vous | Tests existants horaires/contrats; SQL local hold/retry/annulation/deplacement. | WordPress de test, Turnstile, concurrence et deduplication marketing. |
+| Reservation mobile | Pas de test unitaire pour la mise en page seule; reference `wordpress-booking-layout.html`. | A 320/390/430/1280 px: sept jours alignes, boutons sans debordement, date/heure selectionnables. Banniere masquee sur la page 2129 et visible ailleurs. Aucun formulaire soumis. |
 | Conversions | `acquisitionTracking.test.ts`: scripts WordPress/Meta executes hors ligne, UTM entre pages, deux confirmations, retries, consentement, stockage bloque et vraies API avec dependances simulees. | Publication WordPress/GTM autorisee, Tag Assistant et Meta Test Events en environnement isole; voir `conversion-tracking-release.md`. |
 | Paie pro | `payrollCalculation.test.ts`: vrais calculateurs, durees, rapports, seuils, annulations. | DOCX, quantites/totaux, destinataires sans vrai envoi. |
 | Budget/adjointes | `budgetExpenses.test.ts`: bornes, lien paie et types d'heures. | Sauvegarde/remplacement, separation salaires et vacances multimois. |
@@ -81,6 +82,8 @@ Remove-Item Env:LOCAL_TEST_DATABASE_URL
 
 `tests/integration/public-intake.sql` execute les vrais RPC: privileges, holds, retries,
 identifiants, doublons potentiels, deplacement, annulation et transfert idempotent.
+Il verifie aussi le refus d'une demande strictement identique et l'acceptation des
+homonymes au meme contact avec un motif ou une naissance differents.
 Donnees fictives, aucun courriel, aucune migration, transaction terminee par `ROLLBACK`.
 Avec ON_ERROR_STOP, une erreur ferme la connexion et annule aussi la transaction.
 Le succes ne couvre pas la concurrence multi-session ni toutes les RLS utilisateur.

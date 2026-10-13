@@ -1,0 +1,71 @@
+<!-- WPCode: HTML snippet, auto-insert in the site header. Scoped to booking page 2129. -->
+<style>
+body.page-id-2129 .e-floating-bars {
+  display: none !important;
+}
+body.page-id-2129 #pea-intake .pea-calendar-shell > * {
+  min-width: 0;
+}
+body.page-id-2129 #pea-intake .pea-calendar-head {
+  gap: 4px;
+  padding: 12px 8px;
+}
+body.page-id-2129 #pea-intake .pea-calendar-title {
+  min-width: 0;
+  flex: 1;
+  text-align: center;
+}
+body.page-id-2129 #pea-intake .pea-weekdays,
+body.page-id-2129 #pea-intake .pea-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0;
+}
+body.page-id-2129 #pea-intake .pea-weekdays > span {
+  display: block;
+  min-width: 0;
+  text-align: center;
+  white-space: nowrap;
+}
+body.page-id-2129 #pea-intake button.pea-day {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  min-height: 44px;
+  height: auto;
+  padding: 0;
+  margin: 0;
+  border-radius: 0;
+  box-shadow: none;
+  line-height: 1.2;
+  letter-spacing: normal;
+  text-transform: none;
+}
+body.page-id-2129 #pea-intake .pea-day-blank {
+  min-width: 0;
+  min-height: 44px;
+}
+</style>
+<script>
+(function () {
+  function alignBookingWeekdays() {
+    if (!document.body.classList.contains('page-id-2129')) return;
+    var weekdays = document.querySelector('#pea-intake .pea-weekdays');
+    if (!weekdays) return;
+    // Elementor's text editor can flatten the original inline labels into one text node.
+    weekdays.textContent = '';
+    ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'].forEach(function (label) {
+      var cell = document.createElement('span');
+      cell.textContent = label;
+      weekdays.appendChild(cell);
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', alignBookingWeekdays, { once: true });
+  } else {
+    alignBookingWeekdays();
+  }
+})();
+</script>

@@ -37,7 +37,7 @@ export async function POST(
   const supabase = getSupabaseAdmin()
   const { data: prospect, error: prospectError } = await supabase
     .from('public_intake_prospects')
-    .select('id, first_name, last_name, birth_date, email, phone, waiting_list_client_id')
+    .select('id, first_name, last_name, birth_date, email, phone, requester_names, service_address, service_city, service_postal_code, modalities, waiting_list_client_id')
     .eq('id', id).maybeSingle()
   if (prospectError) return NextResponse.json({ error: 'Vérification du dossier impossible.' }, { status: 500 })
   if (!prospect) return NextResponse.json({ error: 'Prospect introuvable.' }, { status: 404 })
@@ -47,9 +47,15 @@ export async function POST(
         client_name: [prospect.first_name, prospect.last_name].filter(Boolean).join(' '),
         birth_date: prospect.birth_date, contact_email: prospect.email, contact_phone: prospect.phone,
         service_requested: 'Psychoéducation',
-      }, 'id, client_name, birth_date, service_requested, contact_email, contact_emails, contact_phone, contact_phones')
+        consultation_reason: consultationReason,
+        first_requester_name: prospect.requester_names?.[0],
+        second_requester_name: prospect.requester_names?.[1],
+        city: [prospect.service_address, prospect.service_city, prospect.service_postal_code]
+          .filter((value) => value != null).join(', '),
+        meeting_modality: prospect.modalities,
+      })
       if (matches.length) return NextResponse.json({
-        error: 'Une fiche correspondante existe déjà dans la liste des clients. Consultez-la avant de créer un nouveau dossier.',
+        error: 'Une demande avec les mêmes renseignements existe déjà dans la liste des clients. Consultez-la avant de créer un nouveau dossier.',
       }, { status: 409 })
     } catch {
       return NextResponse.json({ error: 'Vérification des doublons impossible. Aucun transfert effectué.' }, { status: 500 })
