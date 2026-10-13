@@ -83,6 +83,9 @@ Correction suivante validee et publication autorisee: courriel a deux choix (avi
 et sondage prive), phrase de suivi retiree, test cliquable vers `/satisfaction/test`.
 Le meme formulaire sert au vrai sondage et a la demonstration; le mode test ne
 soumet aucune reponse a l'API. Les vrais liens individuels et le desabonnement sont conserves.
+Le premier bouton Google utilise le vrai lien de la clinique aussi dans le test;
+l'ancien lien `?view=google` redirige vers cette fiche. Courriels marques avec le logo
+PNG fourni (`public/psychoeducaction-email-logo.png`), sans modifier l'image originale.
 
 ## Parcours d'assignation
 1. Un professionnel, ou un gestionnaire autorise dans sa fiche, cree/augmente une demande.

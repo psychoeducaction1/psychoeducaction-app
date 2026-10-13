@@ -334,7 +334,7 @@ export function buildSatisfactionTestLinks(appUrl = 'https://app.psychoeducactio
   if (!/^https?:\/\//.test(origin)) throw new Error('Adresse de test invalide.')
   return {
     response: `${origin}/satisfaction/test`,
-    google: `${origin}/satisfaction/test?view=google`,
+    google: SATISFACTION_GOOGLE_REVIEW_URL,
     unsubscribe: `${origin}/satisfaction/test?view=unsubscribe`,
   }
 }
@@ -358,9 +358,10 @@ export function buildSatisfactionEmail({
   const responseLink = testLinks?.response ?? lienReponse
   const googleLink = testLinks?.google ?? SATISFACTION_GOOGLE_REVIEW_URL
   const unsubscribeLink = testLinks?.unsubscribe ?? lienDesabonnement
+  const logoUrl = new URL('/psychoeducaction-email-logo.png', testAppUrl ?? 'https://app.psychoeducaction.com').href
 
   const text = [
-    ...(test ? ['COURRIEL TEST — les liens ouvrent une démonstration. Aucune réponse, aucun avis Google ni désabonnement réel ne sera enregistré.', ''] : []),
+    ...(test ? ['COURRIEL TEST — le premier bouton ouvre la vraie fiche Google. Le sondage privé et le désabonnement sont en démonstration, sans enregistrement réel.', ''] : []),
     `Bonjour ${destinatairePrenom},`,
     '',
     'Vous ou votre proche avez reçu des services à la Clinique PsychoÉducAction. Vous pouvez partager votre expérience de deux façons :',
@@ -385,8 +386,9 @@ export function buildSatisfactionEmail({
   const html = [
     '<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:24px 12px;background:#fbf7f1;font-family:Arial,sans-serif;color:#332820;line-height:1.6;">',
     '<div style="max-width:580px;margin:auto;background:#fffdf9;border:1px solid #eadfd2;border-radius:20px;padding:28px;">',
-    ...(test ? ['<p style="padding:12px;background:#fff0d9;border-radius:8px;font-weight:bold;">TEST — les liens ouvrent une démonstration. Aucune réponse, aucun avis Google ni désabonnement réel ne sera enregistré.</p>'] : []),
-    '<p style="color:#9b6a3d;font-size:13px;font-weight:bold;">CLINIQUE PSYCHOÉDUCACTION</p><h1 style="font-size:24px;line-height:1.3;">Votre avis compte pour nous</h1>',
+    `<img src="${escapeHtml(logoUrl)}" alt="Clinique PsychoÉducAction" width="220" height="220" style="display:block;width:220px;max-width:100%;height:auto;margin:0 auto;" />`,
+    ...(test ? ['<p style="padding:12px;background:#fff0d9;border-radius:8px;font-weight:bold;">TEST — le premier bouton ouvre la vraie fiche Google. Le sondage privé et le désabonnement sont en démonstration, sans enregistrement réel.</p>'] : []),
+    '<h1 style="font-size:24px;line-height:1.3;">Votre avis compte pour nous</h1>',
     `<p>Bonjour ${escapeHtml(destinatairePrenom)},</p>`,
     '<p>Vous ou votre proche avez reçu des services à la Clinique PsychoÉducAction. Vous pouvez partager votre expérience de deux façons :</p>',
     '<h2 style="font-size:18px;margin-top:24px;">Un avis public sur Google</h2>',

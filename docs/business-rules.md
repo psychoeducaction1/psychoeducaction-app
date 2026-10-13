@@ -178,13 +178,16 @@ Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workfl
   Recherche sans accents/casse, filtres de professionnel/statut et suivi des reponses.
   Confirmation du destinataire avant envoi reel; aucun envoi automatique a l'import.
   Courriel test: super administrateur uniquement, confirmation et adresse explicites,
-  meme modele HTML, liens de demonstration vers `/satisfaction/test`, aucune ecriture
+  meme modele HTML avec le logo PNG fourni et heberge dans `public`. Premier bouton
+  vers la vraie fiche Google, y compris dans le test; deuxieme vers le sondage prive
+  (demonstration sur `/satisfaction/test` pour un test), aucune ecriture de test
   dans les imports/envois/reponses. Le formulaire partage simule la soumission en mode
   test sans appeler l'API de reponse.
   Le courriel distingue deux choix offerts a tous: avis Google public et sondage prive
   (note globale et commentaire facultatif), sans filtrer selon la satisfaction.
-  Les liens de demonstration Google/desabonnement expliquent le parcours sans publier
-  d'avis ni changer les preferences. La phrase « Votre suivi avec » est retiree.
+  L'ancien lien de demonstration Google redirige vers la vraie fiche; le desabonnement
+  reste simule dans le test. Aucune publication automatique d'avis Google.
+  La phrase « Votre suivi avec » est retiree.
 - Fichiers marketing prives, accessibles par URL signee temporaire.
 
 ## Limites a verifier avant une evolution

@@ -41,7 +41,7 @@ test('dates Excel natives et dates impossibles: validation sans décalage ni ide
   assert.equal(validateSatisfactionEncounters([{ ...encounters('Camille', 1)[0], clientNomNormalise: 'spoofed' }])?.[0].clientNomNormalise, 'camille')
   assert.equal(validateSatisfactionEncounters([{ date: '2026-03-10' }]), null)
 })
-test('le courriel distingue avis Google public et sondage privé; le test utilise seulement des liens de démonstration', () => {
+test('le test garde le vrai bouton Google en premier, un sondage privé de démonstration en deuxième et le logo fourni', () => {
   const message = buildSatisfactionEmail({ destinatairePrenom: '<script>Exemple</script>', professionnel: 'Professionnel fictif',
     lienReponse: 'https://fixture.example.invalid/secret-response', lienDesabonnement: 'https://fixture.example.invalid/secret-unsubscribe', test: true,
     testAppUrl: 'https://fixture.example.invalid/direction/' })
@@ -49,19 +49,23 @@ test('le courriel distingue avis Google public et sondage privé; le test utilis
   assert.match(message.html, /TEST/)
   assert.match(message.html, /&lt;script&gt;/)
   assert.match(message.html, /href="https:\/\/fixture.example.invalid\/satisfaction\/test"/)
-  assert.match(message.html, /view=google/)
+  assert.ok(message.html.includes(SATISFACTION_GOOGLE_REVIEW_URL))
+  const links = [...message.html.matchAll(/href="([^"]+)"/g)].map(match => match[1])
+  assert.equal(links[0], SATISFACTION_GOOGLE_REVIEW_URL)
+  assert.equal(links[1], 'https://fixture.example.invalid/satisfaction/test')
+  assert.match(message.html, /<img src="https:\/\/fixture.example.invalid\/psychoeducaction-email-logo.png" alt="Clinique PsychoÉducAction"/)
+  assert.doesNotMatch(message.html, /view=google|CLINIQUE PSYCHOÉDUCACTION<\/p>/)
   assert.match(message.html, /view=unsubscribe/)
   assert.match(message.html, /Un avis public sur Google/)
   assert.match(message.html, /Un sondage privé pour la clinique/)
   assert.doesNotMatch(message.html, /secret-response|secret-unsubscribe|<script>|Votre suivi avec|Professionnel fictif/)
-  assert.doesNotMatch(message.html, /g.page/)
   assert.doesNotMatch(message.text, /secret-response|secret-unsubscribe/)
   const real = buildSatisfactionEmail({ destinatairePrenom: 'Exemple', lienReponse: 'https://fixture.example.invalid/response', lienDesabonnement: 'https://fixture.example.invalid/unsubscribe' })
   assert.match(real.html, /href="https:\/\/fixture.example.invalid\/response"/)
   assert.ok(real.html.includes(SATISFACTION_GOOGLE_REVIEW_URL))
   assert.doesNotMatch(real.subject, /TEST/)
   assert.deepEqual(buildSatisfactionTestLinks('http://localhost:3120/direction'), {
-    response: 'http://localhost:3120/satisfaction/test', google: 'http://localhost:3120/satisfaction/test?view=google',
+    response: 'http://localhost:3120/satisfaction/test', google: SATISFACTION_GOOGLE_REVIEW_URL,
     unsubscribe: 'http://localhost:3120/satisfaction/test?view=unsubscribe',
   })
   assert.throws(() => buildSatisfactionTestLinks('javascript:alert(1)'))

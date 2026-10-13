@@ -12,7 +12,7 @@ export function TestEmailPanel({ authedFetch }: { authedFetch: (path: string, op
     lienReponse: '', lienDesabonnement: '', test: true,
     testAppUrl: typeof window === 'undefined' ? undefined : window.location.origin })
   async function send() {
-    if (sending || !window.confirm(`Envoyer uniquement ce courriel TEST à ${email} ?\n\nAucun client ne sera sollicité. Les liens ouvrent une démonstration et aucun résultat réel ne sera enregistré.`)) return
+    if (sending || !window.confirm(`Envoyer uniquement ce courriel TEST à ${email} ?\n\nLe bouton Google ouvre la vraie fiche de la clinique. Le sondage privé et le désabonnement sont en démonstration. Aucun client ne sera sollicité.`)) return
     setSending(true); setMessage(''); setError('')
     try {
       const response = await authedFetch('/api/satisfaction/test', { method: 'POST', body: JSON.stringify({ email, name, confirm: true }) })
@@ -22,7 +22,7 @@ export function TestEmailPanel({ authedFetch }: { authedFetch: (path: string, op
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'Envoi test impossible.') }
     finally { setSending(false) }
   }
-  return <div className="mt-6"><SectionCard title="Courriel test et aperçu" description="Validez le courriel et ses liens sur votre propre adresse. Les liens ouvrent une démonstration : aucun résultat réel n’est enregistré.">
+  return <div className="mt-6"><SectionCard title="Courriel test et aperçu" description="Le premier bouton ouvre la vraie fiche Google. Le deuxième ouvre le sondage privé en démonstration, sans fausser les statistiques.">
     <div className="mt-3 grid gap-3 sm:grid-cols-2">
       <label className="text-sm">Adresse de test<input type="email" className={input} value={email} onChange={e => setEmail(e.target.value)} /></label>
       <label className="text-sm">Nom de démonstration<input className={input} value={name} onChange={e => setName(e.target.value)} /></label>

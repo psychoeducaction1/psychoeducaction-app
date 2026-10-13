@@ -134,7 +134,7 @@ export function SatisfactionSurvey({ token, demo = false }: { token?: string; de
                 voici notre fiche Google :
               </p>
               <a
-                href={demo ? '/satisfaction/test?view=google' : SATISFACTION_GOOGLE_REVIEW_URL}
+                href={SATISFACTION_GOOGLE_REVIEW_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-3 inline-block rounded-xl bg-[#9b6a3d] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#7d5527]"
