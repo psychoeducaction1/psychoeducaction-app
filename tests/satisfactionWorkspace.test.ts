@@ -3,7 +3,7 @@ import test from 'node:test'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { analyzeSatisfactionImport, isSatisfactionDate, matchesSatisfactionSearch, validateSatisfactionEncounters } from '../lib/satisfactionWorkspace.ts'
-import { buildSatisfactionEmail, parseSatisfactionDate } from '../lib/satisfaction.ts'
+import { buildSatisfactionEmail, buildSatisfactionTestLinks, parseSatisfactionDate, SATISFACTION_GOOGLE_REVIEW_URL } from '../lib/satisfaction.ts'
 
 const encounters = (name: string, count: number) => Array.from({ length: count }, (_, i) => ({
   clientNom: name, clientNomNormalise: name.toLowerCase(), requerantNom: null,
@@ -41,17 +41,30 @@ test('dates Excel natives et dates impossibles: validation sans décalage ni ide
   assert.equal(validateSatisfactionEncounters([{ ...encounters('Camille', 1)[0], clientNomNormalise: 'spoofed' }])?.[0].clientNomNormalise, 'camille')
   assert.equal(validateSatisfactionEncounters([{ date: '2026-03-10' }]), null)
 })
-test('le courriel test affiche le même modèle, sans lien ni jeton permettant une action réelle', () => {
-  const message = buildSatisfactionEmail({ destinatairePrenom: 'Exemple', professionnel: '<script>fictif</script>',
-    lienReponse: 'https://fixture.example.invalid/secret-response', lienDesabonnement: 'https://fixture.example.invalid/secret-unsubscribe', test: true })
+test('le courriel distingue avis Google public et sondage privé; le test utilise seulement des liens de démonstration', () => {
+  const message = buildSatisfactionEmail({ destinatairePrenom: '<script>Exemple</script>', professionnel: 'Professionnel fictif',
+    lienReponse: 'https://fixture.example.invalid/secret-response', lienDesabonnement: 'https://fixture.example.invalid/secret-unsubscribe', test: true,
+    testAppUrl: 'https://fixture.example.invalid/direction/' })
   assert.match(message.subject, /^\[TEST\]/)
   assert.match(message.html, /TEST/)
   assert.match(message.html, /&lt;script&gt;/)
-  assert.doesNotMatch(message.html, /href=|secret-response|secret-unsubscribe|<script>/)
+  assert.match(message.html, /href="https:\/\/fixture.example.invalid\/satisfaction\/test"/)
+  assert.match(message.html, /view=google/)
+  assert.match(message.html, /view=unsubscribe/)
+  assert.match(message.html, /Un avis public sur Google/)
+  assert.match(message.html, /Un sondage privé pour la clinique/)
+  assert.doesNotMatch(message.html, /secret-response|secret-unsubscribe|<script>|Votre suivi avec|Professionnel fictif/)
+  assert.doesNotMatch(message.html, /g.page/)
   assert.doesNotMatch(message.text, /secret-response|secret-unsubscribe/)
   const real = buildSatisfactionEmail({ destinatairePrenom: 'Exemple', lienReponse: 'https://fixture.example.invalid/response', lienDesabonnement: 'https://fixture.example.invalid/unsubscribe' })
   assert.match(real.html, /href="https:\/\/fixture.example.invalid\/response"/)
+  assert.ok(real.html.includes(SATISFACTION_GOOGLE_REVIEW_URL))
   assert.doesNotMatch(real.subject, /TEST/)
+  assert.deepEqual(buildSatisfactionTestLinks('http://localhost:3120/direction'), {
+    response: 'http://localhost:3120/satisfaction/test', google: 'http://localhost:3120/satisfaction/test?view=google',
+    unsubscribe: 'http://localhost:3120/satisfaction/test?view=unsubscribe',
+  })
+  assert.throws(() => buildSatisfactionTestLinks('javascript:alert(1)'))
 })
 test('vraies API satisfaction: dates automatiques, import vide visible, résultats et test isolé', () => {
   const result = spawnSync(process.execPath, ['--import', new URL('./register-aliases.mjs', import.meta.url).href,

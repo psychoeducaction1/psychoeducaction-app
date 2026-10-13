@@ -327,35 +327,56 @@ export function resolveUniqueSatisfactionRecipients(
  * Construit le courriel d'invitation au sondage (texte + HTML).
  * Utilisé à l'identique pour l'aperçu côté direction et pour l'envoi.
  */
+export const SATISFACTION_GOOGLE_REVIEW_URL = 'https://g.page/r/CVVLMQwVgjl_EAE/review'
+
+export function buildSatisfactionTestLinks(appUrl = 'https://app.psychoeducaction.com') {
+  const origin = new URL(appUrl).origin
+  if (!/^https?:\/\//.test(origin)) throw new Error('Adresse de test invalide.')
+  return {
+    response: `${origin}/satisfaction/test`,
+    google: `${origin}/satisfaction/test?view=google`,
+    unsubscribe: `${origin}/satisfaction/test?view=unsubscribe`,
+  }
+}
+
 export function buildSatisfactionEmail({
   destinatairePrenom,
   lienReponse,
   lienDesabonnement,
-  professionnel,
   test = false,
+  testAppUrl,
 }: {
   destinatairePrenom: string
   lienReponse: string
   lienDesabonnement: string
   professionnel?: string | null
   test?: boolean
+  testAppUrl?: string
 }): SatisfactionEmailContent {
   const subject = `${test ? '[TEST] ' : ''}Votre avis compte pour nous — Clinique PsychoÉducAction`
+  const testLinks = test ? buildSatisfactionTestLinks(testAppUrl) : null
+  const responseLink = testLinks?.response ?? lienReponse
+  const googleLink = testLinks?.google ?? SATISFACTION_GOOGLE_REVIEW_URL
+  const unsubscribeLink = testLinks?.unsubscribe ?? lienDesabonnement
 
   const text = [
-    ...(test ? ['COURRIEL TEST — présentation seulement. Réponse et désabonnement désactivés.', ''] : []),
+    ...(test ? ['COURRIEL TEST — les liens ouvrent une démonstration. Aucune réponse, aucun avis Google ni désabonnement réel ne sera enregistré.', ''] : []),
     `Bonjour ${destinatairePrenom},`,
     '',
-    "Vous ou votre proche avez bénéficié de services à la Clinique PsychoÉducAction, et votre opinion nous est précieuse.",
-    ...(professionnel ? [`Votre suivi avec ${professionnel}.`] : []),
+    'Vous ou votre proche avez reçu des services à la Clinique PsychoÉducAction. Vous pouvez partager votre expérience de deux façons :',
     '',
-    "Prenez une minute pour nous dire comment s'est déroulée votre expérience :",
-    test ? '[Bouton de démonstration : Répondre au sondage]' : lienReponse,
+    'LAISSER UN AVIS SUR GOOGLE',
+    'Partagez une note et, si vous le souhaitez, un commentaire public sur Google.',
+    googleLink,
+    '',
+    'RÉPONDRE AU SONDAGE PRIVÉ',
+    'Indiquez votre niveau de satisfaction et partagez vos commentaires ou suggestions avec notre équipe. Ces réponses ne sont pas publiées sur Google.',
+    responseLink,
     '',
     "Merci de contribuer à l'amélioration de nos services.",
     '',
     'Si vous ne souhaitez plus recevoir ces invitations, vous pouvez vous désabonner ici :',
-    test ? '[Désabonnement désactivé pour ce test]' : lienDesabonnement,
+    unsubscribeLink,
     '',
     "— L'équipe de la Clinique PsychoÉducAction",
     'www.psychoeducaction.com',
@@ -364,16 +385,18 @@ export function buildSatisfactionEmail({
   const html = [
     '<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:24px 12px;background:#fbf7f1;font-family:Arial,sans-serif;color:#332820;line-height:1.6;">',
     '<div style="max-width:580px;margin:auto;background:#fffdf9;border:1px solid #eadfd2;border-radius:20px;padding:28px;">',
-    ...(test ? ['<p style="padding:12px;background:#fff0d9;border-radius:8px;font-weight:bold;">TEST — présentation seulement. Aucun résultat réel ne sera enregistré.</p>'] : []),
+    ...(test ? ['<p style="padding:12px;background:#fff0d9;border-radius:8px;font-weight:bold;">TEST — les liens ouvrent une démonstration. Aucune réponse, aucun avis Google ni désabonnement réel ne sera enregistré.</p>'] : []),
     '<p style="color:#9b6a3d;font-size:13px;font-weight:bold;">CLINIQUE PSYCHOÉDUCACTION</p><h1 style="font-size:24px;line-height:1.3;">Votre avis compte pour nous</h1>',
     `<p>Bonjour ${escapeHtml(destinatairePrenom)},</p>`,
-    `<p>Vous ou votre proche avez bénéficié de services à la Clinique PsychoÉducAction, et votre opinion nous est précieuse.</p>`,
-    ...(professionnel ? [`<p>Votre suivi avec <strong>${escapeHtml(professionnel)}</strong>.</p>`] : []),
-    `<p>Prenez une minute pour nous dire comment s'est déroulée votre expérience :</p>`,
-    `<p>${test ? '<span' : `<a href="${escapeHtml(lienReponse)}"`} style="display:inline-block;padding:12px 24px;background-color:#9b6a3d;color:#ffffff;text-decoration:none;border-radius:12px;font-weight:600;">Répondre au sondage${test ? '</span>' : '</a>'}</p>`,
-    ...(test ? ['<p style="font-size:13px;">Le bouton et le désabonnement sont désactivés dans ce courriel test.</p>'] : []),
+    '<p>Vous ou votre proche avez reçu des services à la Clinique PsychoÉducAction. Vous pouvez partager votre expérience de deux façons :</p>',
+    '<h2 style="font-size:18px;margin-top:24px;">Un avis public sur Google</h2>',
+    '<p>Partagez une note et, si vous le souhaitez, un commentaire public sur Google.</p>',
+    `<p><a href="${escapeHtml(googleLink)}" style="display:inline-block;padding:12px 24px;background-color:#9b6a3d;color:#ffffff;text-decoration:none;border-radius:12px;font-weight:600;">Laisser un avis sur Google</a></p>`,
+    '<h2 style="font-size:18px;margin-top:24px;">Un sondage privé pour la clinique</h2>',
+    '<p>Indiquez votre niveau de satisfaction et partagez vos commentaires ou suggestions avec notre équipe. Ces réponses ne sont pas publiées sur Google.</p>',
+    `<p><a href="${escapeHtml(responseLink)}" style="display:inline-block;padding:12px 24px;background-color:#9b6a3d;color:#ffffff;text-decoration:none;border-radius:12px;font-weight:600;">Répondre au sondage privé</a></p>`,
     `<p>Merci de contribuer à l'amélioration de nos services.</p>`,
-    `<p style="font-size:12px;color:#8a6f5d;">Si vous ne souhaitez plus recevoir ces invitations, vous pouvez ${test ? 'vous désabonner ici (désactivé pour le test)' : `<a href="${escapeHtml(lienDesabonnement)}">vous désabonner ici</a>`}.</p>`,
+    `<p style="font-size:12px;color:#8a6f5d;">Si vous ne souhaitez plus recevoir ces invitations, vous pouvez <a href="${escapeHtml(unsubscribeLink)}">vous désabonner ici</a>.</p>`,
     `<p>— L'équipe de la Clinique PsychoÉducAction<br/>www.psychoeducaction.com</p>`,
     '</div></body></html>',
   ].join('\n')

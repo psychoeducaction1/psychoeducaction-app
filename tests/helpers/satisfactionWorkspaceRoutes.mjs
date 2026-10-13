@@ -21,6 +21,7 @@ registerHooks({ resolve(s, c, next) {
 const { NextRequest } = await import('next/server.js')
 const importApi = await import('../../app/api/satisfaction/import/route.ts')
 const testApi = await import('../../app/api/satisfaction/test/route.ts')
+const respondApi = await import('../../app/api/satisfaction/respond/route.ts')
 const fresh = tables => current = { authorized: false, privateAccess: 0, emails: [], stub: createSupabaseStub(tables) }
 const encounters = Array.from({ length: 4 }, (_, i) => ({ clientNom: 'Camille Fictive', clientNomNormalise: 'forged',
   requerantNom: null, professionnel: 'Professionnel fictif', date: `2026-03-${10 + i}` }))
@@ -64,9 +65,28 @@ for (const payload of [{}, { email: 'fixture@example.invalid', name: 'Exemple' }
   assert.equal(response.status, 400); assert.equal(current.emails.length, 0)
 }
 fresh({})
+process.env.NEXT_PUBLIC_APP_URL = 'https://fixture.example.invalid'
 response = await testApi.POST(new NextRequest('https://fixture.example.invalid/api/satisfaction/test', { method: 'POST', body: JSON.stringify({ email: 'fixture@example.invalid', name: 'Exemple Fictif', professionnel: 'Professionnel fictif', confirm: true }) }))
 assert.equal(response.status, 200); assert.equal(current.privateAccess, 0); assert.equal(current.emails.length, 1)
 assert.equal(current.emails[0].to, 'fixture@example.invalid'); assert.match(current.emails[0].subject, /^\[TEST\]/)
-assert.doesNotMatch(current.emails[0].html, /href=/)
+assert.match(current.emails[0].html, /href="https:\/\/fixture.example.invalid\/satisfaction\/test"/)
+assert.doesNotMatch(current.emails[0].html, /satisfaction\/reponse\/|api\/satisfaction\/unsubscribe|g.page/)
+assert.doesNotMatch(current.emails[0].html, /Votre suivi avec/)
 assert.deepEqual(current.stub.rows('satisfaction_eligibles'), [])
 assert.deepEqual(current.stub.rows('satisfaction_imports'), [])
+
+// Le vrai sondage conserve note/commentaire en privé; un jeton invalide ou un retry ne crée rien.
+fresh({ satisfaction_eligibles: [{ id: 'fixture-eligible', jeton_reponse: 'fixture-response-token', destinataire_nom: 'Exemple Fictif' }], satisfaction_reponses: [] })
+current.authorized = true // accès serveur simulé pour les routes publiques par jeton
+response = await respondApi.GET(new NextRequest('https://fixture.example.invalid/api/satisfaction/respond?token=fixture-response-token'))
+assert.equal(response.status, 200); assert.equal((await response.json()).alreadyResponded, false)
+response = await respondApi.POST(new NextRequest('https://fixture.example.invalid/api/satisfaction/respond', { method: 'POST', body: JSON.stringify({ token: 'fixture-response-token', note: 2, commentaire: 'Commentaire fictif' }) }))
+assert.equal(response.status, 200)
+assert.equal(current.stub.rows('satisfaction_reponses')[0].note, 2)
+assert.equal(current.stub.rows('satisfaction_reponses')[0].commentaire, 'Commentaire fictif')
+for (const [token, status] of [['fixture-response-token', 409], ['invalid-fixture-token', 404]]) {
+  response = await respondApi.POST(new NextRequest('https://fixture.example.invalid/api/satisfaction/respond', { method: 'POST', body: JSON.stringify({ token, note: 5 }) }))
+  assert.equal(response.status, status)
+}
+assert.equal(current.stub.rows('satisfaction_reponses').length, 1)
+assert.equal(current.emails.length, 0)

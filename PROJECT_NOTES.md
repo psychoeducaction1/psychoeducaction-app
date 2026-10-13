@@ -71,7 +71,7 @@ pas une verification des migrations, variables ou balises presentes en productio
 Satisfaction: ameliorations validees et publication autorisee le 13 octobre 2026:
 periode automatique, detail visible meme sans eligible, analyse des exclusions,
 recherche/filtres, suivi des reponses et aperçu du modele HTML. Envoi test distinct,
-reserve au super administrateur, sans liens actifs ni statistiques metier.
+reserve au super administrateur, sans statistiques metier.
 `supabase/satisfaction-import-analysis.sql` applique avec autorisation en production;
 les anciens imports n'ont pas de detail retroactif des exclusions.
 Controles locaux termines: `npm run check:full` (154 tests), apercu bureau/mobile
@@ -79,6 +79,10 @@ sur fixtures et migration testee en memoire. Nouvelle colonne JSONB verifiee apr
 commit SQL, empreintes des donnees et des dix politiques RLS inchangees.
 La cle Resend protegee dans Vercel doit rester sur le serveur; l'API de test distincte
 permet un envoi autorise sans importer de faux clients ni fausser les statistiques.
+Correction suivante validee et publication autorisee: courriel a deux choix (avis Google public
+et sondage prive), phrase de suivi retiree, test cliquable vers `/satisfaction/test`.
+Le meme formulaire sert au vrai sondage et a la demonstration; le mode test ne
+soumet aucune reponse a l'API. Les vrais liens individuels et le desabonnement sont conserves.
 
 ## Parcours d'assignation
 1. Un professionnel, ou un gestionnaire autorise dans sa fiche, cree/augmente une demande.

@@ -43,6 +43,13 @@ Un test de fetch doit simuler et restaurer son mock explicitement.
 | Satisfaction/suggestions | Tests existants selection, preferences, filtres et destinataires. | RLS, imports anonymises, absence de nouvelle sollicitation. |
 | Satisfaction/imports et tests | `satisfactionWorkspace.test.ts`: dates Excel, analyse/exclusions, recherche, homonymie, vraie API import/detail/reponses et test sans ecriture metier. `restrictedSections.test.ts` couvre aussi l'API de test par role. | Voir sur un import vide/ancien, recherche avec accents, aperçu HTML sur mobile/bureau. Un envoi test exige une adresse explicitement autorisee ; verifier sa livraison, jamais envoyer aux vrais clients pendant les tests. |
 
+Courriel et sondage: tests hors ligne des deux choix distincts (Google public et
+sondage prive), echappement HTML et liens de test sans vrais jetons. L'API de reponse
+est exercee sur fixtures: note/commentaire enregistres, jeton invalide refuse et
+retry sans doublon. Apercu local isole: reponse de demonstration terminee sans
+appel API, parcours Google propose apres une note basse et desabonnement simule.
+Le sondage de demonstration ne publie aucun avis et ne modifie aucune preference.
+
 Le 13 octobre 2026, apercu isole des composants Satisfaction avec donnees fictives:
 import vide consultable, periode Excel automatique, recherche sans accents, filtre
 professionnel et tableaux verifies sur bureau et mobile (390 px). Aucun debordement

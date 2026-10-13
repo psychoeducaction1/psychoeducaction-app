@@ -10,13 +10,13 @@ export async function POST(request: NextRequest) {
     { email?: unknown; name?: unknown; professionnel?: unknown; confirm?: unknown } | null
   const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : ''
   const name = typeof body?.name === 'string' ? body.name.trim().slice(0, 200) : ''
-  const professionnel = typeof body?.professionnel === 'string' ? body.professionnel.trim().slice(0, 200) : ''
   if (body?.confirm !== true || !name || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return NextResponse.json({ error: 'Indiquez le nom et une adresse valide, puis confirmez cet envoi test.' }, { status: 400 })
   }
-  const message = buildSatisfactionEmail({ destinatairePrenom: getFirstName(name), professionnel,
-    lienReponse: '', lienDesabonnement: '', test: true })
   try {
+    const message = buildSatisfactionEmail({ destinatairePrenom: getFirstName(name),
+      lienReponse: '', lienDesabonnement: '', test: true,
+      testAppUrl: process.env.NEXT_PUBLIC_APP_URL || 'https://app.psychoeducaction.com' })
     await sendResendEmail({ to: email, ...message })
     return NextResponse.json({ success: true })
   } catch {
