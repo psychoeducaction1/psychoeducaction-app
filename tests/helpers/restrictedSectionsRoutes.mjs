@@ -28,9 +28,10 @@ globalThis.__restrictedSectionsCreateClient = (_url, key) => {
     privateAccesses++
     return {
       from(table) {
-        assert.equal(table, 'satisfaction_eligibles')
+        assert.ok(['satisfaction_eligibles', 'satisfaction_imports'].includes(table))
         return {
           select() { return this }, eq() { return this },
+          maybeSingle() { return Promise.resolve({ data: { id: 'fixture-import', analysis: null }, error: null }) },
           order() { return Promise.resolve({ data: [], error: null }) },
         }
       },
@@ -72,6 +73,7 @@ registerHooks({
 const { NextRequest } = await import('next/server.js')
 const satisfactionImport = await import('../../app/api/satisfaction/import/route.ts')
 const satisfactionSend = await import('../../app/api/satisfaction/send/route.ts')
+const satisfactionTest = await import('../../app/api/satisfaction/test/route.ts')
 const acquisition = await import('../../app/api/direction/acquisition/route.ts')
 const acquisitionSync = await import('../../app/api/direction/acquisition/sync/route.ts')
 
@@ -80,6 +82,7 @@ for (const [path, method, handler, allowedStatus] of [
   ['/api/satisfaction/import', 'POST', satisfactionImport.POST, 400],
   ['/api/satisfaction/import', 'PATCH', satisfactionImport.PATCH, 400],
   ['/api/satisfaction/send', 'POST', satisfactionSend.POST, 400],
+  ['/api/satisfaction/test', 'POST', satisfactionTest.POST, 400],
   ['/api/direction/acquisition', 'GET', acquisition.GET, 400],
   ['/api/direction/acquisition', 'POST', acquisition.POST, 400],
   ['/api/direction/acquisition/sync', 'POST', acquisitionSync.POST, 200],

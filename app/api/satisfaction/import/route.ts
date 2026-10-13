@@ -3,11 +3,12 @@ import { getSuperAdminContext } from '@/lib/superAdminServer'
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
 import {
   buildEligibleList,
+  detectEncounterPeriod,
   generateSatisfactionToken,
   groupEncountersByClient,
   resolveUniqueSatisfactionRecipients,
-  type SatisfactionEncounter,
 } from '@/lib/satisfaction'
+import { analyzeSatisfactionImport, isSatisfactionDate, validateSatisfactionEncounters } from '@/lib/satisfactionWorkspace'
 
 function jsonResponse(body: object, status: number) {
   return NextResponse.json(body, { status })
@@ -18,9 +19,7 @@ function normalizeText(value: unknown) {
 }
 
 function isValidDateString(value: string) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
-  const parsed = new Date(`${value}T00:00:00`)
-  return !Number.isNaN(parsed.getTime())
+  return isSatisfactionDate(value)
 }
 
 function isValidEmail(value: string) {
@@ -104,16 +103,15 @@ export async function POST(request: NextRequest) {
     return jsonResponse({ error: 'Body JSON invalide.' }, 400)
   }
 
-  const encounters = Array.isArray(body.encounters)
-    ? (body.encounters as SatisfactionEncounter[])
-    : []
-  const periodStart = normalizeText(body.periodStart)
-  const periodEnd = normalizeText(body.periodEnd)
+  const encounters = validateSatisfactionEncounters(body.encounters)
+  const detectedPeriod = encounters ? detectEncounterPeriod(encounters) : null
+  const periodStart = normalizeText(body.periodStart) || detectedPeriod?.start || ''
+  const periodEnd = normalizeText(body.periodEnd) || detectedPeriod?.end || ''
   const fileName = normalizeText(body.fileName)
 
-  if (encounters.length === 0) {
+  if (!encounters) {
     return jsonResponse(
-      { error: 'Aucune rencontre à analyser. Vérifiez le fichier importé.' },
+      { error: 'Rencontres absentes ou invalides. Vérifiez les noms et les dates du fichier importé.' },
       400
     )
   }
@@ -169,6 +167,7 @@ export async function POST(request: NextRequest) {
         emails: getContactEmails(row),
       })
     )
+    const analysis = analyzeSatisfactionImport(encounters, periodStart, periodEnd, alreadySolicited, unsubscribed, contactRows)
 
     const { data: importRow, error: importError } = await supabaseAdmin
       .from('satisfaction_imports')
@@ -178,11 +177,17 @@ export async function POST(request: NextRequest) {
         period_end: periodEnd,
         row_count: encounters.length,
         file_name: fileName || null,
+        analysis,
       })
       .select('id, imported_at, period_start, period_end, row_count, file_name')
       .single()
 
-    if (importError) throw importError
+    if (importError) {
+      if (['PGRST204', '42703'].includes(importError.code)) {
+        return jsonResponse({ error: 'La mise à jour du module doit être terminée avant un nouvel import.' }, 503)
+      }
+      throw importError
+    }
 
     const eligibleInserts = eligibleGroups.map((group) => {
       const match = resolveUniqueSatisfactionRecipients(
@@ -252,11 +257,12 @@ export async function POST(request: NextRequest) {
         import: importRow,
         eligibles,
         missingEmailCount,
+        analysis,
       },
       200
     )
   } catch (error) {
-    console.error('[satisfaction-import] Erreur:', error)
+    console.error('[satisfaction-import] Erreur:', { code: error && typeof error === 'object' && 'code' in error ? error.code : 'UNKNOWN' })
     return jsonResponse(
       {
         error:
@@ -289,6 +295,10 @@ export async function GET(request: NextRequest) {
 
   try {
     if (importId) {
+      const { data: importRow, error: importError } = await supabaseAdmin
+        .from('satisfaction_imports').select('*').eq('id', importId).maybeSingle()
+      if (importError) throw importError
+      if (!importRow) return jsonResponse({ error: 'Import introuvable.' }, 404)
       const { data: eligibles, error } = await supabaseAdmin
         .from('satisfaction_eligibles')
         .select(
@@ -298,8 +308,19 @@ export async function GET(request: NextRequest) {
         .order('destinataire_nom', { ascending: true })
 
       if (error) throw error
-
-      return jsonResponse({ eligibles: eligibles ?? [] }, 200)
+      const ids = (eligibles ?? []).map(row => row.id)
+      const responses = ids.length ? await supabaseAdmin.from('satisfaction_reponses')
+        .select('eligible_id, note, commentaire, repondu_le').in('eligible_id', ids) : { data: [], error: null }
+      const sends = ids.length ? await supabaseAdmin.from('satisfaction_envois')
+        .select('eligible_id, statut, envoye_le, erreur').in('eligible_id', ids)
+        .order('envoye_le', { ascending: false }) : { data: [], error: null }
+      if (responses.error) throw responses.error
+      if (sends.error) throw sends.error
+      return jsonResponse({ import: importRow, analysis: importRow.analysis ?? null,
+        eligibles: (eligibles ?? []).map(row => ({ ...row,
+          reponse: responses.data?.find(response => response.eligible_id === row.id) ?? null,
+          dernier_envoi: sends.data?.find(send => send.eligible_id === row.id) ?? null,
+        })) }, 200)
     }
 
     const { data: imports, error: importsError } = await supabaseAdmin
@@ -374,7 +395,7 @@ export async function GET(request: NextRequest) {
       200
     )
   } catch (error) {
-    console.error('[satisfaction-import] Erreur lecture:', error)
+    console.error('[satisfaction-import] Erreur lecture:', { code: error && typeof error === 'object' && 'code' in error ? error.code : 'UNKNOWN' })
     return jsonResponse(
       {
         error:
@@ -482,7 +503,7 @@ export async function PATCH(request: NextRequest) {
 
     return jsonResponse({ success: true, eligible: updated }, 200)
   } catch (error) {
-    console.error('[satisfaction-import] Erreur mise à jour:', error)
+    console.error('[satisfaction-import] Erreur mise à jour:', { code: error && typeof error === 'object' && 'code' in error ? error.code : 'UNKNOWN' })
     return jsonResponse(
       {
         error:

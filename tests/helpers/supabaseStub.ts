@@ -14,8 +14,8 @@ export function createSupabaseStub(
   class Query implements PromiseLike<Result> {
     private filters: Array<(row: Row) => boolean> = []
     private operation: Operation = 'select'
-    private payload: Row = {}
-    private single = false
+    private payload: Row | Row[] = {}
+    private singleRow = false
     private maximum = Infinity
     private offset = 0
     private sort: { column: string; ascending: boolean } | null = null
@@ -43,9 +43,10 @@ export function createSupabaseStub(
     }
     limit(maximum: number) { this.maximum = maximum; return this }
     range(from: number, to: number) { this.offset = from; this.maximum = to - from + 1; return this }
-    insert(payload: Row) { this.operation = 'insert'; this.payload = payload; return this }
+    insert(payload: Row | Row[]) { this.operation = 'insert'; this.payload = payload; return this }
     update(payload: Row) { this.operation = 'update'; this.payload = payload; return this }
-    maybeSingle() { this.single = true; return Promise.resolve(this.execute()) }
+    maybeSingle() { this.singleRow = true; return Promise.resolve(this.execute()) }
+    single() { this.singleRow = true; return Promise.resolve(this.execute()) }
 
     private execute(): Result {
       const failure = failures[`${this.table}:${this.operation}`]
@@ -60,13 +61,13 @@ export function createSupabaseStub(
       }
       selected = selected.slice(this.offset, this.offset + this.maximum)
       if (this.operation === 'insert') {
-        const row = { id: `fixture-${++sequence}`, canceled_at: null, ...this.payload }
-        rows.push(row)
-        selected = [row]
+        selected = (Array.isArray(this.payload) ? this.payload : [this.payload]).map(payload =>
+          ({ id: `fixture-${++sequence}`, canceled_at: null, ...payload }))
+        rows.push(...selected)
       } else if (this.operation === 'update') {
         selected.forEach((row) => Object.assign(row, this.payload))
       }
-      return { data: structuredClone(this.single ? selected[0] ?? null : selected), error: null }
+      return { data: structuredClone(this.singleRow ? selected[0] ?? null : selected), error: null }
     }
 
     then<TResult1 = Result, TResult2 = never>(

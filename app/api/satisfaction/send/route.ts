@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
   const { data: eligible, error: eligibleError } = await supabaseAdmin
     .from('satisfaction_eligibles')
     .select(
-      'id, client_nom, destinataire_nom, destinataire_email, destinataire_emails, statut, jeton_reponse, jeton_desabonnement'
+      'id, client_nom, destinataire_nom, destinataire_email, destinataire_emails, professionnel, statut, jeton_reponse, jeton_desabonnement'
     )
     .eq('id', eligibleId)
     .maybeSingle()
@@ -127,6 +127,7 @@ export async function POST(request: NextRequest) {
     destinatairePrenom: getFirstName(eligible.destinataire_nom),
     lienReponse,
     lienDesabonnement,
+    professionnel: eligible.professionnel,
   })
 
   try {

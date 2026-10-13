@@ -41,6 +41,17 @@ Un test de fetch doit simuler et restaurer son mock explicitement.
 | Paie pro | `payrollCalculation.test.ts`: vrais calculateurs, durees, rapports, seuils, annulations. | DOCX, quantites/totaux, destinataires sans vrai envoi. |
 | Budget/adjointes | `budgetExpenses.test.ts`: bornes, lien paie et types d'heures. | Sauvegarde/remplacement, separation salaires et vacances multimois. |
 | Satisfaction/suggestions | Tests existants selection, preferences, filtres et destinataires. | RLS, imports anonymises, absence de nouvelle sollicitation. |
+| Satisfaction/imports et tests | `satisfactionWorkspace.test.ts`: dates Excel, analyse/exclusions, recherche, homonymie, vraie API import/detail/reponses et test sans ecriture metier. `restrictedSections.test.ts` couvre aussi l'API de test par role. | Voir sur un import vide/ancien, recherche avec accents, aperçu HTML sur mobile/bureau. Un envoi test exige une adresse explicitement autorisee ; verifier sa livraison, jamais envoyer aux vrais clients pendant les tests. |
+
+Le 13 octobre 2026, apercu isole des composants Satisfaction avec donnees fictives:
+import vide consultable, periode Excel automatique, recherche sans accents, filtre
+professionnel et tableaux verifies sur bureau et mobile (390 px). Aucun debordement
+global; les tableaux defilent dans leur cadre. Les routes d'envoi de cet apercu sont
+bloquees. La migration `satisfaction-import-analysis.sql` a ete validee separement
+dans PGlite en memoire: ancien import preserve, analyse valide acceptee, cinq formats
+invalides refuses et reapplication sans perte. Migration ensuite appliquee avec
+autorisation en production: colonne JSONB confirmee apres commit, empreintes des
+donnees et des dix politiques RLS inchangees, ancien import conserve.
 
 Controle cible, en remplacant le fichier si necessaire:
 
@@ -97,6 +108,18 @@ doublon, completion de l'appel et protection du dossier transfere. Transaction a
 Scenario prepare mais non execute au 12 octobre 2026: base de tests non configuree
 et client `psql` non disponible lors de la mise en place.
 
+Le 13 octobre 2026, validation distincte du seul RPC de transfert avec PGlite 0.5.9
+(PostgreSQL 18.6 en memoire), installe temporairement hors des dependances de l'application.
+Schema de colonnes/contraintes relu en production, fixtures fictives uniquement:
+20 scenarios passes (homonymes, champs distincts, doublon identique, retry, cloture des
+appels passes sans toucher les futurs, rollback si audit en echec, role et privileges,
+garde de migration transactionnelle). Cette verification ne remplace pas la suite
+`npm run test:db`, les RLS avec JWT distincts ou la concurrence multi-session.
+La production PostgreSQL 17.6 a ensuite accepte la migration autorisee; empreinte de la
+fonction et droits verifies apres commit, empreintes des donnees inchangees dans la
+transaction, RPC serveur joignable et RPC anonyme refuse. Aucun vrai dossier transfere
+ni courriel envoye. Sauvegarde/restauration de la fonction conservees hors Git.
+
 Pour livrer Prospects et appels, valider en environnement isole les trois onglets,
 les transferts anciens encore stockes comme planifies, les appels passes non traites
 et les futurs appels qui doivent rester planifies. Verifier le transfert et son retry,
@@ -120,7 +143,9 @@ super administrateur et adjointes. Appliquer avec autorisation uniquement le cor
 `supabase/satisfaction-super-admin-access.sql` sur une base existante (apres le schema Satisfaction).
 Il ne modifie aucune donnee. Les tests Node verifient les API et le contrat du SQL, pas son execution.
 Verifier ensuite les cinq tables Satisfaction avec des JWT distincts et le parcours public par jeton;
-aucun envoi reel de courriel sans autorisation. Aucun SQL distant execute pour cette modification.
+aucun envoi reel de courriel sans autorisation. Le 13 octobre 2026, les dix politiques
+super administrateur (dont cinq gates restrictives) et la fonction verifiant l'email
+du JWT ont ete retrouvees en production; la migration d'analyse conserve ces droits.
 
 1. Lire `git status` et le diff; seuls les fichiers attendus doivent changer.
 2. Executer `npm run check:full`. Distinguer avertissements/echecs preexistants et nouveaux.

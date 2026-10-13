@@ -68,6 +68,18 @@ pas une verification des migrations, variables ou balises presentes en productio
 | Acquisition | Attribution des demandes, evenements techniques, depenses Google Ads/Meta selon configuration. |
 | Satisfaction | Import d'activites, seuil de rencontres, courriels individuels, reponse et desabonnement. |
 
+Satisfaction: ameliorations validees et publication autorisee le 13 octobre 2026:
+periode automatique, detail visible meme sans eligible, analyse des exclusions,
+recherche/filtres, suivi des reponses et aperçu du modele HTML. Envoi test distinct,
+reserve au super administrateur, sans liens actifs ni statistiques metier.
+`supabase/satisfaction-import-analysis.sql` applique avec autorisation en production;
+les anciens imports n'ont pas de detail retroactif des exclusions.
+Controles locaux termines: `npm run check:full` (154 tests), apercu bureau/mobile
+sur fixtures et migration testee en memoire. Nouvelle colonne JSONB verifiee apres
+commit SQL, empreintes des donnees et des dix politiques RLS inchangees.
+La cle Resend protegee dans Vercel doit rester sur le serveur; l'API de test distincte
+permet un envoi autorise sans importer de faux clients ni fausser les statistiques.
+
 ## Parcours d'assignation
 1. Un professionnel, ou un gestionnaire autorise dans sa fiche, cree/augmente une demande.
 2. Un client en attente est assigne directement, marque hors plateforme, ou place dans une
@@ -125,8 +137,12 @@ Les ecritures clientes d'assignation ne sont pas toutes transactionnelles.
   Un nom seul ne bloque jamais; les homonymes ou demandes differentes sont autorises.
   Une demande identique ouvre la fiche existante. Les dates/status/priorite sont exclus
   de la comparaison. Le transfert API utilise aussi le motif saisi et les champs inseres.
-  Le RPC de `prospect-direct-waiting-list-transfer.sql` est prepare pour cette meme regle;
-  cette revision n'a pas ete appliquee en production (aucun SQL distant execute).
+  Le RPC de `prospect-direct-waiting-list-transfer.sql` utilise cette meme regle.
+  Revision appliquee avec autorisation explicite dans Supabase le 13 octobre 2026:
+  version precedente sauvegardee, 20 scenarios SQL isoles passes et relecture de la
+  fonction/privileges apres commit. La migration verifie les empreintes des donnees
+  dans sa transaction; aucun dossier existant n'est modifie. API RPC serveur accessible
+  et acces anonyme refuse; aucun vrai transfert n'a ete effectue pour la verification.
 - Formulaire live, Complianz, GTM et comptes publicitaires sont hors du depot;
   les fichiers de reference ne prouvent pas leur configuration effective.
 - Reservation mobile: WPCode 7681 actif (HTML dans l'en-tete), reference

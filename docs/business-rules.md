@@ -169,6 +169,16 @@ Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workfl
 - Satisfaction: au moins quatre rencontres dans la periode importee; correspondance
   unique du client; tous les destinataires autorises du dossier; pas de nouvelle sollicitation
   d'un client deja contacte/desabonne. Les contraintes SQL participent a cette garantie.
+- Satisfaction: periode min/max des rencontres detectee dans Excel et recalculee par
+  l'API si aucune periode explicite n'est fournie. Dates impossibles refusees.
+  Les nouveaux imports conservent l'analyse (rencontres, exclusions, problemes de
+  correspondance) dans `satisfaction_imports.analysis`; migration preparee dans
+  `supabase/satisfaction-import-analysis.sql`, a appliquer avec autorisation.
+  Les anciens imports sans analyse restent consultables, sans inventer leurs exclusions.
+  Recherche sans accents/casse, filtres de professionnel/statut et suivi des reponses.
+  Confirmation du destinataire avant envoi reel; aucun envoi automatique a l'import.
+  Courriel test: super administrateur uniquement, confirmation et adresse explicites,
+  meme modele HTML, liens desactives, aucune ecriture dans les imports/envois/reponses.
 - Fichiers marketing prives, accessibles par URL signee temporaire.
 
 ## Limites a verifier avant une evolution

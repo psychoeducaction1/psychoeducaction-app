@@ -29,7 +29,7 @@ test('parseSatisfactionDate extrait la date du format multi-lignes Psylog', () =
 
 test('parseSatisfactionDate retourne null pour les valeurs invalides', () => {
   assert.equal(parseSatisfactionDate(null), null)
-  assert.equal(parseSatisfactionDate(123), null)
+  assert.equal(parseSatisfactionDate(-123), null)
   assert.equal(parseSatisfactionDate(''), null)
   assert.equal(parseSatisfactionDate('Sans date'), null)
 })

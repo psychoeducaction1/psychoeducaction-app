@@ -35,6 +35,11 @@ export type SatisfactionClientGroup = {
  * Retourne null si aucune date valide n'est trouvée.
  */
 export function parseSatisfactionDate(raw: unknown): string | null {
+  if (raw instanceof Date) return Number.isNaN(raw.getTime()) ? null : raw.toISOString().slice(0, 10)
+  if (typeof raw === 'number' && Number.isFinite(raw) && raw >= 1 && raw < 100000) {
+    const origin = raw < 60 ? Date.UTC(1899, 11, 31) : Date.UTC(1899, 11, 30)
+    return new Date(origin + Math.floor(raw) * 86400000).toISOString().slice(0, 10)
+  }
   if (typeof raw !== 'string') return null
 
   const lines = raw
@@ -46,9 +51,9 @@ export function parseSatisfactionDate(raw: unknown): string | null {
   if (!dateLine) return null
 
   const date = dateLine.slice(0, 10)
-  const parsed = new Date(`${date}T00:00:00`)
+  const parsed = new Date(`${date}T00:00:00Z`)
 
-  if (Number.isNaN(parsed.getTime())) return null
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) return null
 
   return date
 }
@@ -326,38 +331,51 @@ export function buildSatisfactionEmail({
   destinatairePrenom,
   lienReponse,
   lienDesabonnement,
+  professionnel,
+  test = false,
 }: {
   destinatairePrenom: string
   lienReponse: string
   lienDesabonnement: string
+  professionnel?: string | null
+  test?: boolean
 }): SatisfactionEmailContent {
-  const subject = 'Votre avis compte pour nous — Clinique PsychoÉducAction'
+  const subject = `${test ? '[TEST] ' : ''}Votre avis compte pour nous — Clinique PsychoÉducAction`
 
   const text = [
+    ...(test ? ['COURRIEL TEST — présentation seulement. Réponse et désabonnement désactivés.', ''] : []),
     `Bonjour ${destinatairePrenom},`,
     '',
     "Vous ou votre proche avez bénéficié de services à la Clinique PsychoÉducAction, et votre opinion nous est précieuse.",
+    ...(professionnel ? [`Votre suivi avec ${professionnel}.`] : []),
     '',
     "Prenez une minute pour nous dire comment s'est déroulée votre expérience :",
-    lienReponse,
+    test ? '[Bouton de démonstration : Répondre au sondage]' : lienReponse,
     '',
     "Merci de contribuer à l'amélioration de nos services.",
     '',
     'Si vous ne souhaitez plus recevoir ces invitations, vous pouvez vous désabonner ici :',
-    lienDesabonnement,
+    test ? '[Désabonnement désactivé pour ce test]' : lienDesabonnement,
     '',
     "— L'équipe de la Clinique PsychoÉducAction",
     'www.psychoeducaction.com',
   ].join('\n')
 
   const html = [
+    '<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:24px 12px;background:#fbf7f1;font-family:Arial,sans-serif;color:#332820;line-height:1.6;">',
+    '<div style="max-width:580px;margin:auto;background:#fffdf9;border:1px solid #eadfd2;border-radius:20px;padding:28px;">',
+    ...(test ? ['<p style="padding:12px;background:#fff0d9;border-radius:8px;font-weight:bold;">TEST — présentation seulement. Aucun résultat réel ne sera enregistré.</p>'] : []),
+    '<p style="color:#9b6a3d;font-size:13px;font-weight:bold;">CLINIQUE PSYCHOÉDUCACTION</p><h1 style="font-size:24px;line-height:1.3;">Votre avis compte pour nous</h1>',
     `<p>Bonjour ${escapeHtml(destinatairePrenom)},</p>`,
     `<p>Vous ou votre proche avez bénéficié de services à la Clinique PsychoÉducAction, et votre opinion nous est précieuse.</p>`,
+    ...(professionnel ? [`<p>Votre suivi avec <strong>${escapeHtml(professionnel)}</strong>.</p>`] : []),
     `<p>Prenez une minute pour nous dire comment s'est déroulée votre expérience :</p>`,
-    `<p><a href="${escapeHtml(lienReponse)}" style="display:inline-block;padding:12px 24px;background-color:#9b6a3d;color:#ffffff;text-decoration:none;border-radius:12px;font-weight:600;">Répondre au sondage</a></p>`,
+    `<p>${test ? '<span' : `<a href="${escapeHtml(lienReponse)}"`} style="display:inline-block;padding:12px 24px;background-color:#9b6a3d;color:#ffffff;text-decoration:none;border-radius:12px;font-weight:600;">Répondre au sondage${test ? '</span>' : '</a>'}</p>`,
+    ...(test ? ['<p style="font-size:13px;">Le bouton et le désabonnement sont désactivés dans ce courriel test.</p>'] : []),
     `<p>Merci de contribuer à l'amélioration de nos services.</p>`,
-    `<p style="font-size:12px;color:#8a6f5d;">Si vous ne souhaitez plus recevoir ces invitations, vous pouvez <a href="${escapeHtml(lienDesabonnement)}">vous désabonner ici</a>.</p>`,
+    `<p style="font-size:12px;color:#8a6f5d;">Si vous ne souhaitez plus recevoir ces invitations, vous pouvez ${test ? 'vous désabonner ici (désactivé pour le test)' : `<a href="${escapeHtml(lienDesabonnement)}">vous désabonner ici</a>`}.</p>`,
     `<p>— L'équipe de la Clinique PsychoÉducAction<br/>www.psychoeducaction.com</p>`,
+    '</div></body></html>',
   ].join('\n')
 
   return { subject, text, html }
