@@ -83,8 +83,13 @@ Horaire de Hajar date du 14 octobre, treize journees d'octobre passees a cinq he
 et resume de paie/budget mis a jour; anciens jours et autres mois preserves.
 Rapport Meta importe ponctuellement du 1er septembre au 14 octobre, en CAD, selon
 les dates du compte `America/Los_Angeles`. Connexion Meta automatique non configuree.
-Google live reste synchronise jusqu'a la veille; le script incluant aujourd'hui
-est prepare dans le depot, son installation live reste a autoriser.
+Publication autorisee et realisee le 14 octobre (`dd37fbf`), avec 160 tests et build
+reussis. Anciennes pages/API Marketing en 404, API Acquisition sans session en 401.
+Google live: script existant modifie pour inclure aujourd'hui, cle conservee et
+execution manuelle reussie. Frequence « Toutes les heures » confirmee dans Google Ads;
+montant du jour recoupe avec le rapport source, sans modifier les budgets des campagnes.
+Acquisition verifiee en production: nouvelles periodes, depenses du jour et absence
+du menu Marketing. Meta reste un import ponctuel avec date de mise a jour affichee.
 
 Satisfaction: ameliorations validees et publication autorisee le 13 octobre 2026:
 periode automatique, detail visible meme sans eligible, analyse des exclusions,
