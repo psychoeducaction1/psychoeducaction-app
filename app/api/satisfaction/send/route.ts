@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
   const now = new Date()
   const recencyWindow = getSatisfactionRecencyWindow(now)
   if (!isRecentSatisfactionEncounter(eligible.derniere_rencontre, now)) {
-    return jsonResponse({ error: 'Envoi bloqué : la dernière rencontre doit dater des 30 derniers jours. Actualisez la liste.' }, 400)
+    return jsonResponse({ error: 'Envoi bloqué : le client doit avoir une rencontre dans les 30 derniers jours ou à venir. Actualisez la liste.' }, 400)
   }
 
   const recipientEmails = [...new Set(
@@ -114,7 +114,6 @@ export async function POST(request: NextRequest) {
     .eq('id', eligible.id)
     .eq('statut', 'en_attente')
     .gte('derniere_rencontre', recencyWindow.from)
-    .lte('derniere_rencontre', recencyWindow.to)
     .select('id')
     .maybeSingle()
 

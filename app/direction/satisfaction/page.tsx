@@ -502,7 +502,7 @@ export default function DirectionSatisfactionPage() {
       <main className="min-w-0 flex-1 p-4 sm:p-6 lg:ml-72">
         <PageHeader
           title="Satisfaction des clients"
-          description={`Au moins ${SATISFACTION_MIN_ENCOUNTERS} rencontres sur la période importée, dont la dernière dans les 30 derniers jours. Aucun envoi automatique : chaque invitation est vérifiée puis envoyée individuellement.`}
+          description={`Au moins ${SATISFACTION_MIN_ENCOUNTERS} rencontres sur la période importée, avec une rencontre dans les 30 derniers jours ou à venir. Aucun envoi automatique : chaque invitation est vérifiée puis envoyée individuellement.`}
         />
 
         {actionMessage && (
@@ -522,7 +522,7 @@ export default function DirectionSatisfactionPage() {
             regroupées par client, seuls les clients avec au moins{' '}
             {SATISFACTION_MIN_ENCOUNTERS} rencontres sont retenus, et les clients
             déjà sollicités ou désabonnés sont exclus automatiquement.
-            La dernière rencontre doit dater des 30 derniers jours, calculés selon la date d’aujourd’hui à Montréal, même si le fichier couvre une période plus ancienne.
+            Les clients ayant une rencontre dans les 30 derniers jours ou une rencontre à venir sont retenus. Le délai est calculé selon la date d’aujourd’hui à Montréal, même si le fichier couvre une période plus ancienne.
           </p>
           <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
             <div>
@@ -608,7 +608,7 @@ export default function DirectionSatisfactionPage() {
         </SectionCard>
 
         {currentImport && <div className="mt-6"><SectionCard title={currentImportLabel || 'Détail de l’import'}>
-          <p className="text-sm text-[#6c5a4d]">{currentImport.file_name ?? 'Fichier importé'} — {currentImport.row_count} rencontre(s) détectée(s), {stats.enAttente} client(s) en attente avec une rencontre récente. Les dossiers déjà traités restent dans l’historique.</p>
+          <p className="text-sm text-[#6c5a4d]">{currentImport.file_name ?? 'Fichier importé'} — {currentImport.row_count} rencontre(s) détectée(s), {stats.enAttente} client(s) en attente avec une rencontre récente ou à venir. Les dossiers déjà traités restent dans l’historique.</p>
           {eligibles.length === 0 && <p className="mt-2 text-sm">Aucun client éligible dans cet import. Consultez le détail de l’analyse ci-dessous pour connaître les raisons.</p>}
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
             <label className="text-sm">Rechercher<input type="search" placeholder="Client, destinataire, courriel ou professionnel" className={inputClass} value={search} onChange={e => { setSearch(e.target.value); setEligiblePage(1) }} /></label>

@@ -36,8 +36,8 @@ export function refreshSatisfactionAnalysisRecency(analysis: SatisfactionAnalysi
     const reasons = row.reasons.filter(reason => !SATISFACTION_RECENCY_REASONS.some(value => value === reason))
     const recencyReason = satisfactionRecencyReason(row.derniereRencontre, now)
     if (recencyReason) reasons.push(recencyReason)
-    // Ne pas créer un nouvel éligible virtuel à partir d'une date future qui est
-    // devenue passée : aucun dossier d'invitation n'a été créé pour cette ligne.
+    // Une ligne exclue lors de l'import n'a pas de dossier d'invitation :
+    // un nouvel export est nécessaire pour appliquer les critères assouplis.
     if (!row.eligible && reasons.length === 0) reasons.push('Non retenu lors de l’import : réimportez un export à jour')
     return { ...row, eligible: row.eligible && reasons.length === 0, reasons }
   }) }

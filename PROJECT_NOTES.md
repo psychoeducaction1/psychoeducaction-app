@@ -120,6 +120,19 @@ avant pagination, compteurs globaux et navigation precedente/suivante.
 Pas de migration SQL requise. Commit/push et publication autorises le 14 octobre;
 `npm run check:full` valide (165 tests et build). Aucun vrai courriel envoye.
 
+Correction suivante demandee le 14 octobre: les rencontres a venir indiquent
+un suivi actif et restent admissibles, en plus des rencontres des 30 derniers jours.
+Le filtre de liste, l'import, la reintegration et l'envoi acceptent les dates futures
+valides. Les autres exclusions et le seuil de quatre sont conserves. Controle complet
+valide: 166 tests et build. Reprise ponctuelle preparee pour les candidats ecartes
+uniquement pour une date future: relecture des contacts/desabonnements, unicite par
+lot, conservation des candidats existants et actualisation de l'analyse, sans envoi.
+Script prive hors Git, valide sur fixtures puis plan en lecture seule avec empreinte
+de garde; appliquer seulement apres accord explicite. Pas de migration de schema.
+Commit/push, publication et reprise des 72 candidats en production explicitement
+autorises le 14 octobre, sans aucun courriel. Le plan conserve les 51 candidats
+existants et porte le lot a 123; aucune autre exclusion n'est levee.
+
 ## Parcours d'assignation
 1. Un professionnel, ou un gestionnaire autorise dans sa fiche, cree/augmente une demande.
 2. Un client en attente est assigne directement, marque hors plateforme, ou place dans une

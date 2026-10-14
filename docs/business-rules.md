@@ -173,8 +173,9 @@ Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workfl
 - Satisfaction: au moins quatre rencontres dans la periode importee; correspondance
   unique du client; tous les destinataires autorises du dossier; pas de nouvelle sollicitation
   d'un client deja contacte/desabonne. Les contraintes SQL participent a cette garantie.
-- Satisfaction: derniere rencontre dans les 30 derniers jours inclusifs, jusqu'a
-  aujourd'hui selon `America/Toronto`. Dates futures, absentes ou impossibles refusees.
+- Satisfaction: derniere rencontre dans les 30 derniers jours inclusifs selon
+  `America/Toronto`, ou rencontre a venir. Les dates futures sont admises comme
+  indice d'un suivi actif; seules les dates absentes ou impossibles sont refusees.
   Le seuil de quatre reste calcule sur la periode importee, pas seulement ces 30 jours.
   Regle appliquee a l'import, a la lecture des anciens lots, a la reintegration et
   juste avant l'envoi (reservation conditionnee aussi par les dates). Aucun ancien

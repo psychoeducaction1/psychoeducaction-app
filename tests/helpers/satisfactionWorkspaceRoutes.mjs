@@ -70,26 +70,27 @@ fresh({ satisfaction_imports: [{ id: 'historic', analysis: { version: 1, rows: [
     { id: 'stale', import_id: 'historic', statut: 'en_attente', derniere_rencontre: '2025-01-01' },
     { id: 'sent', import_id: 'historic', statut: 'envoye', derniere_rencontre: '2025-01-01' },
     { id: 'recent', import_id: 'historic', statut: 'en_attente', derniere_rencontre: '2026-03-20' },
+    { id: 'future', import_id: 'historic', statut: 'en_attente', derniere_rencontre: '2026-04-15' },
   ], satisfaction_reponses: [{ eligible_id: 'sent', note: 4 }] })
 response = await importApi.GET(new NextRequest('https://fixture.example.invalid/api/satisfaction/import?importId=historic'))
 body = await response.json()
-assert.deepEqual(body.eligibles.map(row=>row.id), ['sent', 'recent'])
+assert.deepEqual(body.eligibles.map(row=>row.id), ['sent', 'recent', 'future'])
 assert.equal(body.analysis.rows[0].eligible, false)
 assert.match(body.analysis.rows[0].reasons[0], /30 derniers jours/)
 assert.equal(current.stub.rows('satisfaction_imports')[0].analysis.rows[0].eligible, true)
-assert.equal(current.stub.rows('satisfaction_eligibles').length, 3)
+assert.equal(current.stub.rows('satisfaction_eligibles').length, 4)
 response = await importApi.GET(new NextRequest('https://fixture.example.invalid/api/satisfaction/import'))
 body = await response.json()
-assert.equal(body.imports[0].eligible_count, 1)
+assert.equal(body.imports[0].eligible_count, 2)
 assert.equal(body.imports[0].sent_count, 1)
 assert.equal(body.imports[0].response_count, 1)
 
 // La règle s'applique aussi à un ancien identifiant envoyé directement à l'API,
-// aux dates absentes/futures et à la réintégration manuelle. Aucun vrai courriel.
+// aux dates absentes/invalides et à la réintégration manuelle. Aucun vrai courriel.
 const eligibleFixture = date => ({ id: 'fixture-candidate', client_nom: 'Client fictif', destinataire_nom: 'Client fictif',
   destinataire_email: 'fixture@example.invalid', destinataire_emails: ['fixture@example.invalid'],
   professionnel: null, statut: 'en_attente', derniere_rencontre: date, jeton_reponse: 'fixture-response', jeton_desabonnement: 'fixture-unsubscribe' })
-for (const date of ['2026-02-18', '2026-03-21', null]) {
+for (const date of ['2026-02-18', null]) {
   fresh({ satisfaction_eligibles: [eligibleFixture(date)] })
   response = await sendApi.POST(new NextRequest('https://fixture.example.invalid/api/satisfaction/send', { method: 'POST', body: JSON.stringify({ eligibleId: 'fixture-candidate' }) }))
   assert.equal(response.status, 400)
@@ -98,11 +99,24 @@ for (const date of ['2026-02-18', '2026-03-21', null]) {
   response = await importApi.PATCH(new NextRequest('https://fixture.example.invalid/api/satisfaction/import', { method: 'PATCH', body: JSON.stringify({ eligibleId: 'fixture-candidate', statut: 'en_attente' }) }))
   assert.equal(response.status, 400)
 }
-fresh({ satisfaction_eligibles: [eligibleFixture('2026-02-19')] })
+for (const date of ['2026-02-19', '2026-03-21', '2026-04-15']) {
+fresh({ satisfaction_eligibles: [{ ...eligibleFixture(date), statut: 'exclu' }] })
+response = await importApi.PATCH(new NextRequest('https://fixture.example.invalid/api/satisfaction/import', { method: 'PATCH', body: JSON.stringify({ eligibleId: 'fixture-candidate', statut: 'en_attente' }) }))
+assert.equal(response.status, 200)
+assert.equal(current.emails.length, 0)
 response = await sendApi.POST(new NextRequest('https://fixture.example.invalid/api/satisfaction/send', { method: 'POST', body: JSON.stringify({ eligibleId: 'fixture-candidate' }) }))
 assert.equal(response.status, 200)
 assert.equal(current.emails.length, 1)
 assert.equal(current.stub.rows('satisfaction_eligibles')[0].statut, 'envoye')
+}
+// Un import avec une dernière rencontre à venir produit aussi un candidat réel.
+fresh({ waiting_list_clients: [{ client_name: 'Camille Fictive', contact_email: 'fixture@example.invalid' }], satisfaction_eligibles: [], satisfaction_desabonnes: [] })
+response = await importApi.POST(new NextRequest('https://fixture.example.invalid/api/satisfaction/import', { method: 'POST', body: JSON.stringify({ encounters: encounters.map((row, i) => ({ ...row, date: i === 3 ? '2026-04-15' : row.date })) }) }))
+body = await response.json()
+assert.equal(response.status, 200)
+assert.equal(body.analysis.rows[0].eligible, true)
+assert.equal(body.eligibles.length, 1)
+assert.equal(current.emails.length, 0)
 // Un import ancien ne définit jamais la référence de récence à sa date de fin.
 fixtureNow = '2026-10-14T16:00:00Z'
 fresh({ waiting_list_clients: [], satisfaction_eligibles: [], satisfaction_desabonnes: [] })

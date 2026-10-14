@@ -484,7 +484,7 @@ export async function PATCH(request: NextRequest) {
       )
     }
     if (updates.statut === 'en_attente' && !isRecentSatisfactionEncounter(current.derniere_rencontre)) {
-      return jsonResponse({ error: 'Ce client ne peut pas être réintégré : sa dernière rencontre doit dater des 30 derniers jours.' }, 400)
+      return jsonResponse({ error: 'Ce client ne peut pas être réintégré : il doit avoir une rencontre dans les 30 derniers jours ou à venir.' }, 400)
     }
 
     const { data: updated, error: updateError } = await supabaseAdmin

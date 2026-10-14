@@ -14,6 +14,7 @@ export const SATISFACTION_MIN_ENCOUNTERS = 4
 export const SATISFACTION_RECENCY_DAYS = 30
 export const SATISFACTION_RECENCY_REASONS = [
   'Aucune rencontre dans les 30 derniers jours',
+  // Ancien motif conservé pour actualiser les analyses enregistrées avant la correction.
   'Dernière rencontre dans le futur',
   'Dernière rencontre absente ou invalide',
 ] as const
@@ -25,8 +26,7 @@ export function getSatisfactionRecencyWindow(now = new Date()) {
 
 export function satisfactionRecencyReason(lastEncounter: string | null | undefined, now = new Date()): string | null {
   if (!lastEncounter || parseSatisfactionDate(lastEncounter) !== lastEncounter) return SATISFACTION_RECENCY_REASONS[2]
-  const { from, to } = getSatisfactionRecencyWindow(now)
-  if (lastEncounter > to) return SATISFACTION_RECENCY_REASONS[1]
+  const { from } = getSatisfactionRecencyWindow(now)
   return lastEncounter < from ? SATISFACTION_RECENCY_REASONS[0] : null
 }
 
