@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
   }
   const body = await request.json().catch(() => ({})) as { days?: unknown }
   const days = Number(body.days ?? 90)
-  const result = await syncAdSpend(Number.isFinite(days) ? days : 90)
+  const result = await syncAdSpend(Number.isFinite(days) ? days : 90, true)
   return NextResponse.json(result, {
     status: result.results.some((item) => item.status === 'error') ? 207 : 200,
   })

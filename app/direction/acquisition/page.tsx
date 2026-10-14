@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { BarChart3, CalendarRange, DollarSign, RefreshCw } from 'lucide-react'
 import { AppNav } from '@/components/AppNav'
@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
 import { acquisitionAttributionFor } from '@/lib/acquisitionAttribution'
+import { acquisitionPeriods, getAcquisitionPeriod, type AcquisitionPeriod, type AcquisitionSpend } from '@/lib/acquisitionReporting'
 
 type ProspectRow = {
   created_at: string
@@ -95,10 +96,13 @@ function eventAttribution(event: AcquisitionEventRow) {
 
 export default function AcquisitionPage() {
   const router = useRouter()
+  const loadSequence = useRef(0)
   const [from, setFrom] = useState(localDate(-29))
   const [to, setTo] = useState(localDate())
   const [prospects, setProspects] = useState<ProspectRow[]>([])
   const [expenses, setExpenses] = useState<ExpenseRow[]>([])
+  const [spend, setSpend] = useState<AcquisitionSpend[]>([])
+  const [period, setPeriod] = useState<AcquisitionPeriod | 'custom'>('last_30_days')
   const [events, setEvents] = useState<AcquisitionEventRow[]>([])
   const [loading, setLoading] = useState(true)
   const [authorized, setAuthorized] = useState(false)
@@ -124,25 +128,29 @@ export default function AcquisitionPage() {
   }, [])
 
   const load = useCallback(async () => {
+    const sequence = ++loadSequence.current
     setLoading(true)
     setError('')
     try {
       const response = await authenticatedFetch(`/api/direction/acquisition?from=${from}&to=${to}`)
       const payload = await response.json()
+      if (sequence !== loadSequence.current) return
       if (response.status === 401) { setAuthorized(false); router.push('/login'); return }
       if (response.status === 403) { setAuthorized(false); router.push('/direction'); return }
       if (!response.ok) throw new Error(payload.error ?? 'Chargement impossible.')
       setAuthorized(true)
       setProspects(payload.prospects ?? [])
       setEvents(payload.events ?? [])
+      setSpend(payload.spend ?? [])
       setExpenses((payload.expenses ?? []).map((item: ExpenseRow) => ({
         ...item,
         amount: Number(item.amount ?? 0),
       })))
     } catch (loadError) {
+      if (sequence !== loadSequence.current) return
       setError(loadError instanceof Error ? loadError.message : 'Chargement impossible.')
     } finally {
-      setLoading(false)
+      if (sequence === loadSequence.current) setLoading(false)
     }
   }, [authenticatedFetch, from, router, to])
 
@@ -191,7 +199,8 @@ export default function AcquisitionPage() {
     return [...grouped.values()].sort((a, b) => b.prospects - a.prospects)
   }, [events, prospects])
 
-  const totalSpend = expenses.reduce((sum, expense) => sum + expense.amount, 0)
+  const spendComplete = spend.length === 2 && spend.every((item) => item.complete && item.amount !== null)
+  const totalSpend = spend.reduce((sum, item) => sum + (item.amount ?? 0), 0)
   const bookingCount = prospects.filter((item) => item.contact_request_type === 'scheduled_call').length
   const callbackCount = prospects.filter((item) => item.contact_request_type === 'rapid_callback').length
   const serviceTakenCount = prospects.filter((item) => ['service_taken', 'transferred_to_waiting_list'].includes(item.status)).length
@@ -279,9 +288,22 @@ export default function AcquisitionPage() {
 
         <section className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5">
           <div className="flex items-center gap-2"><CalendarRange className="h-5 w-5 text-[#8a5633]" /><h2 className="font-semibold text-[#332820]">Période analysée</h2></div>
+          <label className="mt-4 block text-sm font-semibold text-[#5d4a3d]">Choisir une période
+            <select value={period} onChange={(event) => {
+              const value = event.target.value as AcquisitionPeriod | 'custom'
+              setPeriod(value)
+              if (value !== 'custom') {
+                const range = getAcquisitionPeriod(value)
+                setFrom(range.from); setTo(range.to)
+              }
+            }} className={`${inputClass} mt-2 sm:max-w-xs`}>
+              {acquisitionPeriods.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              <option value="custom">Dates personnalisées</option>
+            </select>
+          </label>
           <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-            <label className="text-sm font-semibold text-[#5d4a3d]">Du<input type="date" value={from} onChange={(event) => setFrom(event.target.value)} className={`${inputClass} mt-2`} /></label>
-            <label className="text-sm font-semibold text-[#5d4a3d]">Au<input type="date" value={to} onChange={(event) => setTo(event.target.value)} className={`${inputClass} mt-2`} /></label>
+            <label className="text-sm font-semibold text-[#5d4a3d]">Du<input type="date" value={from} onChange={(event) => { setPeriod('custom'); setFrom(event.target.value) }} className={`${inputClass} mt-2`} /></label>
+            <label className="text-sm font-semibold text-[#5d4a3d]">Au<input type="date" value={to} onChange={(event) => { setPeriod('custom'); setTo(event.target.value) }} className={`${inputClass} mt-2`} /></label>
             <button type="button" onClick={() => void load()} className={buttonClass('secondary')}><RefreshCw className="h-4 w-4" />Actualiser</button>
           </div>
         </section>
@@ -293,8 +315,17 @@ export default function AcquisitionPage() {
           <StatCard label="Formulaires de contact" value={contactFormCount} helper="Soumissions réussies" />
           <StatCard label="Clics téléphoniques" value={phoneClickCount} helper="Intention secondaire" />
           <StatCard label="Services pris" value={serviceTakenCount} helper="Confirmés ou transférés" />
-          <StatCard label="Dépenses publicitaires" value={formatCurrency(totalSpend)} helper={prospects.length ? `${formatCurrency(totalSpend / prospects.length)} / prospect` : 'Aucun prospect'} />
+          <StatCard label="Dépenses publicitaires" value={loading ? 'Chargement…' : spendComplete ? formatCurrency(totalSpend) : 'Données incomplètes'} helper={spendComplete && prospects.length ? `${formatCurrency(totalSpend / prospects.length)} / demande reçue (toutes origines)` : 'Coût par demande disponible avec les dépenses complètes de la période'} />
         </div>
+
+        <section className="mt-6 rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5">
+          <h2 className="font-semibold text-[#332820]">Dépenses pour la période sélectionnée</h2>
+          <p className="mt-1 text-sm text-[#7a6859]">Montants dépensés en CAD, transmis par les plateformes. La journée en cours et les rapports publicitaires peuvent avoir un délai de mise à jour. Les dates publicitaires suivent le fuseau du compte Ads ; les demandes sont datées selon Montréal.</p>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">{spend.map((item) => <div key={item.platform}>
+            <p className="font-semibold text-[#332820]">{platformLabel(item.platform)} : {item.amount === null ? 'Non disponible' : formatCurrency(item.amount)}{!item.complete && item.amount !== null ? ' (partiel)' : ''}</p>
+            <p className="mt-1 text-sm text-[#7a6859]">{item.complete ? 'Période couverte.' : item.through ? `Données reçues jusqu’au ${item.through}. Période non entièrement couverte.` : 'Aucun rapport synchronisé.'}{item.syncedAt ? ` Mise à jour : ${new Date(item.syncedAt).toLocaleString('fr-CA', { timeZone: 'America/Toronto' })}.` : ''}</p>
+          </div>)}</div>
+        </section>
 
         <section className="mt-6 rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5">
           <div className="flex items-center gap-2"><BarChart3 className="h-5 w-5 text-[#8a5633]" /><h2 className="font-semibold text-[#332820]">Origines et campagnes</h2></div>
@@ -319,6 +350,7 @@ export default function AcquisitionPage() {
             </button>
           </div>
           <p className="mt-1 text-sm text-[#7a6859]">Les dépenses sont synchronisées quotidiennement depuis les plateformes et remplacent le total du mois dans le budget. La saisie manuelle reste disponible comme solution de secours.</p>
+          <p className="mt-1 text-sm text-[#7a6859]">Les totaux mensuels ci-dessous servent au budget et ne sont pas utilisés pour calculer le coût d’une journée ou d’une semaine.</p>
           <div className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_1fr_1.4fr_auto] md:items-end">
             <label className="text-sm font-semibold text-[#5d4a3d]">Plateforme<select value={platform} onChange={(event) => setPlatform(event.target.value as typeof platform)} className={`${inputClass} mt-2`}><option value="google_ads">Google Ads</option><option value="meta_ads">Meta Ads</option></select></label>
             <label className="text-sm font-semibold text-[#5d4a3d]">Mois<input type="month" value={expenseMonth} onChange={(event) => setExpenseMonth(event.target.value)} className={`${inputClass} mt-2`} /></label>

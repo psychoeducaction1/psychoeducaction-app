@@ -28,7 +28,7 @@ pas une verification des migrations, variables ou balises presentes en productio
 - `.github/workflows/verify.yml`: controles sur PR et push main, sans deploiement.
 
 ## Roles et acces
-- Roles de navigation: `direction`, `professionnel`, `marketing`.
+- Roles de navigation: `direction`, `professionnel`. L'espace employe marketing est retire.
 - Super administrateur = privilege associe a un compte configure et au role direction,
   pas un quatrieme role; voir `lib/superAdmin.ts` et `lib/superAdminServer.ts`.
 - Les adjointes sont identifiees par des listes d'acces et leur fiche de personnel.
@@ -42,8 +42,8 @@ pas une verification des migrations, variables ou balises presentes en productio
 - `lib/supabaseClient.ts`: configuration publique et session utilisateur.
   `lib/supabaseAdmin.ts`: cle de service exclusivement cote serveur.
 - Les scripts RLS existent; leur presence ne prouve pas leur application a la base distante.
-- Marketing accessible au compte marketing et au super administrateur. L'apercu
-  direction est en lecture seule, sans connexion sous l'identite de l'employee.
+- Marketing: pages, calendrier, notifications et creation du compte retires du depot.
+  Les scripts SQL marketing historiques ne doivent plus etre installes.
 - Les adjointes voient leur propre paie; la direction autorisee a une vue globale.
   La separation effective des donnees doit aussi etre verifiee en base.
 
@@ -61,12 +61,30 @@ pas une verification des migrations, variables ou balises presentes en productio
 | Prospects et appels | `/direction/prospects`: onglets Calendrier, A traiter et Historique, fiche commune, qualification et transfert volontaire. |
 | Ancien calendrier | `/direction/calendrier` redirige vers l'onglet Calendrier en conservant les parametres. |
 | Taches admin | Affectation aux adjointes, statuts, notes et notification a la boite partagee configuree. |
-| Marketing | Taches, notes, pieces jointes privees, notifications et calendrier de travail modifiable. |
 | Paie pro | Import Excel, categories, calculs, factures DOCX et courriel avec CC comptable configuree. |
 | Paie adjointes | Heures pre-remplies/modifiables, feries marocains, conges, MAD/CAD et montants mensuels. |
 | Budget | Import multimois, repartition pro/clinique, historique, frais et paie des adjointes. |
 | Acquisition | Attribution des demandes, evenements techniques, depenses Google Ads/Meta selon configuration. |
 | Satisfaction | Import d'activites, seuil de rencontres, courriels individuels, reponse et desabonnement. |
+
+Modification du 14 octobre 2026: `default_schedule` accepte des variantes avec
+`effectiveFrom`; les anciens jours utilisent l'horaire initial. Le salaire mensuel
+reste une reference liee a l'horaire initial, permettant de payer les heures ajoutees
+sans reduire le taux. Les saisies manuelles priment sur les heures generees.
+Acquisition: raccourcis de dates Toronto, cout de periode depuis `ad_spend_daily`,
+couverture verifiee dans les rapports reussis et absence de cout par demande si
+Google ou Meta n'a pas couvert toute la periode. Les montants mensuels servent
+uniquement au budget. Publication et mises a jour distantes restent distinctes.
+
+Verifications distantes du 14 octobre: compte Auth/profil de l'employee marketing
+supprimes, six tables de donnees marketing vides et fichier Storage retire apres
+sauvegarde privee; compteurs des dossiers cliniques et du journal d'audit conserves.
+Horaire de Hajar date du 14 octobre, treize journees d'octobre passees a cinq heures
+et resume de paie/budget mis a jour; anciens jours et autres mois preserves.
+Rapport Meta importe ponctuellement du 1er septembre au 14 octobre, en CAD, selon
+les dates du compte `America/Los_Angeles`. Connexion Meta automatique non configuree.
+Google live reste synchronise jusqu'a la veille; le script incluant aujourd'hui
+est prepare dans le depot, son installation live reste a autoriser.
 
 Satisfaction: ameliorations validees et publication autorisee le 13 octobre 2026:
 periode automatique, detail visible meme sans eligible, analyse des exclusions,

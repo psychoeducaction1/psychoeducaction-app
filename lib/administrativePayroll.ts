@@ -10,6 +10,7 @@ export type AdministrativeScheduleDay = {
   weekday: number
   startTime: string
   endTime: string
+  effectiveFrom?: string
 }
 
 export type AdministrativeStaff = {
@@ -112,10 +113,24 @@ export function getScheduleForDate(
   dateValue: string
 ): AdministrativeScheduleDay | null {
   const weekday = getWeekdayNumber(dateValue)
-  return (
-    staff.default_schedule?.find((scheduleDay) => scheduleDay.weekday === weekday) ??
-    null
-  )
+  return [...(staff.default_schedule ?? [])]
+    .filter((day) => day.weekday === weekday && (!day.effectiveFrom || day.effectiveFrom <= dateValue))
+    .sort((a, b) => (b.effectiveFrom ?? '').localeCompare(a.effectiveFrom ?? ''))[0] ?? null
+}
+
+// Le salaire de référence correspond à l'horaire initial. Une prolongation datée
+// ajoute des heures payées sans diminuer le taux ni recalculer les anciens jours.
+export function getAdministrativeHourlyRate(staff: AdministrativeStaff, monthKey: string): number {
+  const referenceStaff = {
+    ...staff,
+    default_schedule: staff.default_schedule?.filter((day) => !day.effectiveFrom) ?? null,
+  }
+  const { startDate, endDate } = getMonthDateRange(monthKey)
+  const referenceHours = getDatesInRange(startDate, endDate)
+    .reduce((sum, date) => sum + getPlannedHours(referenceStaff, date), 0)
+  return Number(staff.monthly_salary) > 0 && referenceHours > 0
+    ? Number(staff.monthly_salary) / referenceHours
+    : Number(staff.hourly_rate ?? 0)
 }
 
 export function calculateHoursBetween(

@@ -299,8 +299,8 @@ function isMetaConfigured() {
   return ['META_AD_ACCOUNT_ID', 'META_ADS_ACCESS_TOKEN'].every(configured)
 }
 
-export async function syncAdSpend(lookbackDays = 45) {
-  const range = getAdSpendRange(lookbackDays)
+export async function syncAdSpend(lookbackDays = 45, includeToday = false) {
+  const range = getAdSpendRange(lookbackDays, new Date(), includeToday)
   const providers: Array<{
     platform: AdPlatform
     ready: boolean

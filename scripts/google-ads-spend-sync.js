@@ -1,5 +1,5 @@
 /**
- * Google Ads Script à planifier chaque jour.
+ * Google Ads Script à planifier chaque heure pour inclure la journée en cours.
  * Remplacer les deux valeurs ci-dessous avant l'installation dans Google Ads.
  */
 const ENDPOINT = 'https://app.psychoeducaction.com/api/public/ad-spend/google';
@@ -13,12 +13,11 @@ function main() {
   const accountId = account.getCustomerId().replace(/[^0-9]/g, '');
   const timeZone = account.getTimeZone();
   const currency = account.getCurrencyCode();
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const start = new Date(yesterday);
+  const today = new Date();
+  const start = new Date(today);
   start.setDate(start.getDate() - (LOOKBACK_DAYS - 1));
   const from = Utilities.formatDate(start, timeZone, 'yyyy-MM-dd');
-  const to = Utilities.formatDate(yesterday, timeZone, 'yyyy-MM-dd');
+  const to = Utilities.formatDate(today, timeZone, 'yyyy-MM-dd');
   const query = [
     'SELECT segments.date, campaign.id, campaign.name, metrics.cost_micros',
     'FROM campaign',

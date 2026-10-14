@@ -23,6 +23,7 @@ import {
   buildDefaultTimeEntry,
   buildPayrollRow,
   calculateHoursBetween,
+  getAdministrativeHourlyRate,
   getDatesInRange,
   getMonthDateRange,
   getMonthKey,
@@ -97,7 +98,9 @@ function normalizeSchedule(value: unknown): AdministrativeStaff['default_schedul
 
       if (!Number.isFinite(weekday) || !startTime || !endTime) return null
 
-      return { weekday, startTime, endTime }
+      const effectiveFrom = typeof schedule.effectiveFrom === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(schedule.effectiveFrom)
+        ? schedule.effectiveFrom : undefined
+      return { weekday, startTime, endTime, effectiveFrom }
     })
     .filter((item): item is NonNullable<typeof item> => Boolean(item))
 }
@@ -339,24 +342,6 @@ export default function DirectionAdministrativePayrollPage() {
     [holidays]
   )
 
-  const monthlyPlannedHoursByStaffId = useMemo(() => {
-    const { startDate, endDate } = getMonthDateRange(monthKey)
-    const dates = getDatesInRange(startDate, endDate)
-    const plannedHoursByStaff = new Map<string, number>()
-
-    staff.forEach((staffMember) => {
-      plannedHoursByStaff.set(
-        staffMember.id,
-        dates.reduce(
-          (sum, dateValue) => sum + getPlannedHours(staffMember, dateValue),
-          0
-        )
-      )
-    })
-
-    return plannedHoursByStaff
-  }, [monthKey, staff])
-
   const vacationBalanceByStaffId = useMemo(() => {
     const [yearValue] = monthKey.split('-').map(Number)
     const year = Number.isFinite(yearValue) ? yearValue : new Date().getFullYear()
@@ -417,20 +402,14 @@ export default function DirectionAdministrativePayrollPage() {
     const rates = new Map<string, number>()
 
     staff.forEach((staffMember) => {
-      const monthlySalary = Number(staffMember.monthly_salary ?? 0)
-      const monthlyPlannedHours =
-        monthlyPlannedHoursByStaffId.get(staffMember.id) ?? 0
-
       rates.set(
         staffMember.id,
-        monthlySalary > 0 && monthlyPlannedHours > 0
-          ? monthlySalary / monthlyPlannedHours
-          : Number(staffMember.hourly_rate ?? 0)
+        getAdministrativeHourlyRate(staffMember, monthKey)
       )
     })
 
     return rates
-  }, [monthlyPlannedHoursByStaffId, staff])
+  }, [monthKey, staff])
 
   const payrollRows = useMemo(() => {
     const { startDate, endDate } = getMonthDateRange(monthKey)

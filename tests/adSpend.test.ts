@@ -18,6 +18,10 @@ test('calcule une plage terminée à la veille en heure de Toronto', () => {
   assert.deepEqual(range, { from: '2026-10-08', to: '2026-10-10' })
 })
 
+test('la synchronisation manuelle inclut les dépenses provisoires du jour', () => {
+  assert.deepEqual(getAdSpendRange(3, new Date('2026-10-11T16:00:00Z'), true), { from: '2026-10-09', to: '2026-10-11' })
+})
+
 test('énumère les mois touchés par une synchronisation', () => {
   assert.deepEqual(monthKeysBetween('2026-08-28', '2026-10-10'), [
     '2026-08',

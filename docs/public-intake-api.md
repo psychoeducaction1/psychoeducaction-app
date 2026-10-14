@@ -223,7 +223,10 @@ dépense variable correspondante dans le budget.
 Variables Vercel requises pour Google Ads :
 
 Méthode recommandée pour ce compte : installer le script
-`scripts/google-ads-spend-sync.js` dans Google Ads et le planifier chaque jour.
+`scripts/google-ads-spend-sync.js` dans Google Ads et le planifier chaque heure.
+Il inclut les depenses provisoires de la journee en cours, qui sont remplacees
+aux executions suivantes. Mettre a jour le script installe exige une publication
+distincte du depot, sans modifier les budgets des campagnes.
 Il utilise seulement :
 
 - `GOOGLE_ADS_CUSTOMER_ID`
@@ -248,7 +251,11 @@ Variables Vercel requises pour Meta Ads :
 
 Les jetons sont strictement côté serveur. Le bouton de synchronisation manuelle
 de la page Acquisition utilise la même logique que le cron et récupère 90 jours
-pour la première mise en service.
+pour la première mise en service, en incluant la journee en cours.
+Le cron conserve sa periode terminee a la veille. Les rapports reussis indiquent
+la couverture des dates; une plateforme non configuree est indiquee indisponible.
+L'API Acquisition lit les depenses quotidiennes pour les dates analysees et
+reserve les totaux mensuels au budget, sans inventer les journees manquantes.
 - `POST /api/direction/intake-calendar/blocks`
 - `DELETE /api/direction/intake-calendar/blocks/:id`
 - `PATCH /api/direction/intake-appointments/:id`

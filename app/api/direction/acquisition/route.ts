@@ -3,12 +3,25 @@ import { getDirectionContext } from '@/lib/directionServer'
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
 import { isSuperAdmin } from '@/lib/superAdmin'
 import { torontoLocalToUtc } from '@/lib/publicIntakeSchedule'
+import { summarizeAcquisitionSpend } from '@/lib/acquisitionReporting'
 
 const platforms = ['google_ads', 'meta_ads'] as const
 type AdPlatform = (typeof platforms)[number]
 
 function isDate(value: string | null) {
-  return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value))
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const parsed = new Date(`${value}T12:00:00Z`)
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
+}
+
+async function readReportRows<T>(page: (offset: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>) {
+  const rows: T[] = []
+  for (let offset = 0; ; offset += 500) {
+    const result = await page(offset)
+    if (result.error) return { data: [], error: result.error }
+    rows.push(...(result.data ?? []))
+    if ((result.data?.length ?? 0) < 500) return { data: rows, error: null }
+  }
 }
 
 async function authorize(request: NextRequest) {
@@ -45,20 +58,22 @@ export async function GET(request: NextRequest) {
     { data: prospects, error: prospectError },
     { data: events, error: eventError },
     { data: expenses, error: expenseError },
+    { data: dailySpend, error: dailySpendError },
+    { data: syncRuns, error: syncError },
   ] =
     await Promise.all([
-      supabase
+      readReportRows((offset) => supabase
         .from('public_intake_prospects')
         .select('created_at, status, contact_request_type, source, utm, conversion_event_id')
         .gte('created_at', fromUtc)
         .lt('created_at', toExclusiveUtc)
-        .order('created_at', { ascending: false }),
-      supabase
+        .order('created_at', { ascending: false }).order('id').range(offset, offset + 499)),
+      readReportRows((offset) => supabase
         .from('public_acquisition_events')
         .select('created_at, event_type, source, utm, conversion_event_id')
         .gte('created_at', fromUtc)
         .lt('created_at', toExclusiveUtc)
-        .order('created_at', { ascending: false }),
+        .order('created_at', { ascending: false }).order('id').range(offset, offset + 499)),
       supabase
         .from('budget_variable_expenses')
         .select('id, name, amount, expense_date, notes, ad_platform, expense_month')
@@ -66,16 +81,26 @@ export async function GET(request: NextRequest) {
         .gte('expense_month', `${from!.slice(0, 7)}-01`)
         .lte('expense_month', `${to!.slice(0, 7)}-01`)
         .order('expense_month', { ascending: false }),
+      readReportRows((offset) => supabase.from('ad_spend_daily')
+        .select('platform, spend_date, amount, currency')
+        .gte('spend_date', from!).lte('spend_date', to!)
+        .order('spend_date').order('id').range(offset, offset + 499)),
+      readReportRows((offset) => supabase.from('ad_spend_sync_runs')
+        .select('range_start, range_end, started_at, details')
+        .order('started_at', { ascending: false }).order('id').range(offset, offset + 499)),
     ])
 
-  if (prospectError || eventError || expenseError) {
+  if (prospectError || eventError || expenseError || dailySpendError || syncError) {
     return NextResponse.json(
-      { error: prospectError?.message ?? eventError?.message ?? expenseError?.message ?? 'Chargement impossible.' },
+      { error: prospectError?.message ?? eventError?.message ?? expenseError?.message ?? dailySpendError?.message ?? syncError?.message ?? 'Chargement impossible.' },
       { status: 500 }
     )
   }
 
-  return NextResponse.json({ prospects: prospects ?? [], events: events ?? [], expenses: expenses ?? [] })
+  return NextResponse.json({
+    prospects: prospects ?? [], events: events ?? [], expenses: expenses ?? [],
+    spend: summarizeAcquisitionSpend(dailySpend ?? [], syncRuns ?? [], from!, to!),
+  })
 }
 
 export async function POST(request: NextRequest) {

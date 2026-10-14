@@ -77,10 +77,10 @@ export function getTorontoDate(now = new Date()): string {
   }).format(now)
 }
 
-export function getAdSpendRange(lookbackDays: number, now = new Date()) {
+export function getAdSpendRange(lookbackDays: number, now = new Date(), includeToday = false) {
   const safeDays = Math.min(366, Math.max(2, Math.trunc(lookbackDays)))
   const today = getTorontoDate(now)
-  const to = shiftIsoDate(today, -1)
+  const to = includeToday ? today : shiftIsoDate(today, -1)
   return { from: shiftIsoDate(to, -(safeDays - 1)), to }
 }
 

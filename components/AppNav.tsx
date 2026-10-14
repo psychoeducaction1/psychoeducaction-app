@@ -5,7 +5,6 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
-  BriefcaseBusiness,
   ChartNoAxesCombined,
   CalendarDays,
   ClipboardList,
@@ -31,22 +30,14 @@ import {
 import { isSuperAdmin } from '@/lib/superAdmin'
 import { isAdministrativeTaskAuthorized } from '@/lib/administrativeTaskAccess'
 
-type UserRole = 'direction' | 'professionnel' | 'marketing' | null
+type UserRole = 'direction' | 'professionnel' | null
 type NavLink = {
   href: string
   label: string
   icon: LucideIcon
 }
 
-export function AppNav({
-  previewRole,
-  previewProfileName,
-  onExitPreview,
-}: {
-  previewRole?: 'marketing'
-  previewProfileName?: string
-  onExitPreview?: () => void
-} = {}) {
+export function AppNav() {
   const pathname = usePathname()
   const router = useRouter()
   const [role, setRole] = useState<UserRole>(null)
@@ -79,8 +70,7 @@ export function AppNav({
 
       const resolvedRole: UserRole =
         data?.role === 'direction' ||
-        data?.role === 'professionnel' ||
-        data?.role === 'marketing'
+        data?.role === 'professionnel'
           ? data.role
           : null
       setRole(resolvedRole)
@@ -108,10 +98,8 @@ export function AppNav({
     router.push('/login')
   }
 
-  const displayRole: UserRole = previewRole ?? role
-  const displayProfileName = previewRole
-    ? previewProfileName?.trim() || 'Camille Payette'
-    : profileName
+  const displayRole = role
+  const displayProfileName = profileName
 
   const navLinks: NavLink[] =
     displayRole === 'direction'
@@ -132,9 +120,6 @@ export function AppNav({
             label: 'Tâches administratives',
             icon: ListTodo,
           },
-          ...(budgetAuthorized
-            ? [{ href: '/marketing', label: 'Marketing', icon: BriefcaseBusiness }]
-            : []),
           { href: '/direction/professionnels', label: 'Professionnels', icon: Users },
           ...(budgetAuthorized
             ? [{ href: '/direction/satisfaction', label: 'Satisfaction', icon: Star }]
@@ -186,26 +171,17 @@ export function AppNav({
                 ]
               : []),
           ]
-        : displayRole === 'marketing'
-          ? [
-              { href: '/marketing', label: 'Espace marketing', icon: BriefcaseBusiness },
-              { href: '/marketing/calendrier', label: 'Calendrier', icon: CalendarDays },
-            ]
         : []
 
   const brandHref =
     displayRole === 'professionnel'
       ? '/professionnel'
-      : displayRole === 'marketing'
-        ? '/marketing'
-        : '/direction'
+      : '/direction'
   const currentSpaceLabel =
     displayRole === 'direction'
       ? 'Direction'
       : displayRole === 'professionnel'
         ? 'Espace professionnel'
-        : displayRole === 'marketing'
-          ? 'Espace marketing'
         : ''
 
   const renderLinks = () =>
@@ -225,10 +201,6 @@ export function AppNav({
                 ? pathname?.startsWith('/direction/assignations-en-cours')
               : link.href === '/direction/taches-administratives'
                 ? pathname?.startsWith('/direction/taches-administratives')
-              : link.href === '/marketing'
-                ? pathname?.startsWith('/marketing')
-              : link.href === '/marketing/calendrier'
-                ? pathname?.startsWith('/marketing/calendrier')
               : link.href === '/direction/professionnels'
                 ? pathname?.startsWith('/direction/professionnels') ||
                   pathname?.startsWith('/professionnel/')
@@ -241,19 +213,13 @@ export function AppNav({
                 : link.href === '/direction/satisfaction'
                   ? pathname?.startsWith('/direction/satisfaction')
                 : pathname?.startsWith('/direction/journal-audit')
-          : displayRole === 'marketing' && link.href === '/marketing'
-            ? pathname === '/marketing'
           : link.href === '/professionnel'
             ? pathname === '/professionnel'
             : pathname?.startsWith(link.href)
       return (
         <Link
           key={link.href}
-          href={
-            previewRole === 'marketing' && link.href.startsWith('/marketing')
-              ? `${link.href}?preview=camille`
-              : link.href
-          }
+          href={link.href}
           className={`inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium transition-all duration-200 ${
             isActive
               ? 'bg-[#efe1d2] text-[#6d3f1f]'
@@ -286,7 +252,7 @@ export function AppNav({
             <p className="text-xs font-semibold uppercase tracking-wide text-[#9b6a3d]">
               {currentSpaceLabel}
             </p>
-            {(displayRole === 'professionnel' || displayRole === 'marketing') && displayProfileName && (
+            {displayRole === 'professionnel' && displayProfileName && (
               <p className="mt-1 break-words text-sm font-semibold text-[#332820]">
                 {displayProfileName}
               </p>
@@ -296,15 +262,9 @@ export function AppNav({
 
         <nav className="mt-7 flex flex-1 flex-col gap-1">{renderLinks()}</nav>
 
-        {previewRole && onExitPreview ? (
-          <button type="button" onClick={onExitPreview} className={buttonClass('secondary')}>
-            Retour à la vue Direction
-          </button>
-        ) : (
-          <button type="button" onClick={handleSignOut} className={buttonClass('secondary')}>
-            Déconnexion
-          </button>
-        )}
+        <button type="button" onClick={handleSignOut} className={buttonClass('secondary')}>
+          Déconnexion
+        </button>
       </aside>
 
       <header className="sticky top-0 z-30 border-b border-[#eadfd2] bg-[#fbf7f1]/95 backdrop-blur lg:hidden">
@@ -322,21 +282,15 @@ export function AppNav({
               </span>
               {currentSpaceLabel && (
                 <span className="min-w-0 truncate text-xs font-medium text-[#8a6f5d]">
-                  {(displayRole === 'professionnel' || displayRole === 'marketing') && displayProfileName
+                  {displayRole === 'professionnel' && displayProfileName
                     ? displayProfileName
                     : currentSpaceLabel}
                 </span>
               )}
             </Link>
-            {previewRole && onExitPreview ? (
-              <button type="button" onClick={onExitPreview} className={`${buttonClass('secondary')} w-auto shrink-0 px-3 py-2 text-xs`}>
-                Retour Direction
-              </button>
-            ) : (
-              <button type="button" onClick={handleSignOut} className={`${buttonClass('secondary')} w-auto shrink-0 px-3 py-2 text-xs`}>
-                Déconnexion
-              </button>
-            )}
+            <button type="button" onClick={handleSignOut} className={`${buttonClass('secondary')} w-auto shrink-0 px-3 py-2 text-xs`}>
+              Déconnexion
+            </button>
           </div>
 
           <nav className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-1 sm:-mx-4 sm:px-4">

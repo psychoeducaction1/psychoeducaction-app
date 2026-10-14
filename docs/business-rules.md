@@ -152,7 +152,11 @@ Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workfl
 
 ## Paie des adjointes, acces et satisfaction
 - Heures pre-remplies selon `default_schedule`, ajustables; samedi a zero modifiable.
-- Taux effectif = salaire mensuel / heures prevues du mois si positifs, sinon taux configure.
+- Horaire date: une variante `effectiveFrom` s'applique a partir de cette date, inclusivement.
+  Sans variante applicable, l'horaire initial reste utilise. Une saisie existante prime.
+- Taux effectif = salaire mensuel de reference / heures de l'horaire initial du mois
+  si positifs, sinon taux configure. Une prolongation datee ajoute des heures payees
+  sans diminuer le taux ni modifier les journees anterieures.
   Ferie travaille double; ferie non travaille et vacances au taux normal; absence non payee
   a zero. Pauses soustraites des heures.
 - Vacances en heures: droit annuel converti selon le jour planifie moyen puis acquis
@@ -188,7 +192,14 @@ Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workfl
   L'ancien lien de demonstration Google redirige vers la vraie fiche; le desabonnement
   reste simule dans le test. Aucune publication automatique d'avis Google.
   La phrase « Votre suivi avec » est retiree.
-- Fichiers marketing prives, accessibles par URL signee temporaire.
+- Espace employe marketing retire: pas de menu, pages, creation de compte ni notifications.
+  La suppression du compte et des donnees de cet espace exige une verification des
+  relations SQL et des fichiers; ne pas supprimer les dossiers ou journaux cliniques.
+- Acquisition: depenses journalieres filtrees sur les memes dates que les demandes.
+  Aucun total mensuel ni montant manuel mensuel utilise comme cout d'une journee.
+  Un rapport reussi couvre les journees a zero; une absence de rapport n'est pas zero.
+  Cout global par demande uniquement si Google et Meta couvrent toute la periode en CAD.
+  La journee en cours reste provisoire, avec la date de synchronisation affichee.
 
 ## Limites a verifier avant une evolution
 - Des sequences multi-tables sont hors transaction (assignation et certains retours/budgets).

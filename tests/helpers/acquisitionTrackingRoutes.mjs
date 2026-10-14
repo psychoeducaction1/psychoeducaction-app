@@ -18,7 +18,8 @@ globalThis.__trackingAdmin = {
   from(table) {
     const rows = table === 'public_intake_prospects' ? stored : []
     return { select() { return this }, gte() { return this }, lt() { return this }, lte() { return this }, not() { return this },
-      order: async () => ({ data: rows, error: null }) }
+      order() { return this }, range() { return this },
+      then(resolve) { return Promise.resolve({ data: rows, error: null }).then(resolve) } }
   },
 }
 registerHooks({ resolve(specifier, context, nextResolve) {

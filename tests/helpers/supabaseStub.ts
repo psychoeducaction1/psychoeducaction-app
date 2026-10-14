@@ -29,6 +29,14 @@ export function createSupabaseStub(
       return this
     }
     is(column: string, value: unknown) { return this.eq(column, value) }
+    not(column: string, operator: string, value: unknown) {
+      if (operator !== 'is') throw new Error('Unsupported fixture operator')
+      this.filters.push((row) => row[column] !== value)
+      return this
+    }
+    gte(column: string, value: string) { this.filters.push((row) => String(row[column]) >= value); return this }
+    lte(column: string, value: string) { this.filters.push((row) => String(row[column]) <= value); return this }
+    lt(column: string, value: string) { this.filters.push((row) => String(row[column]) < value); return this }
     gt(column: string, value: number) {
       this.filters.push((row) => Number(row[column]) > value)
       return this
@@ -37,7 +45,7 @@ export function createSupabaseStub(
       this.filters.push((row) => values.includes(row[column]))
       return this
     }
-    order(column: string, options: { ascending: boolean }) {
+    order(column: string, options: { ascending: boolean } = { ascending: true }) {
       this.sort = { column, ascending: options.ascending }
       return this
     }
