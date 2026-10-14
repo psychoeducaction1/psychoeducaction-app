@@ -5,6 +5,8 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
 import {
   buildSatisfactionEmail,
   getFirstName,
+  getSatisfactionRecencyWindow,
+  isRecentSatisfactionEncounter,
 } from '@/lib/satisfaction'
 
 function jsonResponse(body: object, status: number) {
@@ -60,7 +62,7 @@ export async function POST(request: NextRequest) {
   const { data: eligible, error: eligibleError } = await supabaseAdmin
     .from('satisfaction_eligibles')
     .select(
-      'id, client_nom, destinataire_nom, destinataire_email, destinataire_emails, professionnel, statut, jeton_reponse, jeton_desabonnement'
+      'id, client_nom, destinataire_nom, destinataire_email, destinataire_emails, professionnel, statut, derniere_rencontre, jeton_reponse, jeton_desabonnement'
     )
     .eq('id', eligibleId)
     .maybeSingle()
@@ -78,6 +80,11 @@ export async function POST(request: NextRequest) {
       { error: 'Ce client a déjà été traité (envoi, exclusion ou désabonnement).' },
       400
     )
+  }
+  const now = new Date()
+  const recencyWindow = getSatisfactionRecencyWindow(now)
+  if (!isRecentSatisfactionEncounter(eligible.derniere_rencontre, now)) {
+    return jsonResponse({ error: 'Envoi bloqué : la dernière rencontre doit dater des 30 derniers jours. Actualisez la liste.' }, 400)
   }
 
   const recipientEmails = [...new Set(
@@ -106,6 +113,8 @@ export async function POST(request: NextRequest) {
     .update({ statut: 'en_cours' })
     .eq('id', eligible.id)
     .eq('statut', 'en_attente')
+    .gte('derniere_rencontre', recencyWindow.from)
+    .lte('derniere_rencontre', recencyWindow.to)
     .select('id')
     .maybeSingle()
 

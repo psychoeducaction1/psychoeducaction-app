@@ -11,7 +11,7 @@ const encounters = (name: string, count: number) => Array.from({ length: count }
 }))
 test('analyse conservée: chaque non-éligibilité est expliquée et un courriel absent ne retire pas un éligible', () => {
   const input = [...encounters('Camille', 3), ...encounters('Léa', 4), ...encounters('Alex', 5), ...encounters('Sam', 4)]
-  const rows = analyzeSatisfactionImport(input, '2026-03-01', '2026-03-31', new Set(['alex']), new Set(['sam']), []).rows
+  const rows = analyzeSatisfactionImport(input, '2026-03-01', '2026-03-31', new Set(['alex']), new Set(['sam']), [], new Date('2026-03-20T16:00:00Z')).rows
   assert.deepEqual(rows.map(row => row.eligible), [false, true, false, false])
   assert.match(rows[0].reasons[0], /Moins de 4/)
   assert.equal(rows[1].contactIssue, 'missing_client')
@@ -23,7 +23,7 @@ test('une homonymie est signalée et aucun courriel n’est choisi arbitrairemen
   const rows = analyzeSatisfactionImport(input, '2026-03-01', '2026-03-31', new Set(), new Set(), [
     { clientName: 'Camille', requesterNames: [], emails: ['first@example.invalid'] },
     { clientName: 'Camille', requesterNames: [], emails: ['other@example.invalid'] },
-  ]).rows
+  ], new Date('2026-03-20T16:00:00Z')).rows
   assert.equal(rows[0].contactIssue, 'ambiguous')
   assert.equal('emails' in rows[0], false)
 })

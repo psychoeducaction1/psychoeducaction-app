@@ -24,7 +24,8 @@ import { supabase } from '@/lib/supabaseClient'
 import { isSuperAdmin } from '@/lib/superAdmin'
 import { ImportAnalysis } from '@/components/satisfaction/ImportAnalysis'
 import { TestEmailPanel } from '@/components/satisfaction/TestEmailPanel'
-import { matchesSatisfactionSearch, satisfactionContactIssueLabel, type SatisfactionAnalysis } from '@/lib/satisfactionWorkspace'
+import { ListPagination } from '@/components/satisfaction/ListPagination'
+import { getSatisfactionPage, matchesSatisfactionSearch, satisfactionContactIssueLabel, type SatisfactionAnalysis } from '@/lib/satisfactionWorkspace'
 import {
   buildSatisfactionEmail,
   detectEncounterPeriod,
@@ -129,6 +130,7 @@ export default function DirectionSatisfactionPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [professionalFilter, setProfessionalFilter] = useState('')
+  const [eligiblePage, setEligiblePage] = useState(1)
   const [missingEmailCount, setMissingEmailCount] = useState(0)
 
   const [history, setHistory] = useState<ImportSummary[]>([])
@@ -230,6 +232,7 @@ export default function DirectionSatisfactionPage() {
     && (!statusFilter || (statusFilter === 'repondu' ? Boolean(row.reponse)
       : statusFilter === 'sans_courriel' ? !row.destinataire_email : row.statut === statusFilter)))
   const professionals = [...new Set([...eligibles.map(row => row.professionnel), ...(analysis?.rows.map(row => row.professionnel) ?? [])].filter((value): value is string => Boolean(value)))].sort()
+  const eligiblePagination = getSatisfactionPage(filteredEligibles, eligiblePage)
 
   const handleFileChange = async (file: File | null) => {
     setFileError('')
@@ -240,6 +243,7 @@ export default function DirectionSatisfactionPage() {
     setSelectedIds(new Set())
     setCurrentImport(null)
     setAnalysis(null)
+    setEligiblePage(1)
     setEditingPeriod(false)
 
     if (!file) return
@@ -321,6 +325,7 @@ export default function DirectionSatisfactionPage() {
       setAnalysis(body.analysis ?? null)
       setCurrentImport(body.import ?? null)
       setSearch(''); setStatusFilter(''); setProfessionalFilter('')
+      setEligiblePage(1)
       setSelectedIds(new Set())
       setCurrentImportLabel(
         `Import du ${formatDateFr(periodStart)} au ${formatDateFr(periodEnd)}`
@@ -452,6 +457,7 @@ export default function DirectionSatisfactionPage() {
       setCurrentImport(body.import ?? null)
       setAnalysis(body.analysis ?? null)
       setSearch(''); setStatusFilter(''); setProfessionalFilter('')
+      setEligiblePage(1)
       setSelectedIds(new Set())
       setCurrentImportLabel(label)
       setMissingEmailCount(
@@ -496,7 +502,7 @@ export default function DirectionSatisfactionPage() {
       <main className="min-w-0 flex-1 p-4 sm:p-6 lg:ml-72">
         <PageHeader
           title="Satisfaction des clients"
-          description={`Sondage auprès des clients ayant au moins ${SATISFACTION_MIN_ENCOUNTERS} rencontres sur la période. Aucun envoi automatique : chaque invitation est vérifiée puis envoyée individuellement.`}
+          description={`Au moins ${SATISFACTION_MIN_ENCOUNTERS} rencontres sur la période importée, dont la dernière dans les 30 derniers jours. Aucun envoi automatique : chaque invitation est vérifiée puis envoyée individuellement.`}
         />
 
         {actionMessage && (
@@ -516,6 +522,7 @@ export default function DirectionSatisfactionPage() {
             regroupées par client, seuls les clients avec au moins{' '}
             {SATISFACTION_MIN_ENCOUNTERS} rencontres sont retenus, et les clients
             déjà sollicités ou désabonnés sont exclus automatiquement.
+            La dernière rencontre doit dater des 30 derniers jours, calculés selon la date d’aujourd’hui à Montréal, même si le fichier couvre une période plus ancienne.
           </p>
           <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
             <div>
@@ -601,15 +608,15 @@ export default function DirectionSatisfactionPage() {
         </SectionCard>
 
         {currentImport && <div className="mt-6"><SectionCard title={currentImportLabel || 'Détail de l’import'}>
-          <p className="text-sm text-[#6c5a4d]">{currentImport.file_name ?? 'Fichier importé'} — {currentImport.row_count} rencontre(s) détectée(s), {eligibles.length} client(s) éligible(s).</p>
+          <p className="text-sm text-[#6c5a4d]">{currentImport.file_name ?? 'Fichier importé'} — {currentImport.row_count} rencontre(s) détectée(s), {stats.enAttente} client(s) en attente avec une rencontre récente. Les dossiers déjà traités restent dans l’historique.</p>
           {eligibles.length === 0 && <p className="mt-2 text-sm">Aucun client éligible dans cet import. Consultez le détail de l’analyse ci-dessous pour connaître les raisons.</p>}
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            <label className="text-sm">Rechercher<input type="search" placeholder="Client, destinataire, courriel ou professionnel" className={inputClass} value={search} onChange={e => setSearch(e.target.value)} /></label>
-            <label className="text-sm">Professionnel<select className={inputClass} value={professionalFilter} onChange={e => setProfessionalFilter(e.target.value)}><option value="">Tous les professionnels</option>{professionals.map(name => <option key={name} value={name}>{name}</option>)}</select></label>
-            <label className="text-sm">Statut des invitations<select className={inputClass} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option value="">Tous les statuts</option>{Object.entries(STATUT_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}<option value="repondu">Répondu</option><option value="sans_courriel">Sans courriel</option></select></label>
+            <label className="text-sm">Rechercher<input type="search" placeholder="Client, destinataire, courriel ou professionnel" className={inputClass} value={search} onChange={e => { setSearch(e.target.value); setEligiblePage(1) }} /></label>
+            <label className="text-sm">Professionnel<select className={inputClass} value={professionalFilter} onChange={e => { setProfessionalFilter(e.target.value); setEligiblePage(1) }}><option value="">Tous les professionnels</option>{professionals.map(name => <option key={name} value={name}>{name}</option>)}</select></label>
+            <label className="text-sm">Statut des invitations<select className={inputClass} value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setEligiblePage(1) }}><option value="">Tous les statuts</option>{Object.entries(STATUT_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}<option value="repondu">Répondu</option><option value="sans_courriel">Sans courriel</option></select></label>
           </div>
           <p className="mt-2 text-xs text-[#8a6f5d]">La recherche accepte plusieurs mots, sans distinction de casse ou d’accents. Les invitations et l’analyse sont filtrées par recherche et professionnel.</p>
-        </SectionCard><ImportAnalysis analysis={analysis} query={search} professional={professionalFilter} /></div>}
+        </SectionCard><ImportAnalysis key={`${currentImport.id}:${search}:${professionalFilter}`} analysis={analysis} query={search} professional={professionalFilter} /></div>}
 
         {eligibles.length > 0 && (
           <div className="mt-6">
@@ -617,7 +624,7 @@ export default function DirectionSatisfactionPage() {
               title={`2. Vérifier et envoyer ${currentImportLabel ? `— ${currentImportLabel}` : ''}`}
             >
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-                <StatCard label="Éligibles" value={String(stats.total)} />
+                <StatCard label="Dossiers affichés" value={String(stats.total)} />
                 <StatCard label="En attente" value={String(stats.enAttente)} />
                 <StatCard label="Envoyés" value={String(stats.envoyes)} />
                 <StatCard label="Réponses" value={String(stats.responses)} />
@@ -652,6 +659,7 @@ export default function DirectionSatisfactionPage() {
                 </div>
               )}
 
+              <ListPagination {...eligiblePagination} label="Pages des invitations" onPageChange={setEligiblePage} />
               <div className={tableShellClass}>
                 <table className={`${tableClass} w-full`}>
                   <thead className={tableHeaderClass}>
@@ -669,7 +677,7 @@ export default function DirectionSatisfactionPage() {
                     </tr>
                   </thead>
                   <tbody className={tableBodyClass}>
-                    {filteredEligibles.map((row) => {
+                    {eligiblePagination.rows.map((row) => {
                       const canAct = row.statut === 'en_attente' || row.statut === 'exclu'
                       const hasEmail = Boolean(row.destinataire_email?.trim())
                       return (
@@ -812,6 +820,7 @@ export default function DirectionSatisfactionPage() {
                   </tbody>
                 </table>
               </div>
+              <ListPagination {...eligiblePagination} label="Pages des invitations (bas)" onPageChange={setEligiblePage} />
               {filteredEligibles.length === 0 && <p className="mt-3 text-sm">Aucune invitation ne correspond à ces filtres.</p>}
             </SectionCard>
           </div>

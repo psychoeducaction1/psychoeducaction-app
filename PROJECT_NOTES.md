@@ -110,6 +110,16 @@ Le premier bouton Google utilise le vrai lien de la clinique aussi dans le test;
 l'ancien lien `?view=google` redirige vers cette fiche. Courriels marques avec le logo
 PNG fourni (`public/psychoeducaction-email-logo.png`), sans modifier l'image originale.
 
+Satisfaction, evolution preparee le 14 octobre: derniere rencontre dans les
+30 derniers jours selon Toronto, en plus des quatre rencontres sur la periode
+importee. Verification a l'import, a la lecture d'un ancien lot, a la reintegration
+et a l'envoi. L'analyse ancienne est actualisee a la lecture sans ecriture en base;
+les anciens candidats ne sont pas supprimes et les envois/reponses sont conserves.
+Deux listes paginees de 25 lignes (analyse et invitations), avec recherche/filtres
+avant pagination, compteurs globaux et navigation precedente/suivante.
+Pas de migration SQL requise. Commit/push et publication autorises le 14 octobre;
+`npm run check:full` valide (165 tests et build). Aucun vrai courriel envoye.
+
 ## Parcours d'assignation
 1. Un professionnel, ou un gestionnaire autorise dans sa fiche, cree/augmente une demande.
 2. Un client en attente est assigne directement, marque hors plateforme, ou place dans une

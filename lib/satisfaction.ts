@@ -1,4 +1,5 @@
 import { classifyPayrollActivity } from './payrollActivity.ts'
+import { getTorontoDate, shiftIsoDate } from './adSpend.ts'
 
 /**
  * Logique métier de la fonction « Satisfaction des clients ».
@@ -10,6 +11,33 @@ import { classifyPayrollActivity } from './payrollActivity.ts'
 
 /** Nombre minimal de rencontres sur la période pour être éligible au sondage. */
 export const SATISFACTION_MIN_ENCOUNTERS = 4
+export const SATISFACTION_RECENCY_DAYS = 30
+export const SATISFACTION_RECENCY_REASONS = [
+  'Aucune rencontre dans les 30 derniers jours',
+  'Dernière rencontre dans le futur',
+  'Dernière rencontre absente ou invalide',
+] as const
+
+export function getSatisfactionRecencyWindow(now = new Date()) {
+  const to = getTorontoDate(now)
+  return { from: shiftIsoDate(to, -(SATISFACTION_RECENCY_DAYS - 1)), to }
+}
+
+export function satisfactionRecencyReason(lastEncounter: string | null | undefined, now = new Date()): string | null {
+  if (!lastEncounter || parseSatisfactionDate(lastEncounter) !== lastEncounter) return SATISFACTION_RECENCY_REASONS[2]
+  const { from, to } = getSatisfactionRecencyWindow(now)
+  if (lastEncounter > to) return SATISFACTION_RECENCY_REASONS[1]
+  return lastEncounter < from ? SATISFACTION_RECENCY_REASONS[0] : null
+}
+
+export function isRecentSatisfactionEncounter(lastEncounter: string | null | undefined, now = new Date()) {
+  return satisfactionRecencyReason(lastEncounter, now) === null
+}
+
+// Les dossiers déjà traités restent consultables, même après expiration du délai.
+export function shouldShowSatisfactionInvitation(row: { statut: string; derniere_rencontre?: string | null }, now = new Date()) {
+  return !['en_attente', 'exclu'].includes(row.statut) || isRecentSatisfactionEncounter(row.derniere_rencontre, now)
+}
 
 export type SatisfactionEncounter = {
   clientNom: string
@@ -249,11 +277,13 @@ export function detectEncounterPeriod(
 export function buildEligibleList(
   groups: SatisfactionClientGroup[],
   alreadySolicitedNormalizedNames: Set<string>,
-  unsubscribedNormalizedNames: Set<string>
+  unsubscribedNormalizedNames: Set<string>,
+  now = new Date()
 ): SatisfactionClientGroup[] {
   return groups.filter(
     (group) =>
       group.nbRencontres >= SATISFACTION_MIN_ENCOUNTERS &&
+      isRecentSatisfactionEncounter(group.derniereRencontre, now) &&
       !alreadySolicitedNormalizedNames.has(group.clientNomNormalise) &&
       !unsubscribedNormalizedNames.has(group.clientNomNormalise)
   )

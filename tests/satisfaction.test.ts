@@ -123,7 +123,8 @@ test('le seuil d’éligibilité est d’au moins 4 rencontres', () => {
   const eligible = buildEligibleList(
     [makeGroup(3), makeGroup(4), makeGroup(7)],
     new Set(),
-    new Set()
+    new Set(),
+    new Date('2026-10-14T16:00:00Z')
   )
 
   assert.deepEqual(
@@ -146,7 +147,8 @@ test('buildEligibleList exclut les déjà-sollicités et les désabonnés', () =
   const eligible = buildEligibleList(
     [makeGroup('Marie Côté'), makeGroup('Jean Tremblay'), makeGroup('Aïcha Benali')],
     new Set(['marie cote']),
-    new Set(['aicha benali'])
+    new Set(['aicha benali']),
+    new Date('2026-10-14T16:00:00Z')
   )
 
   assert.deepEqual(

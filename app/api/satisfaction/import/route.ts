@@ -6,9 +6,11 @@ import {
   detectEncounterPeriod,
   generateSatisfactionToken,
   groupEncountersByClient,
+  isRecentSatisfactionEncounter,
+  shouldShowSatisfactionInvitation,
   resolveUniqueSatisfactionRecipients,
 } from '@/lib/satisfaction'
-import { analyzeSatisfactionImport, isSatisfactionDate, validateSatisfactionEncounters } from '@/lib/satisfactionWorkspace'
+import { analyzeSatisfactionImport, isSatisfactionDate, refreshSatisfactionAnalysisRecency, validateSatisfactionEncounters, type SatisfactionAnalysis } from '@/lib/satisfactionWorkspace'
 
 function jsonResponse(body: object, status: number) {
   return NextResponse.json(body, { status })
@@ -128,6 +130,7 @@ export async function POST(request: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin()
 
   try {
+    const now = new Date()
     const groups = groupEncountersByClient(encounters, periodStart, periodEnd)
 
     const { data: solicitedRows, error: solicitedError } = await supabaseAdmin
@@ -149,7 +152,7 @@ export async function POST(request: NextRequest) {
       (unsubscribedRows ?? []).map((row) => row.nom_normalise)
     )
 
-    const eligibleGroups = buildEligibleList(groups, alreadySolicited, unsubscribed)
+    const eligibleGroups = buildEligibleList(groups, alreadySolicited, unsubscribed, now)
 
     // Appariement des courriels via les fiches de la liste d'attente.
     const { data: waitingListRows, error: waitingListError } = await supabaseAdmin
@@ -167,7 +170,7 @@ export async function POST(request: NextRequest) {
         emails: getContactEmails(row),
       })
     )
-    const analysis = analyzeSatisfactionImport(encounters, periodStart, periodEnd, alreadySolicited, unsubscribed, contactRows)
+    const analysis = analyzeSatisfactionImport(encounters, periodStart, periodEnd, alreadySolicited, unsubscribed, contactRows, now)
 
     const { data: importRow, error: importError } = await supabaseAdmin
       .from('satisfaction_imports')
@@ -292,6 +295,7 @@ export async function GET(request: NextRequest) {
 
   const supabaseAdmin = getSupabaseAdmin()
   const importId = request.nextUrl.searchParams.get('importId')
+  const now = new Date()
 
   try {
     if (importId) {
@@ -316,8 +320,8 @@ export async function GET(request: NextRequest) {
         .order('envoye_le', { ascending: false }) : { data: [], error: null }
       if (responses.error) throw responses.error
       if (sends.error) throw sends.error
-      return jsonResponse({ import: importRow, analysis: importRow.analysis ?? null,
-        eligibles: (eligibles ?? []).map(row => ({ ...row,
+      return jsonResponse({ import: importRow, analysis: refreshSatisfactionAnalysisRecency((importRow.analysis ?? null) as SatisfactionAnalysis | null, now),
+        eligibles: (eligibles ?? []).filter(row => shouldShowSatisfactionInvitation(row, now)).map(row => ({ ...row,
           reponse: responses.data?.find(response => response.eligible_id === row.id) ?? null,
           dernier_envoi: sends.data?.find(send => send.eligible_id === row.id) ?? null,
         })) }, 200)
@@ -345,7 +349,7 @@ export async function GET(request: NextRequest) {
     if (importIds.length > 0) {
       const { data: eligibleRows, error: eligibleError } = await supabaseAdmin
         .from('satisfaction_eligibles')
-        .select('id, import_id, statut')
+        .select('id, import_id, statut, derniere_rencontre')
         .in('import_id', importIds)
 
       if (eligibleError) throw eligibleError
@@ -358,7 +362,7 @@ export async function GET(request: NextRequest) {
         importByEligibleId.set(row.id, row.import_id)
         const stats = statsByImport[row.import_id]
         if (stats) {
-          stats.eligible_count += 1
+          if (isRecentSatisfactionEncounter(row.derniere_rencontre, now) && !['exclu', 'desabonne'].includes(row.statut)) stats.eligible_count += 1
           if (row.statut === 'envoye') stats.sent_count += 1
         }
       }
@@ -467,7 +471,7 @@ export async function PATCH(request: NextRequest) {
   try {
     const { data: current, error: currentError } = await supabaseAdmin
       .from('satisfaction_eligibles')
-      .select('id, statut, destinataire_nom')
+      .select('id, statut, destinataire_nom, derniere_rencontre')
       .eq('id', eligibleId)
       .maybeSingle()
 
@@ -478,6 +482,9 @@ export async function PATCH(request: NextRequest) {
         { error: 'Ce client a déjà été traité et ne peut plus être modifié.' },
         400
       )
+    }
+    if (updates.statut === 'en_attente' && !isRecentSatisfactionEncounter(current.derniere_rencontre)) {
+      return jsonResponse({ error: 'Ce client ne peut pas être réintégré : sa dernière rencontre doit dater des 30 derniers jours.' }, 400)
     }
 
     const { data: updated, error: updateError } = await supabaseAdmin
