@@ -133,6 +133,15 @@ Commit/push, publication et reprise des 72 candidats en production explicitement
 autorises le 14 octobre, sans aucun courriel. Le plan conserve les 51 candidats
 existants et porte le lot a 123; aucune autre exclusion n'est levee.
 
+Journal d'audit, correction preparee le 14 octobre: les evenements Satisfaction
+sont masques a la lecture, avant la limite des 500 entrees, puis verifies aussi
+cote affichage. Les actions futures au prefixe `satisfaction_` et les deux types
+d'entite Satisfaction sont exclus. Les anciens champs NULL et toutes les autres
+actions sont conserves. Le suivi dans Satisfaction et les traces futures en base
+restent inchanges. `npm run check:full` valide (168 tests et build); requete
+verifiee en production en lecture seule, sans evenement ni courriel de test.
+Aucun SQL requis; commit/push et publication de ce filtre autorises le 14 octobre.
+
 ## Parcours d'assignation
 1. Un professionnel, ou un gestionnaire autorise dans sa fiche, cree/augmente une demande.
 2. Un client en attente est assigne directement, marque hors plateforme, ou place dans une

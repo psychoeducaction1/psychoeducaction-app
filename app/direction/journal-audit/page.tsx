@@ -19,6 +19,7 @@ import {
 import { buttonClass } from '@/components/Ui'
 import { supabase } from '@/lib/supabaseClient'
 import { isSuperAdmin } from '@/lib/superAdmin'
+import { excludeSatisfactionAuditEvents, isVisibleInAuditJournal } from '@/lib/auditJournal'
 import {
   getAssignedClientStatusMeta,
   type AssignedClientStatus,
@@ -211,11 +212,12 @@ export default function DirectionJournalAuditPage() {
 
       setCanDeleteAuditLog(isSuperAdmin(user, currentProfile))
 
-      const { data, error: auditError } = await supabase
+      const auditQuery = supabase
         .from('audit_logs')
         .select(
           'id, created_at, actor_profile_id, actor_name, actor_role, action, entity_type, entity_id, description, metadata'
         )
+      const { data, error: auditError } = await excludeSatisfactionAuditEvents(auditQuery)
         .order('created_at', { ascending: false })
         .limit(500)
 
@@ -225,7 +227,7 @@ export default function DirectionJournalAuditPage() {
         return
       }
 
-      setLogs((data ?? []) as AuditLogRow[])
+      setLogs(((data ?? []) as AuditLogRow[]).filter(isVisibleInAuditJournal))
       setLoading(false)
     }
 

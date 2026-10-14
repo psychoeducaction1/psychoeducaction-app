@@ -173,6 +173,11 @@ Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workfl
 - Satisfaction: au moins quatre rencontres dans la periode importee; correspondance
   unique du client; tous les destinataires autorises du dossier; pas de nouvelle sollicitation
   d'un client deja contacte/desabonne. Les contraintes SQL participent a cette garantie.
+- Journal d'audit: masquer les actions au prefixe exact `satisfaction_` ainsi que les
+  entites `satisfaction_import` et `satisfaction_eligible`, avant la limite de lecture.
+  Conserver les autres entrees, y compris avec action/type absent. L'historique des
+  imports, envois et reponses reste consultable dans Satisfaction. Ce filtre d'affichage
+  n'efface aucune trace en base et ne modifie ni les droits ni les envois.
 - Satisfaction: derniere rencontre dans les 30 derniers jours inclusifs selon
   `America/Toronto`, ou rencontre a venir. Les dates futures sont admises comme
   indice d'un suivi actif; seules les dates absentes ou impossibles sont refusees.
