@@ -8,6 +8,7 @@ import {
   ChartNoAxesCombined,
   CalendarDays,
   ClipboardList,
+  FilePenLine,
   ChartPie,
   DollarSign,
   History,
@@ -29,6 +30,7 @@ import {
 } from '@/lib/payrollAccess'
 import { isSuperAdmin } from '@/lib/superAdmin'
 import { isAdministrativeTaskAuthorized } from '@/lib/administrativeTaskAccess'
+import { canAccessClinicalNotes } from '@/lib/clinicalNotesAccess'
 
 type UserRole = 'direction' | 'professionnel' | null
 type NavLink = {
@@ -46,6 +48,7 @@ export function AppNav() {
   const [administrativePayrollAuthorized, setAdministrativePayrollAuthorized] =
     useState(false)
   const [budgetAuthorized, setBudgetAuthorized] = useState(false)
+  const [clinicalNotesAuthorized, setClinicalNotesAuthorized] = useState(false)
   const [administrativeTasksAuthorized, setAdministrativeTasksAuthorized] =
     useState(false)
 
@@ -80,6 +83,7 @@ export function AppNav() {
         isAdministrativePayrollAuthorized({ email: user.email }, data)
       )
       setBudgetAuthorized(isSuperAdmin({ email: user.email }, data))
+      setClinicalNotesAuthorized(canAccessClinicalNotes(user, data))
       setAdministrativeTasksAuthorized(
         isAdministrativeTaskAuthorized({ email: user.email }, data)
       )
@@ -124,6 +128,9 @@ export function AppNav() {
           ...(budgetAuthorized
             ? [{ href: '/direction/satisfaction', label: 'Satisfaction', icon: Star }]
             : []),
+          ...(clinicalNotesAuthorized
+            ? [{ href: '/prise-de-notes', label: 'Prise de notes', icon: FilePenLine }]
+            : []),
           ...(payrollAuthorized
             ? [{ href: '/direction/paie', label: 'Paie', icon: DollarSign }]
             : []),
@@ -147,6 +154,9 @@ export function AppNav() {
             { href: '/professionnel/clients', label: 'Mes assignations', icon: UserCheck },
             { href: '/professionnel/demande', label: 'Ma demande', icon: ClipboardList },
             { href: '/professionnel/historique', label: 'Historique', icon: History },
+            ...(clinicalNotesAuthorized
+              ? [{ href: '/prise-de-notes', label: 'Prise de notes', icon: FilePenLine }]
+              : []),
             {
               href: '/professionnel/preferences',
               label: 'Mes préférences',
@@ -188,7 +198,9 @@ export function AppNav() {
     navLinks.map((link) => {
       const Icon = link.icon
       const isActive =
-        displayRole === 'direction'
+        link.href === '/prise-de-notes'
+          ? pathname === '/prise-de-notes'
+          : displayRole === 'direction'
           ? link.href === '/direction'
             ? pathname === '/direction'
             : link.href === '/direction/liste-attente'

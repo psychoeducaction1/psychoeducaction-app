@@ -151,6 +151,14 @@ Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workfl
   Verification visuelle des quantites/totaux requise.
 
 ## Paie des adjointes, acces et satisfaction
+- Prise de notes, etape pilote: seulement le super administrateur avec profil direction
+  et le compte professionnel pilote de Hicham Boukili, identifie par UUID Auth dans
+  `clinicalNotesAccess`. Les autres professionnels et adjointes sont refuses, y compris
+  par API directe. JWT verifie et profil charge requis; jamais un nom ou email de profil.
+  Donnees integralement fictives, etat en memoire uniquement, sans table clinique,
+  migration, microphone, import reel, IA ou acces PsyLog. Une correction invalide la
+  relecture; copie possible seulement apres validation. Copier ne confirme pas un depot:
+  la confirmation est une etape distincte et simulee. Ne rien deposer dans un vrai dossier.
 - Heures pre-remplies selon `default_schedule`, ajustables; samedi a zero modifiable.
 - Horaire date: une variante `effectiveFrom` s'applique a partir de cette date, inclusivement.
   Sans variante applicable, l'horaire initial reste utilise. Une saisie existante prime.
