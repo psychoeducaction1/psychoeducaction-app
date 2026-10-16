@@ -68,7 +68,7 @@ pas une verification des migrations, variables ou balises presentes en productio
 | Satisfaction | Import d'activites, seuil de rencontres, courriels individuels, reponse et desabonnement. |
 | Prise de notes (pilote) | `/prise-de-notes`: parcours fictif reserve au super administrateur et au compte professionnel pilote; aucune capture audio, IA ou sauvegarde clinique. |
 
-Pilote Prise de notes prepare le 16 octobre 2026, publication distincte a autoriser:
+Pilote Prise de notes publie avec autorisation le 16 octobre 2026 (`74a9668`):
 acces par `clinicalNotesAccess`, compte professionnel identifie par son UUID Auth
 verifie (pas son nom) et super administrateur avec profil direction charge.
 `GET /api/prise-de-notes` verifie le JWT et lit uniquement le profil via les RLS,
@@ -78,6 +78,11 @@ en memoire de l'onglet et disparaissent a l'actualisation ou au changement de co
 Preparation Teams/presentiel simulee, brouillon a relire, validation explicite,
 copie manuelle et confirmation de depot simulee separee. Aucun lien automatique
 avec PsyLog, envoi courriel ou appel a un fournisseur IA.
+Production verifiee: acces super administrateur, liste fictive, relecture et validation;
+API sans session ou avec jeton fictif invalide en 401, sans donnees retournees.
+La connexion directe au compte professionnel pilote n'a pas ete exercee; son UUID
+Auth et son role ont ete verifies en lecture seule. Menu lateral defilant pour garder
+toutes les sections et la deconnexion accessibles sur un ecran peu haut.
 
 Modification du 14 octobre 2026: `default_schedule` accepte des variantes avec
 `effectiveFrom`; les anciens jours utilisent l'horaire initial. Le salaire mensuel

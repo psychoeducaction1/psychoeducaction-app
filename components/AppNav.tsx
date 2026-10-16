@@ -272,9 +272,9 @@ export function AppNav() {
           </div>
         )}
 
-        <nav className="mt-7 flex flex-1 flex-col gap-1">{renderLinks()}</nav>
+        <nav className="mt-7 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">{renderLinks()}</nav>
 
-        <button type="button" onClick={handleSignOut} className={buttonClass('secondary')}>
+        <button type="button" onClick={handleSignOut} className={`${buttonClass('secondary')} mt-4 shrink-0`}>
           Déconnexion
         </button>
       </aside>

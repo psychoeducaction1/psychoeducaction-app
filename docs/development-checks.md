@@ -53,8 +53,11 @@ ont ete controles dans un apercu au transport et aux identites fictifs: menus de
 deux comptes pilotes, refus des autres comptes, preparation Teams/presentiel,
 correction invalidant la relecture, validation, copie et confirmation separee.
 Pas de debordement global a 390 et 320 px; actualisation remettant les essais a zero.
-La vraie API est exercee hors ligne avec dependances simulees. Cela ne constitue
-pas une verification des acces en production; aucune publication ni mutation SQL.
+La vraie API est exercee hors ligne avec dependances simulees. Apres publication
+autorisee (`74a9668`), acces super administrateur, relecture/validation et refus 401
+sans session/avec jeton invalide verifies en production. Connexion directe au compte
+professionnel pilote non exercee. Aucun SQL ni ecriture clinique. Menu lateral
+defilant controle sur l'apercu direction: journal accessible, deconnexion visible.
 
 Courriel et sondage: tests hors ligne des deux choix distincts (Google public et
 sondage prive), premier bouton vers le vrai lien Google meme en test, logo PNG,
