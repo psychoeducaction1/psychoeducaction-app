@@ -84,6 +84,20 @@ La connexion directe au compte professionnel pilote n'a pas ete exercee; son UUI
 Auth et son role ont ete verifies en lecture seule. Menu lateral defilant pour garder
 toutes les sections et la deconnexion accessibles sur un ecran peu haut.
 
+Etape 2 autorisee pour publication le 16 octobre: essai OpenAI separe
+du parcours simule, active seulement avec `OPENAI_API_KEY` et
+`CLINICAL_NOTES_AI_ENABLED=true` cote serveur. Meme controle JWT/profil pour GET et
+POST dans `clinicalNotesServer`. Import court borne a 3 Mo (flux borne avant parsing),
+transcription corrigeable, brouillon structure puis validation et copie manuelles.
+Pas de sauvegarde, Storage, courriel ni depot PsyLog; aucune relance API automatique.
+Projet OpenAI dedie « PsychoEducAction - Prise de notes - Pilote » cree; seuls
+`gpt-transcribe` et `gpt-6.1-sol` autorises. Budget initial demande: 10 USD maximum,
+sans recharge automatique. Credit de 10 USD et recharge OFF verifies dans le compte
+OpenAI. Accord explicite recu pour la cle restreinte, le secret serveur Vercel,
+le commit/push et un essai audio synthetique fictif. Cle restreinte creee pour
+30 jours et variables de production configurees; verification du deploiement et
+du parcours reel a terminer. Aucun dossier reel autorise.
+
 Modification du 14 octobre 2026: `default_schedule` accepte des variantes avec
 `effectiveFrom`; les anciens jours utilisent l'horaire initial. Le salaire mensuel
 reste une reference liee a l'horaire initial, permettant de payer les heures ajoutees

@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { ArrowLeft, Check, Copy, FilePenLine, Plus, Video } from 'lucide-react'
 import { AlertBanner, Badge, buttonClass, SectionCard } from '@/components/ui/index'
 import {
@@ -12,19 +13,21 @@ const statusLabel: Record<DemoNoteStatus, string> = {
   prepare: 'À préparer', draft: 'À relire', validated: 'Validée pour l’exercice', deposited: 'Dépôt simulé confirmé',
 }
 const fieldClass = 'w-full min-w-0 rounded-xl border border-[#dfd0bf] bg-white px-3 py-2.5 text-sm'
+const AiTrial = dynamic(() => import('@/components/ClinicalNotesAiTrial'))
 
 function formatDate(date: string) {
   return new Intl.DateTimeFormat('fr-CA', { dateStyle: 'long', timeZone: 'UTC' })
     .format(new Date(`${date}T12:00:00Z`))
 }
 
-export default function ClinicalNotesWorkspace({ initialSessions }: { initialSessions: DemoSession[] }) {
+export default function ClinicalNotesWorkspace({ initialSessions, aiEnabled = false }: { initialSessions: DemoSession[]; aiEnabled?: boolean }) {
   const [sessions, setSessions] = useState(initialSessions)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [message, setMessage] = useState('')
   const [confirmDeposit, setConfirmDeposit] = useState(false)
   const [copyFallback, setCopyFallback] = useState(false)
   const [copying, setCopying] = useState(false)
+  const [showAiTrial, setShowAiTrial] = useState(false)
   const copyArea = useRef<HTMLTextAreaElement>(null)
   const selected = sessions.find(session => session.id === selectedId)
   const copyText = selected ? getDemoCopyText(selected) : null
@@ -64,7 +67,12 @@ export default function ClinicalNotesWorkspace({ initialSessions }: { initialSes
 
   return <div className="space-y-6">
     <AlertBanner title="Démonstration — données fictives uniquement" tone="neutral"
-      description="N’entrez aucune information réelle. Aucun audio, aucune IA ni sauvegarde : les essais restent dans cet onglet et disparaissent à son actualisation. Ne collez pas ces exemples dans un vrai dossier PsyLog." />
+      description="N’entrez aucune information réelle. Les séances ci-dessous sont simulées. L’essai IA séparé demande une confirmation avant tout envoi. Les essais restent dans cet onglet et disparaissent à son actualisation. Ne les déposez pas dans un vrai dossier PsyLog." />
+
+    {!selected && <div className="space-y-4">
+      <button className={buttonClass('secondary')} onClick={() => setShowAiTrial(value => !value)}>{showAiTrial ? 'Fermer l’essai IA' : 'Essayer l’IA avec un audio fictif'}</button>
+      {showAiTrial && <AiTrial enabled={aiEnabled} />}
+    </div>}
 
     {!selected ? <>
       <div className="flex flex-wrap items-center justify-between gap-3">

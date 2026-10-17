@@ -47,6 +47,7 @@ registerHooks({ resolve(specifier, context, nextResolve) {
 } })
 const { NextRequest } = await import('next/server.js')
 const route = await import('../../app/api/prise-de-notes/route.ts')
+const trial = await import('../../app/api/prise-de-notes/essai/route.ts')
 const ordinary = { id: 'ordinary-fixture', email: 'ordinary@example.invalid' }
 const owner = { id: 'owner-fixture', email: SUPER_ADMIN_EMAIL }
 const pilot = { id: CLINICAL_NOTES_PILOT_USER_ID, email: 'pilot@example.invalid' }
@@ -85,5 +86,81 @@ for (scenario of [
   }
   if (scenario.expected === 401 || scenario.name === 'network_error') assert.equal(profileReads, 0)
   if (scenario.name === 'anonymous') assert.equal(authReads, 0)
+  const blockedTrial = await trial.POST(new NextRequest('https://fixture.example.invalid/api/prise-de-notes/essai', {
+    method: 'POST', headers: scenario.name === 'anonymous' ? {} : { Authorization: 'Bearer fixture-token' }, body: '{}',
+  }))
+  assert.equal(blockedTrial.status, scenario.expected === 200 ? 503 : scenario.expected, `Essai: ${scenario.name}`)
 }
 assert.equal(route.POST, undefined, 'Aucune route de sauvegarde ou de generation reelle')
+
+scenario = { name: 'owner', user: owner, profile: { role: 'direction' } }
+process.env.CLINICAL_NOTES_AI_ENABLED = 'true'
+process.env.OPENAI_API_KEY = 'fixture-provider-key'
+let providerCalls = 0
+let providerFailure = false
+globalThis.fetch = async (url, options) => {
+  assert.equal(options.method, 'POST')
+  assert.equal(options.headers.Authorization, 'Bearer fixture-provider-key')
+  assert.equal(options.cache, 'no-store')
+  providerCalls++
+  if (providerFailure) return new Response('Erreur contenant des donnees fictives a ne pas retourner', { status: 429 })
+  if (url === 'https://api.openai.com/v1/audio/transcriptions') {
+    assert.ok(options.body instanceof FormData)
+    assert.equal(options.body.get('model'), 'gpt-transcribe')
+    assert.equal(options.body.get('file').name, 'extrait-fictif.wav')
+    return Response.json({ text: 'Transcription entièrement fictive.' })
+  }
+  assert.equal(url, 'https://api.openai.com/v1/responses')
+  const body = JSON.parse(options.body)
+  assert.equal(body.store, false)
+  assert.equal(body.model, 'gpt-6.1-sol')
+  assert.equal(body.max_output_tokens, 3000)
+  assert.equal(body.text.format.type, 'json_schema')
+  assert.equal(body.text.format.strict, true)
+  assert.equal(body.input[0].role, 'developer')
+  assert.match(body.input[0].content, /N'invente aucun fait/)
+  return Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify({
+    objectif: 'Objectif fictif', informations: 'Propos fictifs', interventions: 'Non documenté',
+    observations: 'Non documenté', plan: 'Non documenté', aVerifier: 'Locuteurs à confirmer',
+  }) }] }] })
+}
+async function postJson(body) {
+  return trial.POST(new NextRequest('https://fixture.example.invalid/api/prise-de-notes/essai', {
+    method: 'POST', headers: { Authorization: 'Bearer fixture-token', 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  }))
+}
+for (const body of [{}, { fictional: false, transcript: 'Texte fictif' }, { fictional: true, transcript: '' }, { fictional: true, transcript: 'a'.repeat(16_001) }]) {
+  assert.equal((await postJson(body)).status, 400)
+}
+assert.equal(providerCalls, 0)
+const audio = new Uint8Array(32)
+audio.set(new TextEncoder().encode('RIFF'), 0)
+audio.set(new TextEncoder().encode('WAVE'), 8)
+for (const fictional of [false, true]) {
+  const form = new FormData()
+  form.set('fictional', String(fictional))
+  form.set('audio', new File([audio], 'nom-fictif-original.wav', { type: 'audio/wav' }))
+  const response = await trial.POST(new NextRequest('https://fixture.example.invalid/api/prise-de-notes/essai', {
+    method: 'POST', headers: { Authorization: 'Bearer fixture-token' }, body: form,
+  }))
+  assert.equal(response.status, fictional ? 200 : 400)
+  if (fictional) assert.equal((await response.json()).transcript, 'Transcription entièrement fictive.')
+}
+assert.equal(providerCalls, 1)
+const oversized = await trial.POST(new NextRequest('https://fixture.example.invalid/api/prise-de-notes/essai', {
+  method: 'POST', headers: { Authorization: 'Bearer fixture-token', 'Content-Type': 'multipart/form-data; boundary=fixture' }, body: 'x'.repeat(3_100_000),
+}))
+assert.equal(oversized.status, 413, 'Borne reelle du flux, meme sans Content-Length')
+assert.equal(providerCalls, 1)
+const generated = await postJson({ fictional: true, transcript: 'Source fictive uniquement' })
+assert.equal(generated.status, 200)
+assert.equal((await generated.json()).draft.aVerifier, 'Locuteurs à confirmer')
+providerFailure = true
+const failure = await postJson({ fictional: true, transcript: 'Source fictive uniquement' })
+assert.equal(failure.status, 429)
+assert.doesNotMatch(JSON.stringify(await failure.json()), /Erreur contenant/)
+assert.equal(providerCalls, 3, 'Aucun retry automatique')
+delete process.env.OPENAI_API_KEY
+const disabled = await postJson({ fictional: true, transcript: 'Source fictive uniquement' })
+assert.equal(disabled.status, 503)
+assert.equal(providerCalls, 3)

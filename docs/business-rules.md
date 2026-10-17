@@ -155,10 +155,20 @@ Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workfl
   et le compte professionnel pilote de Hicham Boukili, identifie par UUID Auth dans
   `clinicalNotesAccess`. Les autres professionnels et adjointes sont refuses, y compris
   par API directe. JWT verifie et profil charge requis; jamais un nom ou email de profil.
-  Donnees integralement fictives, etat en memoire uniquement, sans table clinique,
+  Parcours simule: donnees integralement fictives, etat en memoire uniquement, sans table clinique,
   migration, microphone, import reel, IA ou acces PsyLog. Une correction invalide la
   relecture; copie possible seulement apres validation. Copier ne confirme pas un depot:
   la confirmation est une etape distincte et simulee. Ne rien deposer dans un vrai dossier.
+- Etape IA suivante (activation serveur explicite): essai separe exclusivement fictif.
+  Confirmation avant envoi a OpenAI, JWT et meme liste d'acces avant lecture du corps.
+  Aucun fichier/transcript/texte sauvegarde dans la base, Storage ou les journaux.
+  Flux multipart borne, fichier de 3 Mo maximum, signature reconnue, nom de fichier
+  remplace avant transmission; transcription de 16 000 caracteres maximum.
+  Rédaction structuree sans ajout de faits; incertitudes signalees, locuteurs non deduits.
+  `store:false` pour Responses n'est pas une garantie Zero Data Retention du fournisseur.
+  Relecture obligatoire avant copie, toute correction invalidant la validation.
+  Pas de retry automatique ni de modele choisi par le navigateur; aucune vraie
+  consultation tant que la configuration de confidentialite n'a pas ete validee.
 - Heures pre-remplies selon `default_schedule`, ajustables; samedi a zero modifiable.
 - Horaire date: une variante `effectiveFrom` s'applique a partir de cette date, inclusivement.
   Sans variante applicable, l'horaire initial reste utilise. Une saisie existante prime.

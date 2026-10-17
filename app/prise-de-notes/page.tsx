@@ -13,7 +13,7 @@ const Workspace = dynamic(() => import('@/components/ClinicalNotesWorkspace'), {
   loading: () => <p role="status">Ouverture de l’espace de démonstration…</p>,
 })
 
-type PilotData = { viewerId: string; mode: 'demo'; sessions: DemoSession[] }
+type PilotData = { viewerId: string; mode: 'demo'; sessions: DemoSession[]; aiEnabled: boolean }
 
 export default function ClinicalNotesPage() {
   const [data, setData] = useState<PilotData | null>(null)
@@ -85,9 +85,9 @@ export default function ClinicalNotesPage() {
     <AppNav />
     <main className="min-h-screen min-w-0 px-4 py-8 sm:px-6 lg:ml-72 lg:px-8">
       <PageHeader eyebrow="Pilote privé · étape 1" title="Prise de notes"
-        description="Essayez le parcours avec des séances entièrement fictives, avant de concevoir l’enregistrement et l’intelligence artificielle." />
+        description="Préparez, relisez et validez des notes à partir de séances entièrement fictives. L’envoi à l’IA se fait dans un essai séparé et volontaire." />
       {loading ? <p role="status">Vérification de vos accès…</p> : data ? (
-        <Workspace key={data.viewerId} initialSessions={data.sessions} />
+        <Workspace key={data.viewerId} initialSessions={data.sessions} aiEnabled={data.aiEnabled === true} />
       ) : <div className="space-y-4">
         <AlertBanner title={loginRequired ? 'Connexion requise' : 'Section indisponible'}
           description={error || 'Connectez-vous avec un compte autorisé au pilote.'} />

@@ -59,6 +59,18 @@ sans session/avec jeton invalide verifies en production. Connexion directe au co
 professionnel pilote non exercee. Aucun SQL ni ecriture clinique. Menu lateral
 defilant controle sur l'apercu direction: journal accessible, deconnexion visible.
 
+Essai IA prepare: `clinicalNotesAi.test.ts` couvre signatures de fichiers et schema
+de note; `clinicalNotesRoute.mjs` exerce GET et POST reels avec Auth et OpenAI
+simules. Roles refuses avant traitement, service desactive sans cle/activation,
+confirmation fictive, flux trop grand sans Content-Length, nom de fichier remplace,
+`store:false`, schema strict, erreur fournisseur expurgee et aucun retry.
+Les tests ne prouvent ni la qualite clinique ni la configuration du compte distant.
+`check:full` du 16 octobre reussi apres ce branchement: 175 tests et build, trois
+avertissements lint preexistants. Apercu avec transport OpenAI fictif: selection du
+WAV synthetique, confirmation, transcription vidable/corrigeable, generation et
+validation avant copie. Une correction exige une nouvelle relecture. Aucun appel
+payant effectue pour ces controles; activation et test du fournisseur distincts.
+
 Courriel et sondage: tests hors ligne des deux choix distincts (Google public et
 sondage prive), premier bouton vers le vrai lien Google meme en test, logo PNG,
 echappement HTML et liens de sondage test sans vrais jetons. L'API de reponse
