@@ -43,6 +43,11 @@ retester les memes scenarios fictifs apres publication et comparer les textes.
 Verification locale du correctif: `npm run check:full` reussi, 207 tests et build;
 trois avertissements lint preexistants, aucune nouvelle erreur. Relecture du diff:
 aucun changement de droits, schema, modele, transport ou conservation.
+Premier retest IA publie: limite d'observation dans la description, un seul ABC complet;
+evaluation 3 avec objectif et divergence inexpliquee presents, mais PAD/PEX encore
+redondants. Consigne de fusion du resume et de l'exemple anterieur renforcee ensuite,
+avec exemple de style reserve a evaluation 3; nouveaux essais a comparer sans changer
+les sources fictives.
 Scenario fictif de reference: parent rapportant sommeil/jeux video, sans diagnostic
 confirme, sans propos du jeune, sans plan ni prochaine date convenus. Ne jamais
 transformer les qualificatifs familiaux en diagnostic ou une question en technique.
