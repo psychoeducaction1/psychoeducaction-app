@@ -92,6 +92,13 @@ Edge, choisir fenetre Teams avec audio ou ecran entier avec audio, autoriser mic
 faire parler les deux personnes, verifier indicateurs puis reecouter les deux voix.
 Tester aussi Annuler, arret du partage navigateur, fermeture et deconnexion.
 Ne pas confondre l'apercu synthetique avec une verification de Teams/Windows reel.
+Publication autorisee de `11f860c`: Vercel Ready; controles sur le domaine public
+avec le compte super administrateur. Demarrage bloque avant confirmation et
+disponible apres; aucun acces au vrai micro/partage pendant la verification.
+WAV synthetique fictif importe: transcription et brouillon OpenAI reels reussis,
+validation exigible avant copie. GET/POST anonymes et jeton invalide: 401 no-store.
+Les restrictions aux deux comptes restent identiques et sont couvertes hors ligne;
+connexion directe du professionnel et appel Teams fictif sur le poste restent a faire.
 
 Courriel et sondage: tests hors ligne des deux choix distincts (Google public et
 sondage prive), premier bouton vers le vrai lien Google meme en test, logo PNG,

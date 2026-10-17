@@ -115,7 +115,12 @@ Meme perimetre de deux comptes; aucun endpoint, droit, secret ou SQL ajoute.
 Capture audio navigateur et traitement testes avec sources synthetiques uniquement;
 selection du partage et vrai appel Teams fictif restent a valider sur le poste cible.
 Accord explicite recu pour commit/push/deploiement et verification fictive, sans
-elargir l'acces. Etat du deploiement a verifier apres le push.
+elargir l'acces. Commit `11f860c` publie; deploiement Vercel
+`GAKjiLapVfFAtaEkqzKzNPbb5xLE` Ready. Sur le domaine de production: acces super
+administrateur, capture bloquee avant confirmation puis disponible, import du WAV
+synthetique fictif, transcription reelle, brouillon et validation avant copie verifies.
+GET et POST sans session/avec jeton invalide refuses (401, private no-store).
+Pas de capture d'un vrai micro ou d'un vrai appel Teams pendant ces controles.
 
 Modification du 14 octobre 2026: `default_schedule` accepte des variantes avec
 `effectiveFrom`; les anciens jours utilisent l'horaire initial. Le salaire mensuel
