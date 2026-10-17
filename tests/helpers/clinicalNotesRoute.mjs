@@ -104,7 +104,9 @@ let engineScenario = 'success'
 let engineSources
 let engineAbort
 const engineFact = () => ({ id: 'f1', kind: engineScenario === 'risk' ? 'risque' : 'propos', speaker: 'Père fictif', text: engineSources.transcript, source: 'transcript', quote: engineScenario === 'bad_quote' ? 'Citation inventée' : engineSources.transcript })
-const engineAlerts = stage => engineScenario !== 'duplicate_alerts' ? [] : stage === 'draft'
+const engineAlerts = stage => engineScenario === 'omission_with_alert'
+  ? [{ category: 'fidelite', priority: 'normal', text: 'La limite dictée manque dans la description clinique.', factIds: ['f1'] }]
+  : engineScenario !== 'duplicate_alerts' ? [] : stage === 'draft'
   ? [{ category: 'ambiguite', priority: 'prioritaire', text: 'L’attribution est à vérifier.', factIds: ['f1'] }, { category: 'ambiguite', priority: 'normal', text: 'Le contexte de ce propos est à préciser.', factIds: ['f1'] }]
   : [{ category: 'ambiguite', priority: 'normal', text: "L'attribution est à vérifier.", factIds: ['f1'] }]
 globalThis.fetch = async (url, options) => {
@@ -141,13 +143,19 @@ globalThis.fetch = async (url, options) => {
     if (name === 'clinical_section_draft') {
       const { facts } = JSON.parse(body.input[1].content)
       assert.deepEqual(facts, [engineFact()], 'Extraction vérifiée transmise avant rédaction')
-      return structured({ sections: [{ id: expectedNoteType === 'fermeture' ? 'demande' : expectedNoteType === 'observation' ? 'description' : expectedNoteType === 'evaluation_2' ? 'autres' : expectedNoteType === 'evaluation_3' ? 'synthese' : 'objectif', paragraphs: [{ text: engineFact().text, factIds: [engineScenario === 'bad_ref' ? 'missing' : 'f1'] }], rows: [] }], alerts: engineAlerts('draft') })
+      const text = engineScenario === 'omission_with_alert' ? 'À 09 h 12, le jeune s’écarte du groupe.' : engineFact().text
+      return structured({ sections: [{ id: expectedNoteType === 'fermeture' ? 'demande' : expectedNoteType === 'observation' ? 'description' : expectedNoteType === 'evaluation_2' ? 'autres' : expectedNoteType === 'evaluation_3' ? 'synthese' : 'objectif', paragraphs: [{ text, factIds: [engineScenario === 'bad_ref' ? 'missing' : 'f1'] }], rows: [] }], alerts: engineAlerts('draft') })
     }
     assert.equal(name, 'clinical_fidelity_review')
     const review = JSON.parse(body.input[1].content)
     assert.deepEqual(review.sources, engineSources, 'Le contrôle revoit les sources originales, pas seulement la reformulation')
     assert.ok(review.draft.sections.length > 0)
-    return structured({ fidelityPassed: engineScenario !== 'unfaithful', alerts: engineAlerts('review') })
+    if (engineScenario === 'omission_with_alert') {
+      assert.match(review.sources.transcript, /n’a observé ni l’antécédent ni la conséquence/)
+      assert.doesNotMatch(JSON.stringify(review.draft.sections), /ni l’antécédent ni la conséquence/)
+      assert.ok(review.draft.alerts.length > 0, 'Omission dans le texte malgré une alerte: le contrôle la refuse')
+    }
+    return structured({ fidelityPassed: !['unfaithful', 'omission_with_alert'].includes(engineScenario), alerts: engineAlerts('review') })
   }
   assert.equal(body.max_output_tokens, 3000)
   assert.equal(body.text.format.type, 'json_schema')
@@ -266,6 +274,14 @@ const repeatedBody = await repeated.json()
 assert.equal(repeatedBody.draft.alerts.length, 2, 'Les trois étapes ne multiplient pas un doublon apostrophe/espaces; une précision distincte reste présente')
 assert.equal(repeatedBody.draft.alerts.find(alert => /attribution/.test(alert.text)).priority, 'prioritaire', 'Une formulation finale normale ne diminue pas une priorité précédente')
 assert.ok(repeatedBody.draft.alerts.every(alert => alert.factIds.includes('f1')))
+expectedNoteType = 'observation'
+engineScenario = 'omission_with_alert'
+beforeEngine = providerCalls
+const omittedLimit = await postJson({ ...engineBody, noteType: 'observation', transcript: 'DONNÉES FICTIVES. À 09 h 12, le jeune s’écarte du groupe. Le professionnel n’a observé ni l’antécédent ni la conséquence.' })
+assert.equal(omittedLimit.status, 422, 'Une omission repérée par le contrôle reste bloquante même accompagnée d’une alerte')
+assert.equal((await omittedLimit.json()).draft, undefined, 'L’alerte ne répare pas le texte et ne permet pas de retourner un nouveau brouillon')
+assert.equal(providerCalls, beforeEngine + 3, 'Aucune réécriture ou relance payante après un contrôle négatif')
+expectedNoteType = 'evolution'
 engineScenario = 'success'
 engineAbort = new AbortController()
 engineAbort.abort()

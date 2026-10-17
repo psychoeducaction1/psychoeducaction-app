@@ -34,6 +34,15 @@ de fidelite negatif, reponse incomplete/refus, annulation avant et entre etapes.
 Compatibilite de l'ancien contrat conservee. Les simulations ne mesurent pas la
 capacite reelle du modele a detecter une hallucination, une omission ou une mauvaise
 attribution: revue comparative clinique des sorties reelles encore necessaire.
+Correction observation/evaluation 3: regressions sur la copie conservant la limite
+dictee avec l'episode 09 h 12, une seule ligne ABC complete, objectif/synthese/PAD/PEX
+distincts et divergence explicitement inexpliquee. La vraie route avec fournisseur
+simule refuse une omission signalee par le controle meme si elle figure en alerte,
+sans reessai payant. Ces fixtures ne prouvent pas que le modele reel suit les consignes:
+retester les memes scenarios fictifs apres publication et comparer les textes.
+Verification locale du correctif: `npm run check:full` reussi, 207 tests et build;
+trois avertissements lint preexistants, aucune nouvelle erreur. Relecture du diff:
+aucun changement de droits, schema, modele, transport ou conservation.
 Scenario fictif de reference: parent rapportant sommeil/jeux video, sans diagnostic
 confirme, sans propos du jeune, sans plan ni prochaine date convenus. Ne jamais
 transformer les qualificatifs familiaux en diagnostic ou une question en technique.

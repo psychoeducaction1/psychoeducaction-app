@@ -209,7 +209,12 @@ Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workfl
   observation ABC complete seulement, PAD/PEX et jugement formule par le professionnel
   provisoire a valider. Ne pas inventer score, norme, diagnostic, consentement ou acte.
   Propos, observations, interventions, reactions et hypotheses doivent rester distincts.
-  Lacunes, ambiguities, contradictions, suggestions et alertes hors du texte a copier.
+  Lacunes, incertitudes et suggestions reperees par l'IA restent hors du texte a copier.
+  Une limite explicitement dictee par le professionnel reste un fait source dans la note:
+  observation partielle reliee a son episode, divergence declaree inexpliquee dans la
+  synthese. Une alerte seule ne remplace pas ce contenu. Ne rien deduire du silence.
+  Evaluation 3: objectif annonce repris, sources et periodes distinguees, exemples PAD
+  non repetes et soutiens du milieu reserves au PEX. Aucun conflit resolu par l'IA.
   Risque extrait = indicateur prioritaire maintenu, sans conclusion ni evaluation du
   risque automatique; detection non exhaustive et protocoles cliniques non approuves.
   Alertes repetees: deduplication textuelle conservative (espaces/apostrophes et memes

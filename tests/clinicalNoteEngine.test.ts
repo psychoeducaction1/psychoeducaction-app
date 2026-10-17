@@ -64,6 +64,48 @@ test('texte copié sans alertes ni rubriques vides; les propos ne deviennent pas
   assert.match(formatClinicalEngineNote('plan_intervention', plan.sections), /Objectif général : Objectif convenu/)
 })
 
+test('observation: une limite dictée reste dans la description copiée, avec une seule séquence ABC complète', () => {
+  const quote = 'À 09 h 12, je vois le jeune s’écarter du groupe. Je n’ai observé ni ce qui précédait ni ce qui a suivi.'
+  const sequence = 'À 09 h 05, après l’annonce du rangement, le jeune dit non; après le choix de crayon offert, il range les blocs.'
+  const source = { transcript: `DONNÉES FICTIVES. Professionnel : ${sequence} ${quote}`, history: '', metadata: '' }
+  const facts = parseClinicalAnalysis({ facts: [
+    { id: 'abc', kind: 'observation', speaker: 'Professionnel', text: sequence, source: 'transcript', quote: sequence },
+    { id: 'partiel', kind: 'observation', speaker: 'Professionnel', text: quote, source: 'transcript', quote },
+  ], alerts: [] }, source)!.facts
+  const result = parseClinicalEngineDraft({ sections: [
+    { id: 'description', paragraphs: [{ text: quote, factIds: ['partiel'] }], rows: [] },
+    { id: 'abc', paragraphs: [], rows: [{ cells: ['Annonce du rangement à 09 h 05.', 'Le jeune dit non.', 'Choix offert, puis rangement des blocs.'], factIds: ['abc'] }] },
+  ], alerts: [{ category: 'information_manquante', priority: 'normal', text: 'Une autre observation pourrait compléter la séquence.', factIds: ['partiel'] }] }, 'observation', facts)!
+  assert.ok(result)
+  const text = formatClinicalEngineNote('observation', result.sections)
+  assert.ok(text.includes(quote), 'La limite dictée est un fait de la description, conservé lors de la copie')
+  assert.equal(result.sections.find(item => item.id === 'abc')!.rows.length, 1)
+  assert.doesNotMatch(text, /Une autre observation pourrait/, 'La suggestion de relecture reste hors copie')
+  assert.equal(parseClinicalAnalysis({ facts: [{ ...facts[1], quote }], alerts: [] }, { ...source, transcript: sequence }), null, 'Aucune citation de limite dictée si la source est silencieuse')
+})
+
+test('évaluation 3: objectif et divergence explicitement inexpliquée restent copiables avec PAD et PEX distincts', () => {
+  const items = [
+    ['objectif', 'Nous faisons la synthèse des informations recueillies.'],
+    ['synthese', 'Le jeune décrit des couchers faciles; le père rapporte deux couchers difficiles. Le professionnel indique que cette divergence reste inexpliquée.'],
+    ['pad', 'Selon un exemple antérieur, le jeune peut nommer son émotion et demander une pause.'],
+    ['pex', 'L’enseignante a rapporté une séquence visuelle et sa disponibilité comme soutiens du milieu.'],
+    ['jugement', 'Le professionnel formule un jugement provisoire, à valider, sans diagnostic.'],
+  ]
+  const source = { transcript: `DONNÉES FICTIVES. ${items.map(([, text]) => text).join(' ')}`, history: '', metadata: '' }
+  const facts = parseClinicalAnalysis({ facts: items.map(([id, text]) => ({ id, kind: 'propos', speaker: 'Professionnel fictif', text, source: 'transcript', quote: text })), alerts: [] }, source)!.facts
+  const result = parseClinicalEngineDraft({ sections: items.map(([id, text]) => ({ id, paragraphs: [{ text, factIds: [id] }], rows: [] })), alerts: [
+    { category: 'contradiction', priority: 'normal', text: 'Vérifier les différences entre les sources.', factIds: ['synthese'] },
+  ] }, 'evaluation_3', facts)!
+  const text = formatClinicalEngineNote('evaluation_3', result.sections)
+  assert.match(text, /OBJECTIF DE LA RENCONTRE\nNous faisons la synthèse/)
+  assert.match(text, /cette divergence reste inexpliquée/)
+  assert.match(text, /POTENTIEL ADAPTATIF \(PAD\)\nSelon un exemple antérieur/)
+  assert.match(text, /POTENTIEL EXPÉRIENTIEL \(PEX\)\nL’enseignante a rapporté/)
+  assert.equal(text.split('demander une pause').length - 1, 1)
+  assert.doesNotMatch(text, /Vérifier les différences/)
+})
+
 test('les risques exigent une priorité et des références valides; pas de validation automatique', () => {
   for (const badAlert of [{ category: 'risque', priority: 'normal', text: 'À revoir', factIds: ['f1'] }, { category: 'risque', priority: 'prioritaire', text: 'À revoir', factIds: ['f99'] }]) {
     assert.equal(parseClinicalAnalysis({ ...analysis, alerts: [badAlert] }, sources), null)

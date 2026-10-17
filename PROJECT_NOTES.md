@@ -99,6 +99,11 @@ Modules `clinicalNoteAnalysisServer`, `clinicalNoteWritingServer`,
 `clinicalNoteValidationServer`; orchestrateur `clinicalNoteEngineServer`.
 `clinicalNoteEngine` valide citations exactes/references/schema et formate la copie.
 Ces controles ne prouvent pas la validite clinique; validation humaine toujours requise.
+Correction ciblee autorisee ensuite: les limites d'observation explicitement dictees
+et divergences declarees inexpliquees sont des faits a conserver dans la note, distincts
+des lacunes inferees par l'IA qui restent en alertes. Evaluation 3: objectif annonce,
+synthese attribuee/concise, PAD sans exemple repete et PEX distinct. Alerte seule ne
+repare pas l'omission de ces faits. Aucun changement de modele, droits ou stockage.
 Le contrat historique six champs demeure pour les anciens onglets.
 Edition par rubrique, alertes hors copie, sources/metadata distinctes, contexte anterieur
 facultatif du meme dossier fictif confirme. Corrections conservees aux changements de
