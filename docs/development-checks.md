@@ -117,6 +117,18 @@ ancien brouillon/copie, transcription conservee. Note de fermeture reelle signal
 la fermeture non confirmee et les informations absentes. API sans session/jeton
 invalide en 401 no-store. Aucun vrai micro, client, SQL ou autre compte utilise.
 
+Mode Presentiel prepare localement: cinq tests ajoutes a `clinicalNotesRecorder`
+pour absence de demande de partage, micro seul et nom WebM, refus/piste manquante,
+permission tardive ou fermeture active, limite 120 s, niveau micro sans niveau Teams,
+perte du micro et limite de taille. Les tests Teams existants restent verts.
+`check:full` reussi: 192 tests et build, trois avertissements lint preexistants.
+Controle visuel non realise: inventaire CUA vide et navigateur integre indisponible.
+Avant validation manuelle, verifier dans l'essai fictif: choix de type puis mode
+Presentiel, confirmation, micro seul sans partage, niveau micro, arret/reecoute,
+effacement et envoi manuel. Verifier aussi le passage en Teams (nouvelle confirmation,
+mode verrouille pendant capture), puis fermeture/deconnexion liberant le micro.
+Aucune capture reelle ni requete IA payante effectuee pour ce changement local.
+
 Courriel et sondage: tests hors ligne des deux choix distincts (Google public et
 sondage prive), premier bouton vers le vrai lien Google meme en test, logo PNG,
 echappement HTML et liens de sondage test sans vrais jetons. L'API de reponse

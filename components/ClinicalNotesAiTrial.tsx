@@ -7,6 +7,7 @@ import { CLINICAL_AUDIO_MAX_BYTES, CLINICAL_TRANSCRIPT_MAX_CHARS, formatClinical
 import ClinicalNotesRecorder from '@/components/ClinicalNotesRecorder'
 import { CLINICAL_NOTE_TEMPLATES, getClinicalNoteTemplate, isClinicalNoteType } from '@/lib/clinicalNoteTemplates'
 import type { ClinicalNoteType } from '@/lib/clinicalNoteTemplates'
+import type { ClinicalRecordingMode } from '@/lib/clinicalNotesRecorder'
 
 export default function ClinicalNotesAiTrial({ enabled }: { enabled: boolean }) {
   const [file, setFile] = useState<File | null>(null)
@@ -19,7 +20,8 @@ export default function ClinicalNotesAiTrial({ enabled }: { enabled: boolean }) 
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [recording, setRecording] = useState(false)
-  const [recorded, setRecorded] = useState(false)
+  const [recordedMode, setRecordedMode] = useState<ClinicalRecordingMode | null>(null)
+  const recorded = recordedMode !== null
   const [listened, setListened] = useState(false)
   const [audioUrl, setAudioUrl] = useState('')
   const [noteType, setNoteType] = useState<ClinicalNoteType | ''>('')
@@ -34,9 +36,9 @@ export default function ClinicalNotesAiTrial({ enabled }: { enabled: boolean }) 
     return () => URL.revokeObjectURL(url)
   }, [file, recorded])
 
-  function selectAudio(selected: File | null, captured: boolean) {
-    if (captured && fileRef.current) fileRef.current.value = ''
-    setFile(selected); setRecorded(captured); setListened(false)
+  function selectAudio(selected: File | null, mode: ClinicalRecordingMode | null) {
+    if (mode && fileRef.current) fileRef.current.value = ''
+    setFile(selected); setRecordedMode(mode); setListened(false)
     setFictional(false); setTranscript(''); setTranscribed(false); setNote(''); setReviewed(false); setValidated(false)
     setMessage(selected && (selected.size > CLINICAL_AUDIO_MAX_BYTES || !selected.size) ? 'Choisissez un fichier non vide de moins de 3 Mo.' : '')
   }
@@ -98,26 +100,26 @@ export default function ClinicalNotesAiTrial({ enabled }: { enabled: boolean }) 
         <p id="ai-note-type-help" className="text-sm leading-6 text-[#7a6859]">{noteType ? getClinicalNoteTemplate(noteType).description : 'Choisissez le modèle avant de capter ou d’importer votre audio fictif.'}</p>
         {noteType && <p className="text-xs leading-5 text-[#7a6859]">Un changement de type efface le brouillon et sa validation. L’audio et la transcription sont conservés. Les autres rencontres ne sont pas ajoutées automatiquement.</p>}
       </div>
-      <ClinicalNotesRecorder disabled={busy || !noteType} onRecorded={selected => selectAudio(selected, true)} onRecordingChange={setRecording} />
+      <ClinicalNotesRecorder disabled={busy || !noteType} onRecorded={selectAudio} onRecordingChange={setRecording} />
       <label className="block space-y-2 text-sm font-medium">Ou importer un audio fictif
         <input ref={fileRef} type="file" accept=".wav,.mp3,.m4a,.webm" disabled={busy || recording || !noteType}
           className="block w-full min-w-0 rounded-xl border border-[#dfd0bf] bg-white p-3 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-[#efe1d2] file:p-2"
           onChange={event => {
             const selected = event.target.files?.[0] ?? null
-            selectAudio(selected, false)
+            selectAudio(selected, null)
           }} />
       </label>
       {recorded && audioUrl && <div className="space-y-3 rounded-xl border border-[#dfd0bf] p-4">
-        <p className="text-sm font-medium">Écoute de contrôle de l’appel fictif</p>
-        {!recording && <audio controls src={audioUrl} aria-label="Réécouter l’appel fictif" className="w-full" />}
-        <label className="flex items-start gap-3 text-sm leading-6"><input type="checkbox" checked={listened} disabled={busy || recording} className="mt-1 h-4 w-4 shrink-0 accent-[#8a5633]" onChange={event => setListened(event.target.checked)} />J’ai réécouté l’extrait : les deux voix fictives sont audibles et aucun autre contenu n’a été capté.</label>
-        <button className={buttonClass('secondary')} disabled={busy || recording} onClick={() => selectAudio(null, false)}>Effacer cet audio et son brouillon</button>
+        <p className="text-sm font-medium">Écoute de contrôle de la rencontre fictive</p>
+        {!recording && <audio controls src={audioUrl} aria-label="Réécouter la rencontre fictive" className="w-full" />}
+        <label className="flex items-start gap-3 text-sm leading-6"><input type="checkbox" checked={listened} disabled={busy || recording} className="mt-1 h-4 w-4 shrink-0 accent-[#8a5633]" onChange={event => setListened(event.target.checked)} />J’ai réécouté l’extrait : toutes les voix fictives sont audibles et aucun autre contenu n’a été capté.</label>
+        <button className={buttonClass('secondary')} disabled={busy || recording} onClick={() => selectAudio(null, null)}>Effacer cet audio et son brouillon</button>
       </div>}
       <label className="flex items-start gap-3 text-sm leading-6">
         <input type="checkbox" disabled={busy || recording} checked={fictional} className="mt-1 h-4 w-4 shrink-0 accent-[#8a5633]" onChange={event => setFictional(event.target.checked)} />
         Je confirme que cet audio et cette transcription sont entièrement fictifs, sans renseignements d’un vrai client, et j’accepte leur envoi à OpenAI pour cet essai.
       </label>
-      {file && <p className="text-xs text-[#7a6859]">Audio sélectionné : {recorded ? 'appel Teams fictif enregistré' : 'fichier importé'} · {(file.size / 1_000_000).toFixed(2)} Mo</p>}
+      {file && <p className="text-xs text-[#7a6859]">Audio sélectionné : {recordedMode === 'presentiel' ? 'rencontre en présentiel fictive enregistrée' : recordedMode === 'teams' ? 'appel Teams fictif enregistré' : 'fichier importé'} · {(file.size / 1_000_000).toFixed(2)} Mo</p>}
       <button className={buttonClass('primary')} disabled={busy || recording || !noteType || !fictional || (recorded && !listened) || !file || !file.size || file.size > CLINICAL_AUDIO_MAX_BYTES}
         onClick={() => void run('transcribe')}>Envoyer l’audio fictif pour transcription</button>
       {transcribed && <div className="space-y-3">

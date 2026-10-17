@@ -172,3 +172,83 @@ test('navigateur incompatible ou signal deja annule: aucune permission demandee'
     assert.equal(f.counts().micRequests, 0)
   }
 })
+
+test('presentiel: micro seul, aucun partage demande, fichier audio et fin de capture propres', async () => {
+  const f = fixture()
+  f.env.display = async () => { assert.fail('Le presentiel ne doit jamais demander un partage') }
+  f.env.microphone = async mode => { assert.equal(mode, 'presentiel'); return f.microphone }
+  const capture = await startClinicalRecording({ ...f.options, mode: 'presentiel' }, f.env)
+  assert.equal(f.inputs.length, 1)
+  assert.equal(f.inputs[0].getAudioTracks()[0], f.microphone.getAudioTracks()[0])
+  f.recorder.ondataavailable?.({ data: new Blob(['room-audio']) })
+  capture.stop()
+  await flush()
+  assert.equal(f.completed.length, 1)
+  assert.equal(f.completed[0].file.name, 'exercice-presentiel-fictif.webm')
+  assert.equal(await f.completed[0].file.text(), 'room-audiolast')
+  assert.equal(f.tracks[0].stops, 0); assert.equal(f.tracks[1].stops, 0)
+  assert.equal(f.tracks[2].stops, 1); assert.equal(f.tracks[3].stops, 1)
+  assert.equal(f.counts().closed, 1)
+})
+
+test('presentiel: refus du micro ou micro sans piste audio ne demarre aucun enregistrement', async () => {
+  for (const permissionRefused of [false, true]) {
+    const f = fixture()
+    f.env.display = async () => { assert.fail('Aucun repli sur un partage ecran') }
+    f.env.microphone = async () => {
+      if (permissionRefused) throw new DOMException('Refus fictif', 'NotAllowedError')
+      return stream([])
+    }
+    await assert.rejects(startClinicalRecording({ ...f.options, mode: 'presentiel' }, f.env))
+    assert.equal(f.counts().recorders, 0)
+    assert.deepEqual(f.completed, [])
+  }
+})
+
+test('presentiel: fermeture pendant permission micro en attente ou pendant capture libere tout', async () => {
+  for (const pendingPermission of [false, true]) {
+    const f = fixture(), permission = deferred<MediaStream>()
+    f.env.display = async () => { assert.fail('Aucun partage ecran en presentiel') }
+    if (pendingPermission) f.env.microphone = () => permission.promise
+    const starting = startClinicalRecording({ ...f.options, mode: 'presentiel' }, f.env)
+    if (pendingPermission) {
+      f.controller.abort(); permission.resolve(f.microphone)
+      await assert.rejects(starting, { name: 'AbortError' })
+    } else {
+      const capture = await starting
+      f.controller.abort(); capture.discard()
+    }
+    await flush()
+    assert.equal(f.tracks[2].stops, 1)
+    assert.equal(f.tracks[0].stops, 0); assert.equal(f.tracks[1].stops, 0)
+    assert.deepEqual(f.completed, [])
+  }
+})
+
+test('presentiel: limite 120 secondes, un seul indicateur actif et coupure du micro signalee', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] })
+  const f = fixture(), levels: Array<{ microphone: number; teams: number }> = []
+  await startClinicalRecording({ ...f.options, mode: 'presentiel', onProgress: value => levels.push(value) }, f.env)
+  t.mock.timers.tick(120_000)
+  await flush()
+  assert.equal(f.completed.length, 1)
+  assert.match(f.completed[0].reason, /deux minutes/)
+  assert.ok(levels.length > 0 && levels.every(value => value.microphone > 0 && value.teams === 0))
+  assert.equal(f.tracks[2].stops, 1)
+  const lost = fixture()
+  await startClinicalRecording({ ...lost.options, mode: 'presentiel' }, lost.env)
+  lost.tracks[2].end()
+  await flush()
+  assert.equal(lost.completed.length, 1)
+  assert.match(lost.completed[0].reason, /interrompu/)
+})
+
+test('presentiel: depassement de taille ecarte le fichier entier comme en Teams', async () => {
+  const f = fixture()
+  await startClinicalRecording({ ...f.options, mode: 'presentiel' }, f.env)
+  f.recorder.ondataavailable?.({ data: new Blob([new Uint8Array(CLINICAL_AUDIO_MAX_BYTES + 1)]) })
+  await flush()
+  assert.deepEqual(f.completed, [])
+  assert.equal(f.errors.length, 1)
+  assert.equal(f.tracks[2].stops, 1); assert.equal(f.tracks[3].stops, 1)
+})

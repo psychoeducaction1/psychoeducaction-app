@@ -3,11 +3,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { buttonClass } from '@/components/ui/index'
 import { clinicalRecordingSupported, startClinicalRecording } from '@/lib/clinicalNotesRecorder'
-import type { ClinicalRecording, RecordingProgress } from '@/lib/clinicalNotesRecorder'
+import type { ClinicalRecording, ClinicalRecordingMode, RecordingProgress } from '@/lib/clinicalNotesRecorder'
 
 export default function ClinicalNotesRecorder({ disabled, onRecorded, onRecordingChange }: {
   disabled: boolean
-  onRecorded: (file: File) => void
+  onRecorded: (file: File, mode: ClinicalRecordingMode) => void
   onRecordingChange: (active: boolean) => void
 }) {
   const [confirmed, setConfirmed] = useState(false)
@@ -15,9 +15,11 @@ export default function ClinicalNotesRecorder({ disabled, onRecorded, onRecordin
   const [progress, setProgress] = useState<RecordingProgress>({ seconds: 0, microphone: 0, teams: 0 })
   const [message, setMessage] = useState('')
   const [supported, setSupported] = useState(false)
+  const [mode, setMode] = useState<ClinicalRecordingMode>('presentiel')
   const captureRef = useRef<ClinicalRecording | null>(null)
   const abortRef = useRef<AbortController | null>(null)
-  useEffect(() => { setSupported(clinicalRecordingSupported()); return () => { abortRef.current?.abort(); captureRef.current?.discard() } }, [])
+  useEffect(() => { setSupported(clinicalRecordingSupported(mode)) }, [mode])
+  useEffect(() => () => { abortRef.current?.abort(); captureRef.current?.discard() }, [])
 
   const finish = (controller: AbortController) => {
     if (abortRef.current !== controller || controller.signal.aborted) return false
@@ -32,10 +34,11 @@ export default function ClinicalNotesRecorder({ disabled, onRecorded, onRecordin
     setMessage(''); setProgress({ seconds: 0, microphone: 0, teams: 0 }); setPhase('preparing'); onRecordingChange(true)
     try {
       const capture = await startClinicalRecording({
+        mode,
         signal: controller.signal,
         onProgress: value => { if (!controller.signal.aborted) setProgress(value) },
         onComplete: (file, reason) => {
-          if (finish(controller)) { onRecorded(file); setMessage(`${reason} Réécoutez l’extrait et vérifiez les deux voix avant de l’envoyer.`) }
+          if (finish(controller)) { onRecorded(file, mode); setMessage(`${reason} Réécoutez l’extrait et vérifiez toutes les voix avant de l’envoyer.`) }
         },
         onError: error => { if (finish(controller)) setMessage(error) },
       })
@@ -54,25 +57,41 @@ export default function ClinicalNotesRecorder({ disabled, onRecorded, onRecordin
     setPhase('idle'); onRecordingChange(false); setMessage('Essai annulé. Aucun nouvel audio conservé ou envoyé.')
   }
   const active = phase !== 'idle'
+  const presentiel = mode === 'presentiel'
+  const meters = presentiel ? [['Micro de la pièce', progress.microphone]] as const : [['Votre micro', progress.microphone], ['Son partagé de Teams', progress.teams]] as const
   return <div className="space-y-4 rounded-xl border border-[#dfd0bf] bg-[#fbf6ef] p-4">
-    <h3 className="font-semibold">Enregistrer un appel Teams fictif</h3>
-    <p className="text-sm leading-6">Ouvrez la plateforme dans Chrome ou Edge sur ordinateur et lancez votre appel d’exercice dans Teams. Utilisez un casque. Cet essai s’arrête après deux minutes.</p>
+    <h3 className="font-semibold">Enregistrer une rencontre fictive</h3>
+    <label className="block space-y-2 text-sm font-medium">Mode de rencontre
+      <select value={mode} disabled={disabled || active} className="block w-full min-w-0 rounded-xl border border-[#dfd0bf] bg-white p-3 text-sm" onChange={event => {
+        const value = event.target.value
+        if (value === 'teams' || value === 'presentiel') { setMode(value); setConfirmed(false); setMessage('') }
+      }}>
+        <option value="presentiel">Présentiel — micro de la pièce</option>
+        <option value="teams">Teams — micro et son partagé</option>
+      </select>
+    </label>
+    <p className="text-sm leading-6">{presentiel ? 'En présentiel, le micro de l’ordinateur ou un micro externe capte les voix dans la pièce. Placez-le pour entendre tous les participants fictifs.' : 'Ouvrez la plateforme dans Chrome ou Edge sur ordinateur et lancez votre appel d’exercice dans Teams. Utilisez un casque.'} Cet essai s’arrête après deux minutes.</p>
     <ol className="list-decimal space-y-1 pl-5 text-sm leading-6">
-      <li>Choisissez la fenêtre Teams avec son audio. Si l’option manque, choisissez l’écran entier et activez « Partager l’audio ».</li>
-      <li>Autorisez votre micro, puis faites parler les deux participants fictifs. Vérifiez les deux indicateurs.</li>
+      {presentiel ? <>
+        <li>Autorisez le micro. Aucun partage d’écran n’est demandé.</li>
+        <li>Faites parler chaque participant fictif et vérifiez l’indicateur du micro.</li>
+      </> : <>
+        <li>Choisissez la fenêtre Teams avec son audio. Si l’option manque, choisissez l’écran entier et activez « Partager l’audio ».</li>
+        <li>Autorisez votre micro, puis faites parler les participants fictifs. Vérifiez les deux indicateurs.</li>
+      </>}
       <li>Arrêtez, réécoutez, puis choisissez séparément d’envoyer l’audio à l’IA.</li>
     </ol>
-    <p className="text-xs leading-5 text-[#7a6859]">Le navigateur demande un partage d’écran pour accéder au son. Seul l’audio est enregistré ; aucune image n’est conservée ou envoyée. Le son partagé peut inclure les autres applications : fermez-les et coupez les notifications. Aucune capture n’est transmise aux participants Teams par cet outil.</p>
+    <p className="text-xs leading-5 text-[#7a6859]">{presentiel ? 'Seul le micro est capté. Évitez les bruits de fond et vérifiez à la réécoute que toutes les voix sont audibles. L’audio reste dans cet onglet jusqu’à votre choix de l’envoyer à l’IA.' : 'Le navigateur demande un partage d’écran pour accéder au son. Seul l’audio est enregistré ; aucune image n’est conservée ou envoyée. Le son partagé peut inclure les autres applications : fermez-les et coupez les notifications. Aucune capture n’est transmise aux participants Teams par cet outil.'}</p>
     {!supported && <p role="status" className="text-sm">Capture audio indisponible dans ce navigateur. Utilisez Chrome ou Edge sur ordinateur, ou importez un fichier fictif ci-dessous.</p>}
     <label className="flex items-start gap-3 text-sm leading-6">
       <input type="checkbox" checked={confirmed} disabled={disabled || active} onChange={event => setConfirmed(event.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-[#8a5633]" />
-      Cet appel est un exercice entièrement fictif. Tous les participants acceptent son enregistrement ; aucune information réelle n’est présente dans l’appel ou les autres sons partagés.
+      Cette rencontre est un exercice entièrement fictif. Tous les participants acceptent son enregistrement ; aucune information réelle n’est présente dans l’environnement sonore.
     </label>
-    {phase === 'idle' ? <button className={buttonClass('secondary')} disabled={disabled || !confirmed || !supported} onClick={() => void start()}>Choisir le son de Teams et démarrer</button>
+    {phase === 'idle' ? <button className={buttonClass('secondary')} disabled={disabled || !confirmed || !supported} onClick={() => void start()}>{presentiel ? 'Démarrer avec le micro' : 'Choisir le son de Teams et démarrer'}</button>
       : <div className="space-y-3">
-        <p role="status" className="font-medium">{phase === 'preparing' ? 'Choisissez la source audio, puis autorisez le micro…' : phase === 'stopping' ? 'Arrêt de l’enregistrement…' : `Enregistrement en cours · ${Math.floor(progress.seconds / 60)}:${String(progress.seconds % 60).padStart(2, '0')} / 2:00`}</p>
+        <p role="status" className="font-medium">{phase === 'preparing' ? (presentiel ? 'Autorisez le micro de la pièce…' : 'Choisissez la source audio, puis autorisez le micro…') : phase === 'stopping' ? 'Arrêt de l’enregistrement…' : `Enregistrement en cours · ${Math.floor(progress.seconds / 60)}:${String(progress.seconds % 60).padStart(2, '0')} / 2:00`}</p>
         {phase === 'recording' && <div className="grid gap-3 sm:grid-cols-2">
-          {([['Votre micro', progress.microphone], ['Son partagé de Teams', progress.teams]] as const).map(([label, value]) => <label key={label} className="space-y-1 text-sm">{label}<meter aria-label={label} className="block h-4 w-full" min={0} max={100} value={value} /></label>)}
+          {meters.map(([label, value]) => <label key={label} className="space-y-1 text-sm">{label}<meter aria-label={label} className="block h-4 w-full" min={0} max={100} value={value} /></label>)}
           <p className="text-xs sm:col-span-2">Un indicateur immobile pendant que la personne parle peut signaler une mauvaise source. Arrêtez et vérifiez l’extrait.</p>
         </div>}
         <div className="flex flex-wrap gap-3">

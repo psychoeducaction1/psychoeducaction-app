@@ -1,12 +1,13 @@
 import { CLINICAL_AUDIO_MAX_BYTES } from '@/lib/clinicalNotesAi'
 
 export const CLINICAL_RECORDING_MAX_SECONDS = 120
+export type ClinicalRecordingMode = 'teams' | 'presentiel'
 type DisplayOptions = DisplayMediaStreamOptions & { systemAudio: 'include'; windowAudio: 'window'; selfBrowserSurface: 'exclude'; surfaceSwitching: 'exclude' }
 export type RecordingProgress = { seconds: number; microphone: number; teams: number }
 export type ClinicalRecording = { stop: () => void; discard: () => void }
 export type ClinicalRecordingEnvironment = {
   display: (options: DisplayOptions) => Promise<MediaStream>
-  microphone: () => Promise<MediaStream>
+  microphone: (mode: ClinicalRecordingMode) => Promise<MediaStream>
   context: () => AudioContext
   audioStream: (tracks: MediaStreamTrack[]) => MediaStream
   supports: (mime: string) => boolean
@@ -14,19 +15,19 @@ export type ClinicalRecordingEnvironment = {
   now: () => number
 }
 
-export function clinicalRecordingSupported() {
+export function clinicalRecordingSupported(mode: ClinicalRecordingMode = 'teams') {
   return typeof window !== 'undefined' && window.isSecureContext &&
-    typeof navigator.mediaDevices?.getDisplayMedia === 'function' &&
+    (mode === 'presentiel' || typeof navigator.mediaDevices?.getDisplayMedia === 'function') &&
     typeof navigator.mediaDevices?.getUserMedia === 'function' &&
     typeof AudioContext !== 'undefined' && typeof MediaRecorder !== 'undefined' &&
     MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
 }
 
-function browserEnvironment(): ClinicalRecordingEnvironment {
-  if (!clinicalRecordingSupported()) throw new Error('Ouvrez la plateforme en HTTPS dans Chrome ou Edge sur ordinateur. L’enregistrement WebM ou le partage audio est indisponible ici.')
+function browserEnvironment(mode: ClinicalRecordingMode): ClinicalRecordingEnvironment {
+  if (!clinicalRecordingSupported(mode)) throw new Error('Ouvrez la plateforme en HTTPS dans Chrome ou Edge sur ordinateur. Les fonctions audio nécessaires sont indisponibles ici.')
   return {
     display: options => navigator.mediaDevices.getDisplayMedia(options),
-    microphone: () => navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false }),
+    microphone: selectedMode => navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: selectedMode === 'teams', noiseSuppression: selectedMode === 'teams', autoGainControl: true }, video: false }),
     context: () => new AudioContext(), audioStream: tracks => new MediaStream(tracks),
     supports: mime => MediaRecorder.isTypeSupported(mime),
     recorder: (stream, options) => new MediaRecorder(stream, options), now: () => performance.now(),
@@ -36,12 +37,15 @@ function browserEnvironment(): ClinicalRecordingEnvironment {
 // Aucune requete, sauvegarde ou connexion aux haut-parleurs: tout reste en memoire.
 // L'appel doit partir du clic utilisateur, avant toute attente asynchrone.
 export async function startClinicalRecording(options: {
+  mode?: ClinicalRecordingMode
   signal: AbortSignal
   onProgress: (progress: RecordingProgress) => void
   onComplete: (file: File, reason: string) => void
   onError: (message: string) => void
 }, environment?: ClinicalRecordingEnvironment): Promise<ClinicalRecording> {
-  const env = environment ?? browserEnvironment()
+  const mode = options.mode ?? 'teams'
+  if (mode !== 'teams' && mode !== 'presentiel') throw new Error('Choisissez Présentiel ou Teams.')
+  const env = environment ?? browserEnvironment(mode)
   const streams = new Set<MediaStream>()
   const nodes: AudioNode[] = []
   const listeners: Array<() => void> = []
@@ -93,14 +97,17 @@ export async function startClinicalRecording(options: {
   try {
     requireActive()
     if (!env.supports('audio/webm;codecs=opus')) throw new Error('Ce navigateur ne permet pas cet enregistrement audio. Utilisez Chrome ou Edge sur ordinateur.')
-    const display = await acquire(env.display({ video: true, audio: true, systemAudio: 'include', windowAudio: 'window', selfBrowserSurface: 'exclude', surfaceSwitching: 'exclude' }))
-    if (!display.getAudioTracks().some(track => track.readyState === 'live')) {
-      throw new Error('Le son de Teams n’est pas partagé. Recommencez et activez « Partager l’audio ». Si cette option manque pour la fenêtre Teams, choisissez l’écran entier avec son audio.')
+    let display: MediaStream | undefined
+    if (mode === 'teams') {
+      display = await acquire(env.display({ video: true, audio: true, systemAudio: 'include', windowAudio: 'window', selfBrowserSurface: 'exclude', surfaceSwitching: 'exclude' }))
+      if (!display.getAudioTracks().some(track => track.readyState === 'live')) {
+        throw new Error('Le son de Teams n’est pas partagé. Recommencez et activez « Partager l’audio ». Si cette option manque pour la fenêtre Teams, choisissez l’écran entier avec son audio.')
+      }
+      for (const track of display.getTracks()) watch(track)
     }
-    for (const track of display.getTracks()) watch(track)
-    const microphone = await acquire(env.microphone())
-    if (stopping || !microphone.getAudioTracks().some(track => track.readyState === 'live') || !display.getAudioTracks().some(track => track.readyState === 'live')) {
-      throw new Error('Une source audio a été interrompue. Recommencez l’essai avec le micro et le son de Teams.')
+    const microphone = await acquire(env.microphone(mode))
+    if (stopping || !microphone.getAudioTracks().some(track => track.readyState === 'live') || (display && !display.getAudioTracks().some(track => track.readyState === 'live'))) {
+      throw new Error(mode === 'teams' ? 'Une source audio a été interrompue. Recommencez l’essai avec le micro et le son de Teams.' : 'Le micro est indisponible ou a été interrompu. Vérifiez son accès avant de recommencer.')
     }
     for (const track of microphone.getTracks()) watch(track)
     context = env.context()
@@ -112,7 +119,7 @@ export async function startClinicalRecording(options: {
     const attach = (stream: MediaStream) => {
       const source = context!.createMediaStreamSource(env.audioStream(stream.getAudioTracks()))
       const gain = context!.createGain()
-      gain.gain.value = 0.5
+      gain.gain.value = mode === 'teams' ? 0.5 : 1
       const analyser = context!.createAnalyser()
       analyser.fftSize = 256
       source.connect(analyser); analyser.connect(gain); gain.connect(output)
@@ -120,7 +127,7 @@ export async function startClinicalRecording(options: {
       return analyser
     }
     const microphoneMeter = attach(microphone)
-    const teamsMeter = attach(display)
+    const teamsMeter = display ? attach(display) : null
     const level = (analyser: AnalyserNode) => {
       const samples = new Uint8Array(analyser.fftSize)
       analyser.getByteTimeDomainData(samples)
@@ -143,14 +150,14 @@ export async function startClinicalRecording(options: {
       if (finished) return
       finished = true; dispose()
       if (discarded) return
-      if (!bytes) { options.onError('Aucun audio enregistré. Vérifiez les deux sources avant de recommencer.'); return }
-      const file = new File(chunks, 'exercice-teams-fictif.webm', { type: 'audio/webm' })
+      if (!bytes) { options.onError('Aucun audio enregistré. Vérifiez les sources audio avant de recommencer.'); return }
+      const file = new File(chunks, `exercice-${mode}-fictif.webm`, { type: 'audio/webm' })
       chunks = []
       options.onComplete(file, reason)
     }
     const started = env.now()
     recorder.start(250)
-    interval = setInterval(() => options.onProgress({ seconds: Math.min(CLINICAL_RECORDING_MAX_SECONDS, Math.floor((env.now() - started) / 1000)), microphone: level(microphoneMeter), teams: level(teamsMeter) }), 250)
+    interval = setInterval(() => options.onProgress({ seconds: Math.min(CLINICAL_RECORDING_MAX_SECONDS, Math.floor((env.now() - started) / 1000)), microphone: level(microphoneMeter), teams: teamsMeter ? level(teamsMeter) : 0 }), 250)
     deadline = setTimeout(() => { reason = 'Limite de deux minutes atteinte. L’enregistrement a été arrêté.'; stop() }, CLINICAL_RECORDING_MAX_SECONDS * 1000)
     return { stop, discard }
   } catch (error) {

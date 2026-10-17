@@ -142,6 +142,20 @@ precedents effaces et transcription conservee. Nouvelle note de fermeture signal
 explicitement la fermeture non confirmee, sans inventer motif/date/bilan.
 API anonyme/jeton invalide en 401 no-store. Aucun vrai micro ou dossier utilise.
 
+Presentiel autorise pour publication le 16 octobre: selecteur de mode avant
+capture (Presentiel par defaut, Teams disponible), verrouille pendant capture et
+traitement. Presentiel = getUserMedia audio seul, aucun getDisplayMedia ni piste
+video, un indicateur micro; echo/noise suppression non demandes pour les voix
+dans la piece. Teams conserve micro + son partage obligatoires. Meme encodeur
+WebM, limites 120 s/3 Mo, reecoute de toutes les voix et envoi IA volontaire.
+Mode associe a l'audio termine pour ne pas mal l'etiqueter si le selecteur change;
+changer de mode exige de confirmer de nouveau l'exercice fictif. Six modeles et
+droits serveur inchanges, aucune nouvelle route/variable/SQL.
+`check:full` reussi: 192 tests/build, trois avertissements lint preexistants.
+Verification visuelle non effectuee: aucun navigateur disponible dans CUA.
+Accord explicite recu pour commit/push/deploiement de cet ajout, puis consultation
+fictive pour evaluer la note. Aucun enregistrement de vrai client autorise.
+
 Modification du 14 octobre 2026: `default_schedule` accepte des variantes avec
 `effectiveFrom`; les anciens jours utilisent l'horaire initial. Le salaire mensuel
 reste une reference liee a l'horaire initial, permettant de payer les heures ajoutees

@@ -177,6 +177,13 @@ Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workfl
   Liberer micro, partage, mixeur et buffers a l'annulation/fermeture/changement de
   compte, y compris les permissions qui arrivent apres l'annulation. Arreter et
   signaler une source coupee. Pas d'elargissement de l'acces aux autres comptes.
+- Mode Presentiel: capter uniquement le micro, sans permission de partage d'ecran
+  ni exigence de son systeme. Les voix de la piece restent a verifier a la reecoute.
+  Le mode Teams conserve ses deux sources obligatoires; ne pas confondre le choix
+  explicite Presentiel avec un repli silencieux en cas d'echec de Teams.
+  Mode non modifiable pendant capture/traitement, nouvelle confirmation apres
+  changement, mode de l'audio termine conserve pour l'etiquette. Memes limites,
+  consentement fictif, nettoyage et envoi IA volontaire pour les deux modes.
 - Types de notes audio/IA: choix avant capture/import parmi evaluation 1/2/3,
   plan d'intervention, evolution et fermeture. Le type guide uniquement la forme et
   les rubriques; il n'etablit ni rencontre precedente, ni conclusion, ni fermeture.
