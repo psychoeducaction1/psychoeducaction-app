@@ -70,6 +70,13 @@ avertissements lint preexistants. Apercu avec transport OpenAI fictif: selection
 WAV synthetique, confirmation, transcription vidable/corrigeable, generation et
 validation avant copie. Une correction exige une nouvelle relecture. Aucun appel
 payant effectue pour ces controles; activation et test du fournisseur distincts.
+Apres publication autorisee de `83c7d58`, essai fournisseur reel effectue depuis
+le compte direction sur l'application de production: WAV synthetique fictif de
+42 secondes, transcription fidele, note structuree sans observation/date inventee,
+validation humaine puis bouton de copie disponible. Aucun dossier reel utilise.
+POST anonyme et jeton invalide verifies: 401 et cache prive/no-store.
+Ce seul scenario ne valide pas encore la qualite sur une consultation complete
+ni l'enregistrement Teams; la connexion du professionnel pilote reste non exercee.
 
 Courriel et sondage: tests hors ligne des deux choix distincts (Google public et
 sondage prive), premier bouton vers le vrai lien Google meme en test, logo PNG,

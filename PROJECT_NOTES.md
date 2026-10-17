@@ -95,8 +95,12 @@ Projet OpenAI dedie « PsychoEducAction - Prise de notes - Pilote » cree; seuls
 sans recharge automatique. Credit de 10 USD et recharge OFF verifies dans le compte
 OpenAI. Accord explicite recu pour la cle restreinte, le secret serveur Vercel,
 le commit/push et un essai audio synthetique fictif. Cle restreinte creee pour
-30 jours et variables de production configurees; verification du deploiement et
-du parcours reel a terminer. Aucun dossier reel autorise.
+30 jours et variables de production configurees. Commit `83c7d58` publie et
+deploiement Vercel `XbxcXuwXGoApktXoNEh4nFMLcfRf` Ready le 16 octobre a 21:10
+(Toronto). Essai reel en production reussi avec un WAV synthetique francais de
+42 secondes: transcription, brouillon a six rubriques et validation avant copie.
+POST anonyme/jeton invalide refuses (401, private no-store). Solde observe apres
+essai: 9,99 USD, recharge OFF. Aucun dossier reel transmis ni sauvegarde clinique.
 
 Modification du 14 octobre 2026: `default_schedule` accepte des variantes avec
 `effectiveFrom`; les anciens jours utilisent l'horaire initial. Le salaire mensuel
