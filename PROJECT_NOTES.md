@@ -122,6 +122,20 @@ synthetique fictif, transcription reelle, brouillon et validation avant copie ve
 GET et POST sans session/avec jeton invalide refuses (401, private no-store).
 Pas de capture d'un vrai micro ou d'un vrai appel Teams pendant ces controles.
 
+Types de notes autorises pour publication le 16 octobre: choix obligatoire
+avant capture/import dans l'essai audio/IA. Catalogue `clinicalNoteTemplates`:
+evaluations rencontres 1/2/3, plan d'intervention, evolution et fermeture.
+Rubriques et consignes de redaction propres a chaque type, titre inclus a la copie.
+Selection verrouillee pendant capture/traitement; changer le type conserve audio et
+transcription mais efface le brouillon, la relecture et la validation.
+API JSON: `noteType` valide parmi les six valeurs; absent = evolution pour les anciens
+onglets, invalide = 400 avant appel fournisseur. Retour du type pour verifier le
+contrat client. Aucune note precedente ajoutee, aucune fermeture/evaluation terminee
+deduite du type. Schema interne a six champs conserve; memes droits et limites.
+`check:full` reussi: 187 tests/build, trois avertissements lint preexistants.
+Accord explicite recu pour commit/push/deploiement des six types, dans le meme
+pilote fictif reserve aux deux comptes. Verification distante a terminer apres push.
+
 Modification du 14 octobre 2026: `default_schedule` accepte des variantes avec
 `effectiveFrom`; les anciens jours utilisent l'horaire initial. Le salaire mensuel
 reste une reference liee a l'horaire initial, permettant de payer les heures ajoutees

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getClinicalNotesContext } from '@/lib/clinicalNotesServer'
 import { CLINICAL_AUDIO_MAX_BYTES, CLINICAL_TRANSCRIPT_MAX_CHARS } from '@/lib/clinicalNotesAi'
 import { ClinicalNotesAiError, generateClinicalDemo, isClinicalNotesAiEnabled, readClinicalNotesBody, transcribeClinicalDemo } from '@/lib/clinicalNotesAiServer'
+import { resolveClinicalNoteType } from '@/lib/clinicalNoteTemplates'
 
 export const maxDuration = 60
 export const dynamic = 'force-dynamic'
@@ -27,7 +28,9 @@ export async function POST(request: NextRequest) {
     if (body.fictional !== true || typeof body.transcript !== 'string' || !body.transcript.trim() || body.transcript.length > CLINICAL_TRANSCRIPT_MAX_CHARS) {
       return reply({ error: 'Une transcription fictive non vide de moins de 16 000 caractères est requise.' }, 400)
     }
-    return reply({ draft: await generateClinicalDemo(body.transcript.trim()) })
+    const noteType = resolveClinicalNoteType(body.noteType)
+    if (!noteType) return reply({ error: 'Choisissez un type de note proposé.' }, 400)
+    return reply({ draft: await generateClinicalDemo(body.transcript.trim(), noteType), noteType })
   } catch (error) {
     if (error instanceof ClinicalNotesAiError) return reply({ error: error.message }, error.status)
     return reply({ error: 'Requête invalide. Aucun nouvel essai automatique.' }, 400)

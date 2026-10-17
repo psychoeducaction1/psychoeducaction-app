@@ -100,6 +100,17 @@ validation exigible avant copie. GET/POST anonymes et jeton invalide: 401 no-sto
 Les restrictions aux deux comptes restent identiques et sont couvertes hors ligne;
 connexion directe du professionnel et appel Teams fictif sur le poste restent a faire.
 
+Choix du type prepare localement: `clinicalNotesAi.test.ts` couvre les six types,
+valeurs inconnues/injection, titre et rubriques du texte copie; vraie API exercee
+dans `clinicalNotesRoute.mjs` avec chaque modele et fournisseur simule. Verification
+des consignes/schema correspondants, refus 400 avant fournisseur, ancien client
+sans type en evolution et type retourne. `check:full` reussi: 187 tests et build,
+trois avertissements lint preexistants. Apercu local avec capture synthetique et
+transport IA simule: type requis avant capture, verrouillage pendant enregistrement,
+brouillon evaluation 2, puis changement en fermeture effacant note/copie validees
+et conservant la transcription; nouveau brouillon avec titre et nouvelle validation
+requise. Aucun appel IA payant, capture reelle, SQL ou mise en ligne pour ces controles.
+
 Courriel et sondage: tests hors ligne des deux choix distincts (Google public et
 sondage prive), premier bouton vers le vrai lien Google meme en test, logo PNG,
 echappement HTML et liens de sondage test sans vrais jetons. L'API de reponse

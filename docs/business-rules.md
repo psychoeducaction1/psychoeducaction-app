@@ -177,6 +177,13 @@ Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workfl
   Liberer micro, partage, mixeur et buffers a l'annulation/fermeture/changement de
   compte, y compris les permissions qui arrivent apres l'annulation. Arreter et
   signaler une source coupee. Pas d'elargissement de l'acces aux autres comptes.
+- Types de notes audio/IA: choix avant capture/import parmi evaluation 1/2/3,
+  plan d'intervention, evolution et fermeture. Le type guide uniquement la forme et
+  les rubriques; il n'etablit ni rencontre precedente, ni conclusion, ni fermeture.
+  Les donnees absentes restent non documentees. Refuser tout type fourni inconnu
+  avant appel IA; type absent sur ancien client = evolution. Modifier le type conserve
+  la source mais efface le brouillon et impose une nouvelle relecture/validation.
+  Aucun type modifiable pendant capture ou traitement; titre de type inclus a la copie.
 - Heures pre-remplies selon `default_schedule`, ajustables; samedi a zero modifiable.
 - Horaire date: une variante `effectiveFrom` s'applique a partir de cette date, inclusivement.
   Sans variante applicable, l'horaire initial reste utilise. Une saisie existante prime.

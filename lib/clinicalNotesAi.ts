@@ -1,3 +1,6 @@
+import { DEFAULT_CLINICAL_NOTE_TYPE, getClinicalNoteTemplate } from '@/lib/clinicalNoteTemplates'
+import type { ClinicalNoteType } from '@/lib/clinicalNoteTemplates'
+
 // Limites d'un essai court; les consultations completes seront une etape distincte.
 export const CLINICAL_AUDIO_MAX_BYTES = 3_000_000
 export const CLINICAL_TRANSCRIPT_MAX_CHARS = 16_000
@@ -14,8 +17,9 @@ export function parseClinicalNoteDraft(value: unknown): ClinicalNoteDraft | null
   return record as ClinicalNoteDraft
 }
 
-export function formatClinicalNoteDraft(draft: ClinicalNoteDraft) {
-  return `ESSAI FICTIF — BROUILLON A RELIRE\n\nOBJECTIF\n${draft.objectif}\n\nINFORMATIONS RAPPORTEES\n${draft.informations}\n\nINTERVENTIONS\n${draft.interventions}\n\nOBSERVATIONS\n${draft.observations}\n\nPLAN\n${draft.plan}\n\nA VERIFIER\n${draft.aVerifier}`
+export function formatClinicalNoteDraft(draft: ClinicalNoteDraft, type: ClinicalNoteType = DEFAULT_CLINICAL_NOTE_TYPE) {
+  const template = getClinicalNoteTemplate(type)
+  return `ESSAI FICTIF — BROUILLON A RELIRE\nTYPE DE NOTE : ${template.label}\n\n${CLINICAL_NOTE_FIELDS.map(field => `${template.headings[field].toLocaleUpperCase('fr-CA')}\n${draft[field]}`).join('\n\n')}`
 }
 
 export function detectClinicalAudio(bytes: Uint8Array): { extension: string; type: string } | null {

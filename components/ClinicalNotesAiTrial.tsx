@@ -5,6 +5,8 @@ import { supabase } from '@/lib/supabaseClient'
 import { AlertBanner, buttonClass, SectionCard } from '@/components/ui/index'
 import { CLINICAL_AUDIO_MAX_BYTES, CLINICAL_TRANSCRIPT_MAX_CHARS, formatClinicalNoteDraft, parseClinicalNoteDraft } from '@/lib/clinicalNotesAi'
 import ClinicalNotesRecorder from '@/components/ClinicalNotesRecorder'
+import { CLINICAL_NOTE_TEMPLATES, getClinicalNoteTemplate, isClinicalNoteType } from '@/lib/clinicalNoteTemplates'
+import type { ClinicalNoteType } from '@/lib/clinicalNoteTemplates'
 
 export default function ClinicalNotesAiTrial({ enabled }: { enabled: boolean }) {
   const [file, setFile] = useState<File | null>(null)
@@ -20,6 +22,7 @@ export default function ClinicalNotesAiTrial({ enabled }: { enabled: boolean }) 
   const [recorded, setRecorded] = useState(false)
   const [listened, setListened] = useState(false)
   const [audioUrl, setAudioUrl] = useState('')
+  const [noteType, setNoteType] = useState<ClinicalNoteType | ''>('')
   const abortRef = useRef<AbortController | null>(null)
   const noteRef = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -39,7 +42,7 @@ export default function ClinicalNotesAiTrial({ enabled }: { enabled: boolean }) 
   }
 
   async function run(action: 'transcribe' | 'generate') {
-    if (busy || recording || !enabled || !fictional || (action === 'transcribe' && recorded && !listened)) return
+    if (busy || recording || !enabled || !noteType || !fictional || (action === 'transcribe' && recorded && !listened)) return
     setBusy(true); setMessage('')
     const controller = new AbortController()
     abortRef.current = controller
@@ -55,7 +58,7 @@ export default function ClinicalNotesAiTrial({ enabled }: { enabled: boolean }) 
       } else {
         if (!transcript.trim() || transcript.length > CLINICAL_TRANSCRIPT_MAX_CHARS) throw new Error('Vérifiez la transcription avant de continuer.')
         headers['Content-Type'] = 'application/json'
-        body = JSON.stringify({ fictional: true, transcript })
+        body = JSON.stringify({ fictional: true, transcript, noteType })
       }
       const response = await fetch('/api/prise-de-notes/essai', { method: 'POST', headers, body, signal: controller.signal, cache: 'no-store' })
       const payload = await response.json()
@@ -65,8 +68,8 @@ export default function ClinicalNotesAiTrial({ enabled }: { enabled: boolean }) 
         setTranscript(payload.transcript); setTranscribed(true); setNote('')
       } else {
         const draft = parseClinicalNoteDraft(payload.draft)
-        if (!draft) throw new Error('Brouillon invalide.')
-        setNote(formatClinicalNoteDraft(draft))
+        if (!draft || payload.noteType !== noteType) throw new Error('Brouillon ou type de note inattendu. Réessayez.')
+        setNote(formatClinicalNoteDraft(draft, noteType))
       }
       setReviewed(false); setValidated(false)
       setMessage(action === 'transcribe' ? 'Transcription prête. Corrigez-la avant de demander la note.' : 'Brouillon prêt. Relisez chaque information avec la transcription.')
@@ -79,9 +82,25 @@ export default function ClinicalNotesAiTrial({ enabled }: { enabled: boolean }) 
     {!enabled ? <AlertBanner title="Configuration en cours" tone="neutral"
       description="Le projet API est en préparation. L’envoi de fichiers restera bloqué jusqu’à l’activation de la clé côté serveur." /> : <div className="space-y-5">
       <p className="text-sm leading-6 text-[#7a6859]">Utilisez un enregistrement joué pour l’exercice, idéalement de 1 à 3 minutes. WAV, MP3, M4A ou WebM, moins de 3 Mo. Chaque bouton envoie le contenu à OpenAI et consomme des crédits API. Aucun envoi automatique ni sauvegarde dans l’application. Fermer ce panneau efface l’essai.</p>
-      <ClinicalNotesRecorder disabled={busy} onRecorded={selected => selectAudio(selected, true)} onRecordingChange={setRecording} />
+      <div className="space-y-2">
+        <label htmlFor="ai-note-type" className="block text-sm font-semibold">Type de note à préparer</label>
+        <select id="ai-note-type" value={noteType} disabled={busy || recording} aria-describedby="ai-note-type-help"
+          className="block w-full min-w-0 rounded-xl border border-[#dfd0bf] bg-white p-3 text-sm"
+          onChange={event => {
+            const selected = event.target.value
+            setNoteType(isClinicalNoteType(selected) ? selected : '')
+            setNote(''); setReviewed(false); setValidated(false)
+            setMessage(transcribed ? 'Type modifié. La transcription est conservée ; générez un nouveau brouillon.' : '')
+          }}>
+          <option value="">Choisir le type avant l’enregistrement</option>
+          {CLINICAL_NOTE_TEMPLATES.map(template => <option key={template.id} value={template.id}>{template.label}</option>)}
+        </select>
+        <p id="ai-note-type-help" className="text-sm leading-6 text-[#7a6859]">{noteType ? getClinicalNoteTemplate(noteType).description : 'Choisissez le modèle avant de capter ou d’importer votre audio fictif.'}</p>
+        {noteType && <p className="text-xs leading-5 text-[#7a6859]">Un changement de type efface le brouillon et sa validation. L’audio et la transcription sont conservés. Les autres rencontres ne sont pas ajoutées automatiquement.</p>}
+      </div>
+      <ClinicalNotesRecorder disabled={busy || !noteType} onRecorded={selected => selectAudio(selected, true)} onRecordingChange={setRecording} />
       <label className="block space-y-2 text-sm font-medium">Ou importer un audio fictif
-        <input ref={fileRef} type="file" accept=".wav,.mp3,.m4a,.webm" disabled={busy || recording}
+        <input ref={fileRef} type="file" accept=".wav,.mp3,.m4a,.webm" disabled={busy || recording || !noteType}
           className="block w-full min-w-0 rounded-xl border border-[#dfd0bf] bg-white p-3 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-[#efe1d2] file:p-2"
           onChange={event => {
             const selected = event.target.files?.[0] ?? null
@@ -99,7 +118,7 @@ export default function ClinicalNotesAiTrial({ enabled }: { enabled: boolean }) 
         Je confirme que cet audio et cette transcription sont entièrement fictifs, sans renseignements d’un vrai client, et j’accepte leur envoi à OpenAI pour cet essai.
       </label>
       {file && <p className="text-xs text-[#7a6859]">Audio sélectionné : {recorded ? 'appel Teams fictif enregistré' : 'fichier importé'} · {(file.size / 1_000_000).toFixed(2)} Mo</p>}
-      <button className={buttonClass('primary')} disabled={busy || recording || !fictional || (recorded && !listened) || !file || !file.size || file.size > CLINICAL_AUDIO_MAX_BYTES}
+      <button className={buttonClass('primary')} disabled={busy || recording || !noteType || !fictional || (recorded && !listened) || !file || !file.size || file.size > CLINICAL_AUDIO_MAX_BYTES}
         onClick={() => void run('transcribe')}>Envoyer l’audio fictif pour transcription</button>
       {transcribed && <div className="space-y-3">
         <label htmlFor="ai-trial-transcript" className="block text-sm font-medium">Transcription à vérifier</label>
@@ -108,7 +127,7 @@ export default function ClinicalNotesAiTrial({ enabled }: { enabled: boolean }) 
             setTranscript(event.target.value); setNote(''); setReviewed(false); setValidated(false); setMessage('')
           }} />
         <p className="text-xs text-[#7a6859]">Les interlocuteurs ne sont pas identifiés automatiquement dans cette étape. Corrigez les erreurs et les attributions avant de continuer.</p>
-        <button className={buttonClass('primary')} disabled={busy || recording || !fictional || !transcript.trim()} onClick={() => void run('generate')}>Envoyer la transcription pour rédiger le brouillon</button>
+        <button className={buttonClass('primary')} disabled={busy || recording || !noteType || !fictional || !transcript.trim()} onClick={() => void run('generate')}>Envoyer la transcription pour rédiger le brouillon</button>
       </div>}
       {note && <div className="space-y-3">
         <label htmlFor="ai-trial-note" className="block text-sm font-medium">Brouillon clinique fictif</label>
