@@ -70,7 +70,20 @@ pas une verification des migrations, variables ou balises presentes en productio
 
 Moteur de notes v2 du 17 octobre 2026, publication autorisee par l'utilisateur:
 commit/push puis essai IA reel avec le seul scenario fictif sommeil/jeux video,
-sans elargissement des deux comptes. Verification du deploiement encore a effectuer.
+sans elargissement des deux comptes. Commit `ff27a16` pousse sur main; deploiement
+Vercel `B5ufBViuvHaJyTr15ee7xD7rNWXc` confirme en succes. Sur le domaine public:
+sept types visibles, compte super administrateur autorise, GET/POST anonymes et
+jetons fictifs invalides refuses en 401 private no-store. Contrats hors ligne
+reexecutes: pilote professionnel permis, autres comptes refuses avant appel IA.
+Connexion physique au compte professionnel non exercee pendant cette publication.
+Essai IA reel reussi avec la transcription fictive sommeil/jeux video de l'utilisateur,
+type evaluation 1, sans contexte/metadata ajoutes ni audio reel. Trois etapes terminees,
+brouillon visible au controle a 43 secondes. Revue comparative: elements essentiels
+repris, lien jeux/sommeil attribue au pere, aucun diagnostic/plan/date/observation
+du jeune invente, rubriques sans source vides, validation humaine encore requise.
+Limite constatee: alertes similaires repetees entre les trois etapes, hors copie.
+Aucune qualite generale revendiquee a partir de cet essai unique. Brouillon laisse
+non valide dans l'onglet pour relecture; aucune sauvegarde clinique ni depot PsyLog.
 Sept types,
 dont observation, avec configurations propres dans `clinicalNoteBlueprints`.
 API JSON `formatVersion: 2`: analyse structuree sourcee, redaction par rubriques,
@@ -87,7 +100,8 @@ temporaires clonees, restauration sans reutiliser l'ancienne validation. Pas de 
 Storage, nouvelles permissions, donnees reelles ou sauvegarde durable. Trois appels
 consomment davantage de credits et peuvent atteindre la deadline; travail conserve
 en cas d'echec. Qualite/latence avec le fournisseur reel restent a evaluer sur scenarios
-fictifs apres autorisation de publication; aucun nouvel appel payant pendant les tests locaux.
+fictifs plus varies; aucun appel payant pendant les tests locaux. Seul le scenario
+sommeil/jeux video ci-dessus a ete transmis a l'IA reelle apres autorisation.
 Conservation, consentements reels, fournisseurs et protocoles cliniques non approuves.
 
 Pilote Prise de notes publie avec autorisation le 16 octobre 2026 (`74a9668`):

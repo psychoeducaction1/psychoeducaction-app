@@ -46,6 +46,16 @@ identite et transport simules: edition, source modifiee/copie bloquee, echec con
 la correction, regeneration/archivage/restauration, ajout/retrait/deplacement de
 paragraphe et texte a copier excluant alertes/rubriques vides verifies. Aucun micro reel,
 appel fournisseur, SQL, commit/push ou deploiement execute pour cette evolution.
+Publication autorisee ensuite (commit `ff27a16`, Vercel
+`B5ufBViuvHaJyTr15ee7xD7rNWXc` en succes): domaine public, sept choix et acces
+super administrateur verifies. GET et POST anonymes/jeton fictif invalide = 401,
+private no-store. Contrats de droits des deux comptes reexecutes hors ligne;
+connexion directe au professionnel pilote non exercee. Essai IA reel sur le seul
+scenario fictif sommeil/jeux video, evaluation 1: trois etapes reussies, pas d'ajout
+ni omission materiels a la comparaison, locuteurs/limites et manques dans les alertes,
+aucun diagnostic, acte, plan ou prochaine date inventes. Brouillon non valide pour
+laisser la relecture a l'utilisateur. Alertes proches parfois repetees: limite de
+lisibilite encore presente, sans inclusion dans le texte clinique a copier.
 Le runner conserve Node natif et `node:test`, sans nouveau framework. Node 24 evite
 les ecarts de support des hooks de resolution; le hook `@/` ne change pas le runtime Next.
 `--test-isolation=none` est preexistant: eviter les mocks globaux non restaures.
