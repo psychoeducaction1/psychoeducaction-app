@@ -110,6 +110,12 @@ transport IA simule: type requis avant capture, verrouillage pendant enregistrem
 brouillon evaluation 2, puis changement en fermeture effacant note/copie validees
 et conservant la transcription; nouveau brouillon avec titre et nouvelle validation
 requise. Aucun appel IA payant, capture reelle, SQL ou mise en ligne pour ces controles.
+Apres autorisation, `da28534` publie (Vercel Ready). Verification sur le domaine public:
+six options, capture bloquee sans type; WAV synthetique fictif transcrit puis plan
+d'intervention genere via OpenAI. Changement apres validation en fermeture effacant
+ancien brouillon/copie, transcription conservee. Note de fermeture reelle signalant
+la fermeture non confirmee et les informations absentes. API sans session/jeton
+invalide en 401 no-store. Aucun vrai micro, client, SQL ou autre compte utilise.
 
 Courriel et sondage: tests hors ligne des deux choix distincts (Google public et
 sondage prive), premier bouton vers le vrai lien Google meme en test, logo PNG,

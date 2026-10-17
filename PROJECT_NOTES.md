@@ -134,7 +134,13 @@ contrat client. Aucune note precedente ajoutee, aucune fermeture/evaluation term
 deduite du type. Schema interne a six champs conserve; memes droits et limites.
 `check:full` reussi: 187 tests/build, trois avertissements lint preexistants.
 Accord explicite recu pour commit/push/deploiement des six types, dans le meme
-pilote fictif reserve aux deux comptes. Verification distante a terminer apres push.
+pilote fictif reserve aux deux comptes. Commit `da28534` publie; deploiement Vercel
+`12QhVctdxLTmG9q1dQUyJCh4y5vm` Ready. Six choix et capture bloquee sans type
+verifies sur le domaine public. WAV synthetique fictif: transcription, plan
+d'intervention reel, validation puis changement en fermeture; brouillon/copie
+precedents effaces et transcription conservee. Nouvelle note de fermeture signalant
+explicitement la fermeture non confirmee, sans inventer motif/date/bilan.
+API anonyme/jeton invalide en 401 no-store. Aucun vrai micro ou dossier utilise.
 
 Modification du 14 octobre 2026: `default_schedule` accepte des variantes avec
 `effectiveFrom`; les anciens jours utilisent l'horaire initial. Le salaire mensuel
