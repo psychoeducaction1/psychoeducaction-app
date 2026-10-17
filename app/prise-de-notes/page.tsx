@@ -84,7 +84,7 @@ export default function ClinicalNotesPage() {
   return <>
     <AppNav />
     <main className="min-h-screen min-w-0 px-4 py-8 sm:px-6 lg:ml-72 lg:px-8">
-      <PageHeader eyebrow="Pilote privé · étape 1" title="Prise de notes"
+      <PageHeader eyebrow="Pilote privé · données fictives" title="Prise de notes"
         description="Préparez, relisez et validez des notes à partir de séances entièrement fictives. L’envoi à l’IA se fait dans un essai séparé et volontaire." />
       {loading ? <p role="status">Vérification de vos accès…</p> : data ? (
         <Workspace key={data.viewerId} initialSessions={data.sessions} aiEnabled={data.aiEnabled === true} />

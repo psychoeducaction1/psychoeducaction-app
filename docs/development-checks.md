@@ -78,6 +78,21 @@ POST anonyme et jeton invalide verifies: 401 et cache prive/no-store.
 Ce seul scenario ne valide pas encore la qualite sur une consultation complete
 ni l'enregistrement Teams; la connexion du professionnel pilote reste non exercee.
 
+Capture Teams preparee localement: `clinicalNotesRecorder.test.ts` couvre melange
+audio seul, dernier chunk, refus sans son Teams, micro refuse, annulation pendant
+permission, fermeture active, limite 120 s, taille finale, perte d'une source,
+erreur codec et navigateur incompatible. `check:full`: 185 tests et build reussis,
+trois avertissements lint preexistants. Apercu isole avec vrais Web Audio et
+MediaRecorder, deux oscillateurs synthetiques (aucun micro/Teams reel): deux niveaux
+actifs, WebM cree, zero source apres arret/changement de compte; envoi bloque avant
+les deux confirmations et transcription simulee ensuite. Refus audio et micro
+exerces dans l'interface. Aucun appel IA payant pour ces controles.
+Avant validation sur le poste cible: appel Teams entierement fictif dans Chrome ou
+Edge, choisir fenetre Teams avec audio ou ecran entier avec audio, autoriser micro,
+faire parler les deux personnes, verifier indicateurs puis reecouter les deux voix.
+Tester aussi Annuler, arret du partage navigateur, fermeture et deconnexion.
+Ne pas confondre l'apercu synthetique avec une verification de Teams/Windows reel.
+
 Courriel et sondage: tests hors ligne des deux choix distincts (Google public et
 sondage prive), premier bouton vers le vrai lien Google meme en test, logo PNG,
 echappement HTML et liens de sondage test sans vrais jetons. L'API de reponse

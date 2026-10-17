@@ -66,7 +66,7 @@ pas une verification des migrations, variables ou balises presentes en productio
 | Budget | Import multimois, repartition pro/clinique, historique, frais et paie des adjointes. |
 | Acquisition | Attribution des demandes, evenements techniques, depenses Google Ads/Meta selon configuration. |
 | Satisfaction | Import d'activites, seuil de rencontres, courriels individuels, reponse et desabonnement. |
-| Prise de notes (pilote) | `/prise-de-notes`: parcours fictif reserve au super administrateur et au compte professionnel pilote; aucune capture audio, IA ou sauvegarde clinique. |
+| Prise de notes (pilote) | `/prise-de-notes`: parcours fictif reserve au super administrateur et au compte professionnel pilote; import IA volontaire, aucune sauvegarde clinique. Capture Teams en preparation locale. |
 
 Pilote Prise de notes publie avec autorisation le 16 octobre 2026 (`74a9668`):
 acces par `clinicalNotesAccess`, compte professionnel identifie par son UUID Auth
@@ -101,6 +101,21 @@ deploiement Vercel `XbxcXuwXGoApktXoNEh4nFMLcfRf` Ready le 16 octobre a 21:10
 42 secondes: transcription, brouillon a six rubriques et validation avant copie.
 POST anonyme/jeton invalide refuses (401, private no-store). Solde observe apres
 essai: 9,99 USD, recharge OFF. Aucun dossier reel transmis ni sauvegarde clinique.
+
+Etape 3 autorisee pour publication le 16 octobre: capture du son partage de
+Teams sur ordinateur et du micro via les permissions navigateur. Deux sources audio
+exigees, melange Web Audio puis MediaRecorder WebM/Opus audio seul; aucune image
+encodee/envoyee. La capture d'ecran reste ouverte uniquement pour conserver la
+source audio; toutes ses pistes sont arretees a la fin, en cas de refus, annulation,
+fermeture ou changement de compte (y compris permissions resolues tardivement).
+Essai fictif de 120 secondes maximum et 3 Mo; reecoute et confirmation des deux
+voix avant envoi manuel a l'API existante. Indicateurs separes micro/son partage,
+pas de sauvegarde ni envoi automatique, URL audio locale revoquee au remplacement.
+Meme perimetre de deux comptes; aucun endpoint, droit, secret ou SQL ajoute.
+Capture audio navigateur et traitement testes avec sources synthetiques uniquement;
+selection du partage et vrai appel Teams fictif restent a valider sur le poste cible.
+Accord explicite recu pour commit/push/deploiement et verification fictive, sans
+elargir l'acces. Etat du deploiement a verifier apres le push.
 
 Modification du 14 octobre 2026: `default_schedule` accepte des variantes avec
 `effectiveFrom`; les anciens jours utilisent l'horaire initial. Le salaire mensuel

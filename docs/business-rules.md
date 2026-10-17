@@ -169,6 +169,14 @@ Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workfl
   Relecture obligatoire avant copie, toute correction invalidant la validation.
   Pas de retry automatique ni de modele choisi par le navigateur; aucune vraie
   consultation tant que la configuration de confidentialite n'a pas ete validee.
+- Capture Teams pilote: exercice fictif uniquement, confirmation des participants
+  avant demande des permissions ecran/audio et micro. Les deux sources sont exigees;
+  pas de repli silencieux sur le micro seul. Melange audio local, aucune image encodee
+  ou transmise. Extrait limite a 120 secondes et 3 Mo, reecoute confirmee avant envoi
+  manuel a l'API IA existante; jamais de transcription automatique pendant la capture.
+  Liberer micro, partage, mixeur et buffers a l'annulation/fermeture/changement de
+  compte, y compris les permissions qui arrivent apres l'annulation. Arreter et
+  signaler une source coupee. Pas d'elargissement de l'acces aux autres comptes.
 - Heures pre-remplies selon `default_schedule`, ajustables; samedi a zero modifiable.
 - Horaire date: une variante `effectiveFrom` s'applique a partir de cette date, inclusivement.
   Sans variante applicable, l'horaire initial reste utilise. Une saisie existante prime.
