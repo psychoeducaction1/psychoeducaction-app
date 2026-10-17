@@ -23,6 +23,29 @@
 | `npm run test:db` | Scenario SQL distinct contre PostgreSQL local isole uniquement. |
 
 Le build genere `.next` et les declarations Next; il ne deploie rien.
+
+Moteur clinique v2 (17 octobre, local): `clinicalNoteEngine.test.ts` controle
+sept gabarits, citations exactes/source autorisee, references inconnues, rubriques
+vides exclues de la copie, tableaux ABC incomplets, alertes prioritaires, relecture
+et versions clonees bornees. `clinicalNotesRoute.mjs` exerce la vraie API avec
+fournisseur simule: deux comptes autorises, contexte non confirme refuse avant
+appel, trois etapes pour les sept types, citations/references invalides, controle
+de fidelite negatif, reponse incomplete/refus, annulation avant et entre etapes.
+Compatibilite de l'ancien contrat conservee. Les simulations ne mesurent pas la
+capacite reelle du modele a detecter une hallucination, une omission ou une mauvaise
+attribution: revue comparative clinique des sorties reelles encore necessaire.
+Scenario fictif de reference: parent rapportant sommeil/jeux video, sans diagnostic
+confirme, sans propos du jeune, sans plan ni prochaine date convenus. Ne jamais
+transformer les qualificatifs familiaux en diagnostic ou une question en technique.
+Autres essais a comparer avec le professionnel: risques sans evaluation documentee,
+contradictions avec ancienne note, bilan de fermeture absent, scores normatifs absents,
+observation ABC incomplete. Aucun appel payant ni vrai client dans les tests automatises.
+Verification finale locale du moteur v2: `npm run check:full` reussi, 198 tests et build;
+trois avertissements lint preexistants, aucune nouvelle erreur. Apercu isole avec
+identite et transport simules: edition, source modifiee/copie bloquee, echec conservant
+la correction, regeneration/archivage/restauration, ajout/retrait/deplacement de
+paragraphe et texte a copier excluant alertes/rubriques vides verifies. Aucun micro reel,
+appel fournisseur, SQL, commit/push ou deploiement execute pour cette evolution.
 Le runner conserve Node natif et `node:test`, sans nouveau framework. Node 24 evite
 les ecarts de support des hooks de resolution; le hook `@/` ne change pas le runtime Next.
 `--test-isolation=none` est preexistant: eviter les mocks globaux non restaures.

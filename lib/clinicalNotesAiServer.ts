@@ -33,14 +33,15 @@ export async function readClinicalNotesBody(request: Request, maxBytes: number) 
   return Buffer.concat(chunks, total)
 }
 
-async function callOpenAi(path: string, body: FormData | string) {
+async function callOpenAi(path: string, body: FormData | string, signal?: AbortSignal) {
   if (!isClinicalNotesAiEnabled()) throw new ClinicalNotesAiError('L’essai IA n’est pas encore activé côté serveur.', 503)
   try {
+    signal?.throwIfAborted()
     const response = await fetch(`https://api.openai.com/v1/${path}`, {
       method: 'POST', headers: {
         Authorization: `Bearer ${process.env.OPENAI_API_KEY?.trim()}`,
         ...(typeof body === 'string' ? { 'Content-Type': 'application/json' } : {}),
-      }, body, signal: AbortSignal.timeout(45_000), cache: 'no-store',
+      }, body, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(45_000)]) : AbortSignal.timeout(45_000), cache: 'no-store',
     })
     // Ne pas renvoyer ni journaliser le contenu d'une erreur du fournisseur.
     if (!response.ok) {
@@ -54,6 +55,19 @@ async function callOpenAi(path: string, body: FormData | string) {
     if (error instanceof ClinicalNotesAiError) throw error
     throw new ClinicalNotesAiError('Le service IA est indisponible ou le délai est dépassé. Aucun nouvel essai automatique.', 502)
   }
+}
+
+export async function requestClinicalStructured(name: string, instructions: string, source: unknown, schema: object, signal: AbortSignal) {
+  const result = await callOpenAi('responses', JSON.stringify({
+    model: 'gpt-6.1-sol', store: false, max_output_tokens: 6_000, reasoning: { effort: 'low' },
+    input: [{ role: 'developer', content: instructions }, { role: 'user', content: JSON.stringify(source) }],
+    text: { format: { type: 'json_schema', name, strict: true, schema } },
+  }), signal)
+  if (!result || result.status !== 'completed' || !Array.isArray(result.output)) throw new ClinicalNotesAiError('Traitement incomplet. Le brouillon précédent est conservé.', 502)
+  const content = result.output.flatMap((item: { type?: string; content?: unknown[] }) => item?.type === 'message' && Array.isArray(item.content) ? item.content : [])
+  if (content.some((item: { type?: string }) => item?.type === 'refusal')) throw new ClinicalNotesAiError('Le service n’a pas produit de note pour cet essai.', 422)
+  const raw = content.filter((item: { type?: string }) => item?.type === 'output_text').map((item: { text?: string }) => item.text ?? '').join('')
+  try { return JSON.parse(raw) as unknown } catch { throw new ClinicalNotesAiError('Réponse IA invalide. Le brouillon précédent est conservé.', 502) }
 }
 
 export async function transcribeClinicalDemo(file: File) {

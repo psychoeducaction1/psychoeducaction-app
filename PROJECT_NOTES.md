@@ -68,6 +68,28 @@ pas une verification des migrations, variables ou balises presentes en productio
 | Satisfaction | Import d'activites, seuil de rencontres, courriels individuels, reponse et desabonnement. |
 | Prise de notes (pilote) | `/prise-de-notes`: parcours fictif reserve au super administrateur et au compte professionnel pilote; import IA volontaire, aucune sauvegarde clinique. Capture Teams en preparation locale. |
 
+Moteur de notes v2 du 17 octobre 2026, publication autorisee par l'utilisateur:
+commit/push puis essai IA reel avec le seul scenario fictif sommeil/jeux video,
+sans elargissement des deux comptes. Verification du deploiement encore a effectuer.
+Sept types,
+dont observation, avec configurations propres dans `clinicalNoteBlueprints`.
+API JSON `formatVersion: 2`: analyse structuree sourcee, redaction par rubriques,
+controle de fidelite sur les sources originales (trois appels, 50 secondes au total).
+Modules `clinicalNoteAnalysisServer`, `clinicalNoteWritingServer`,
+`clinicalNoteValidationServer`; orchestrateur `clinicalNoteEngineServer`.
+`clinicalNoteEngine` valide citations exactes/references/schema et formate la copie.
+Ces controles ne prouvent pas la validite clinique; validation humaine toujours requise.
+Le contrat historique six champs demeure pour les anciens onglets.
+Edition par rubrique, alertes hors copie, sources/metadata distinctes, contexte anterieur
+facultatif du meme dossier fictif confirme. Corrections conservees aux changements de
+source/type; validation bloquee si perime. Regeneration volontaire et cinq versions
+temporaires clonees, restauration sans reutiliser l'ancienne validation. Pas de DB,
+Storage, nouvelles permissions, donnees reelles ou sauvegarde durable. Trois appels
+consomment davantage de credits et peuvent atteindre la deadline; travail conserve
+en cas d'echec. Qualite/latence avec le fournisseur reel restent a evaluer sur scenarios
+fictifs apres autorisation de publication; aucun nouvel appel payant pendant les tests locaux.
+Conservation, consentements reels, fournisseurs et protocoles cliniques non approuves.
+
 Pilote Prise de notes publie avec autorisation le 16 octobre 2026 (`74a9668`):
 acces par `clinicalNotesAccess`, compte professionnel identifie par son UUID Auth
 verifie (pas son nom) et super administrateur avec profil direction charge.

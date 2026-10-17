@@ -33,6 +33,12 @@ export const CLINICAL_NOTE_TEMPLATES = [
     headings: { objectif: 'Objectif de la rencontre', informations: 'Informations rapportées', interventions: 'Interventions réalisées', observations: 'Observations documentées', plan: 'Plan de suivi', aVerifier: 'À vérifier ou à compléter' },
   },
   {
+    id: 'observation', label: 'Note d’observation',
+    description: 'Contexte, comportements observés, interactions et séquences documentées.',
+    instructions: 'Décris uniquement les observations documentées, leur contexte et les interactions. Sépare les faits des hypothèses. Une séquence antécédent-comportement-conséquence exige les trois éléments explicitement documentés; ne les reconstruis pas.',
+    headings: { objectif: 'Contexte et objectif', informations: 'Description factuelle', interventions: 'Interactions et séquences documentées', observations: 'Capacités adaptatives observées', plan: 'Pistes explicitement proposées', aVerifier: 'À vérifier ou à compléter' },
+  },
+  {
     id: 'fermeture', label: 'Fermeture de dossier',
     description: 'Motif de fermeture, bilan documenté et relais ou suites convenus.',
     instructions: 'Organise une note de fermeture. Le choix de ce modele ne prouve pas qu’une fermeture est decidee: motif, date, bilan, accord du client et relais restent non documentes s’ils sont absents. Ne deduis ni abandon, ni atteinte des objectifs, ni resolution des difficultes. Signale une fermeture non confirmee dans aVerifier.',

@@ -185,12 +185,44 @@ Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workfl
   changement, mode de l'audio termine conserve pour l'etiquette. Memes limites,
   consentement fictif, nettoyage et envoi IA volontaire pour les deux modes.
 - Types de notes audio/IA: choix avant capture/import parmi evaluation 1/2/3,
-  plan d'intervention, evolution et fermeture. Le type guide uniquement la forme et
+  plan d'intervention, evolution, observation et fermeture. Le type guide uniquement la forme et
   les rubriques; il n'etablit ni rencontre precedente, ni conclusion, ni fermeture.
-  Les donnees absentes restent non documentees. Refuser tout type fourni inconnu
+  Les rubriques absentes restent vides et sont exclues de la copie dans le moteur v2.
+  Refuser tout type fourni inconnu
   avant appel IA; type absent sur ancien client = evolution. Modifier le type conserve
-  la source mais efface le brouillon et impose une nouvelle relecture/validation.
+  la source et le brouillon, mais bloque la validation/copie jusqu'a regeneration
+  explicite (ou retour exact aux sources/type precedents avec nouvelle relecture).
   Aucun type modifiable pendant capture ou traitement; titre de type inclus a la copie.
+- Moteur v2 du pilote fictif: extraction de faits, redaction puis controle de fidelite
+  dans trois modules/appels distincts; deadline totale 50 secondes, annulation propagee,
+  aucune relance automatique. Citations exactes dans les sources fournies et references
+  connues exigees avant acceptation. Le schema et les citations ne prouvent pas la
+  fidelite semantique; controle IA et trois confirmations de relecture humaine requis.
+  Tout echec conserve le travail courant. Aucune nouvelle hypothese therapeutique autonome.
+- Contexte anterieur facultatif (8 000 caracteres): confirmation du meme dossier
+  fictif autorise, sans lecture de vrais dossiers. Renseignements administratifs
+  confirmes separes (2 000 caracteres); jamais de date systeme deduite comme date clinique.
+  Transcription actuelle jusqu'a 16 000 caracteres. Original audio transcrit et texte
+  corrige distincts en memoire. Pour un texte colle sans audio, la premiere source
+  utilisee pour une generation reussie devient l'original de travail.
+- Rubriques configurables dans `clinicalNoteBlueprints`: plan en quatre colonnes,
+  observation ABC complete seulement, PAD/PEX et jugement formule par le professionnel
+  provisoire a valider. Ne pas inventer score, norme, diagnostic, consentement ou acte.
+  Propos, observations, interventions, reactions et hypotheses doivent rester distincts.
+  Lacunes, ambiguities, contradictions, suggestions et alertes hors du texte a copier.
+  Risque extrait = indicateur prioritaire maintenu, sans conclusion ni evaluation du
+  risque automatique; detection non exhaustive et protocoles cliniques non approuves.
+- Correction par rubrique, ajout/retrait/deplacement de paragraphes, lignes de tableau
+  editables. References initiales a reverifier apres modification. Regeneration uniquement
+  par bouton explicite; brouillon courant archive seulement si elle reussit. Restauration
+  archive le travail courant puis invalide la validation. Cinq dernieres versions clonees
+  en memoire de l'onglet, sources comprises; aucun stockage durable ni journal clinique.
+  Fermeture du panneau/onglet, actualisation ou changement de compte effacent les essais.
+  Le contrat historique sans `formatVersion` reste disponible pour les anciens onglets
+  a six champs; le nouveau client utilise exclusivement `formatVersion: 2`.
+  Ce pilote n'est pas une autorisation d'usage reel: conservation durable, chiffrement,
+  consentements, isolation des vrais dossiers, fournisseurs et protocoles devront etre
+  valides avant ouverture a des consultations reelles. Aucune integration PsyLog ajoutee.
 - Heures pre-remplies selon `default_schedule`, ajustables; samedi a zero modifiable.
 - Horaire date: une variante `effectiveFrom` s'applique a partir de cette date, inclusivement.
   Sans variante applicable, l'horaire initial reste utilise. Une saisie existante prime.

@@ -100,6 +100,10 @@ let providerCalls = 0
 let providerFailure = false
 const { CLINICAL_NOTE_TEMPLATES, getClinicalNoteTemplate } = await import('../../lib/clinicalNoteTemplates.ts')
 let expectedNoteType = 'evolution'
+let engineScenario = 'success'
+let engineSources
+let engineAbort
+const engineFact = () => ({ id: 'f1', kind: engineScenario === 'risk' ? 'risque' : 'propos', speaker: 'Père fictif', text: engineSources.transcript, source: 'transcript', quote: engineScenario === 'bad_quote' ? 'Citation inventée' : engineSources.transcript })
 globalThis.fetch = async (url, options) => {
   assert.equal(options.method, 'POST')
   assert.equal(options.headers.Authorization, 'Bearer fixture-provider-key')
@@ -116,6 +120,32 @@ globalThis.fetch = async (url, options) => {
   const body = JSON.parse(options.body)
   assert.equal(body.store, false)
   assert.equal(body.model, 'gpt-6.1-sol')
+  if (body.text.format.name !== 'clinical_demo_note') {
+    assert.equal(body.max_output_tokens, 6000)
+    assert.ok(options.signal instanceof AbortSignal)
+    assert.match(body.input[0].content, /N'invente aucun fait/)
+    assert.match(body.input[0].content, /consentements distincts/)
+    assert.match(body.input[0].content, /history/)
+    const name = body.text.format.name
+    const structured = value => Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(value) }] }] })
+    if (engineScenario === 'incomplete') return Response.json({ status: 'incomplete', output: [] })
+    if (engineScenario === 'refusal') return Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'refusal' }] }] })
+    if (name === 'clinical_source_analysis') {
+      engineSources = JSON.parse(body.input[1].content)
+      if (engineScenario === 'abort_after_analysis') engineAbort.abort()
+      return structured({ facts: [engineFact()], alerts: [] })
+    }
+    if (name === 'clinical_section_draft') {
+      const { facts } = JSON.parse(body.input[1].content)
+      assert.deepEqual(facts, [engineFact()], 'Extraction vérifiée transmise avant rédaction')
+      return structured({ sections: [{ id: expectedNoteType === 'fermeture' ? 'demande' : expectedNoteType === 'observation' ? 'description' : expectedNoteType === 'evaluation_2' ? 'autres' : expectedNoteType === 'evaluation_3' ? 'synthese' : 'objectif', paragraphs: [{ text: engineFact().text, factIds: [engineScenario === 'bad_ref' ? 'missing' : 'f1'] }], rows: [] }], alerts: [] })
+    }
+    assert.equal(name, 'clinical_fidelity_review')
+    const review = JSON.parse(body.input[1].content)
+    assert.deepEqual(review.sources, engineSources, 'Le contrôle revoit les sources originales, pas seulement la reformulation')
+    assert.ok(review.draft.sections.length > 0)
+    return structured({ fidelityPassed: engineScenario !== 'unfaithful', alerts: [] })
+  }
   assert.equal(body.max_output_tokens, 3000)
   assert.equal(body.text.format.type, 'json_schema')
   assert.equal(body.text.format.strict, true)
@@ -135,9 +165,9 @@ globalThis.fetch = async (url, options) => {
     observations: 'Non documenté', plan: 'Non documenté', aVerifier: 'Locuteurs à confirmer',
   }) }] }] })
 }
-async function postJson(body) {
+async function postJson(body, signal) {
   return trial.POST(new NextRequest('https://fixture.example.invalid/api/prise-de-notes/essai', {
-    method: 'POST', headers: { Authorization: 'Bearer fixture-token', 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    method: 'POST', headers: { Authorization: 'Bearer fixture-token', 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal,
   }))
 }
 for (const body of [{}, { fictional: false, transcript: 'Texte fictif' }, { fictional: true, transcript: '' }, { fictional: true, transcript: 'a'.repeat(16_001) }]) {
@@ -183,7 +213,62 @@ const failure = await postJson({ fictional: true, transcript: 'Source fictive un
 assert.equal(failure.status, 429)
 assert.doesNotMatch(JSON.stringify(await failure.json()), /Erreur contenant/)
 assert.equal(providerCalls, callsBeforeFailure + 1, 'Aucun retry automatique')
+providerFailure = false
+const engineBody = { formatVersion: 2, fictional: true, transcript: 'Père fictif : mon fils refuse de se coucher et joue aux jeux vidéo.', history: '', metadata: '', noteType: 'evolution' }
+let beforeEngine = providerCalls
+for (const changes of [
+  { formatVersion: 3 }, { history: 'Une ancienne note fictive.' }, { metadata: 'Une date fictive.' },
+  { history: false }, { history: 'a'.repeat(8001), sameFictionalCase: true }, { metadata: 'a'.repeat(2001), metadataConfirmed: true },
+]) assert.equal((await postJson({ ...engineBody, ...changes })).status, 400)
+assert.equal(providerCalls, beforeEngine, 'Contexte non confirmé refusé avant appel payant')
+for (const identity of [
+  { name: 'owner', user: owner, profile: { role: 'direction' }, status: 200 },
+  { name: 'pilot', user: pilot, profile: { role: 'professionnel' }, status: 200 },
+  { name: 'other', user: ordinary, profile: { role: 'professionnel' }, status: 403 },
+]) {
+  scenario = identity
+  expectedNoteType = 'evolution'
+  const response = await postJson(engineBody)
+  assert.equal(response.status, identity.status)
+  if (identity.status === 200) {
+    const value = await response.json()
+    assert.equal(value.formatVersion, 2)
+    assert.equal(value.analysis.facts[0].speaker, 'Père fictif')
+    assert.equal(value.draft.sections.find(item => item.id === 'objectif').paragraphs[0].factIds[0], 'f1')
+  }
+}
+assert.equal(providerCalls, beforeEngine + 6, 'Trois étapes pour chaque compte autorisé, aucune pour le compte refusé')
+scenario = { name: 'owner', user: owner, profile: { role: 'direction' } }
+for (const template of CLINICAL_NOTE_TEMPLATES) {
+  expectedNoteType = template.id
+  assert.equal((await postJson({ ...engineBody, noteType: template.id, history: 'Contexte fictif ancien.', sameFictionalCase: true, metadata: 'Milieu fictif confirmé.', metadataConfirmed: true })).status, 200)
+}
+expectedNoteType = 'evolution'
+for (const [mode, status, count] of [['bad_quote', 502, 1], ['bad_ref', 502, 2], ['unfaithful', 422, 3], ['incomplete', 502, 1], ['refusal', 422, 1]]) {
+  engineScenario = mode
+  beforeEngine = providerCalls
+  const response = await postJson(engineBody)
+  assert.equal(response.status, status, mode)
+  assert.equal(providerCalls, beforeEngine + count, mode)
+  assert.equal((await response.json()).draft, undefined, 'Aucun brouillon invalide accepté')
+}
+engineScenario = 'risk'
+const risk = await postJson({ ...engineBody, transcript: 'Client fictif : je veux disparaître.' })
+assert.equal(risk.status, 200)
+assert.ok((await risk.json()).draft.alerts.some(alert => alert.category === 'risque' && alert.priority === 'prioritaire' && alert.factIds.includes('f1')), 'Risque extrait maintenu même si les étapes suivantes oublient leur alerte')
+engineScenario = 'success'
+engineAbort = new AbortController()
+engineAbort.abort()
+beforeEngine = providerCalls
+assert.equal((await postJson(engineBody, engineAbort.signal)).status, 502)
+assert.equal(providerCalls, beforeEngine, 'Annulation avant traitement: aucun appel fournisseur')
+engineAbort = new AbortController()
+engineScenario = 'abort_after_analysis'
+assert.equal((await postJson(engineBody, engineAbort.signal)).status, 502)
+assert.equal(providerCalls, beforeEngine + 1, 'Annulation entre deux étapes: aucune rédaction ni vérification payante supplémentaire')
+engineScenario = 'success'
+const beforeDisabled = providerCalls
 delete process.env.OPENAI_API_KEY
 const disabled = await postJson({ fictional: true, transcript: 'Source fictive uniquement' })
 assert.equal(disabled.status, 503)
-assert.equal(providerCalls, callsBeforeFailure + 1)
+assert.equal(providerCalls, beforeDisabled)
