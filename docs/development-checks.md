@@ -128,6 +128,12 @@ Presentiel, confirmation, micro seul sans partage, niveau micro, arret/reecoute,
 effacement et envoi manuel. Verifier aussi le passage en Teams (nouvelle confirmation,
 mode verrouille pendant capture), puis fermeture/deconnexion liberant le micro.
 Aucune capture reelle ni requete IA payante effectuee pour ce changement local.
+Apres autorisation, `8c157d5` publie et Vercel Ready. Navigateur reconnecte:
+controle de l'interface sous super administrateur, six types, Presentiel par defaut,
+demarrage micro bloque avant confirmation puis disponible, passage Teams demandant
+nouvelle confirmation et retour Presentiel. Aucun micro active pendant ces controles.
+API sans session/jeton invalide: 401 private no-store. Essai de voix fictives dans la
+piece toujours distinct des tests automatises; aucun resultat clinique revendique.
 
 Courriel et sondage: tests hors ligne des deux choix distincts (Google public et
 sondage prive), premier bouton vers le vrai lien Google meme en test, logo PNG,

@@ -155,6 +155,12 @@ droits serveur inchanges, aucune nouvelle route/variable/SQL.
 Verification visuelle non effectuee: aucun navigateur disponible dans CUA.
 Accord explicite recu pour commit/push/deploiement de cet ajout, puis consultation
 fictive pour evaluer la note. Aucun enregistrement de vrai client autorise.
+Commit `8c157d5` publie; Vercel `54PRW6cyXRfR87DB6esL5GYE2rbV` Ready.
+Navigateur reconnecte: interface de production verifiee sous le compte direction,
+six types, mode Presentiel par defaut, micro bloque avant confirmation puis
+disponible, passage Teams reinitialisant la confirmation et retour Presentiel.
+Aucun micro reel active. Capture et qualite des voix dans la piece a tester par
+une consultation fictive; ce controle visuel ne remplace pas cet essai.
 
 Modification du 14 octobre 2026: `default_schedule` accepte des variantes avec
 `effectiveFrom`; les anciens jours utilisent l'horaire initial. Le salaire mensuel
