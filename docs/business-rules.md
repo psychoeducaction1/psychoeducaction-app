@@ -212,6 +212,12 @@ Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workfl
   Lacunes, ambiguities, contradictions, suggestions et alertes hors du texte a copier.
   Risque extrait = indicateur prioritaire maintenu, sans conclusion ni evaluation du
   risque automatique; detection non exhaustive et protocoles cliniques non approuves.
+  Alertes repetees: deduplication textuelle conservative (espaces/apostrophes et memes
+  references/categorie), priorite maximale conservee. L'affichage regroupe par categorie
+  et passages communs, avec variantes distinctes consultables sous « Autres formulations
+  et precisions a lire ». References communes ne prouvent jamais equivalence clinique:
+  aucun texte distinct n'est supprime. Sans reference ou sur passages disjoints, points
+  de relecture separes. Le regroupement ne modifie pas la note, la validation ou la copie.
 - Correction par rubrique, ajout/retrait/deplacement de paragraphes, lignes de tableau
   editables. References initiales a reverifier apres modification. Regeneration uniquement
   par bouton explicite; brouillon courant archive seulement si elle reussit. Restauration

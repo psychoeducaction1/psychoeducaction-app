@@ -6,6 +6,7 @@ import { AlertBanner, buttonClass, SectionCard } from '@/components/ui/index'
 import { CLINICAL_AUDIO_MAX_BYTES, CLINICAL_TRANSCRIPT_MAX_CHARS } from '@/lib/clinicalNotesAi'
 import ClinicalNotesRecorder from '@/components/ClinicalNotesRecorder'
 import ClinicalNoteEditor from '@/components/ClinicalNoteEditor'
+import ClinicalNotesAlerts from '@/components/ClinicalNotesAlerts'
 import { CLINICAL_NOTE_TEMPLATES, getClinicalNoteTemplate, isClinicalNoteType } from '@/lib/clinicalNoteTemplates'
 import { CLINICAL_CONTEXT_MAX_CHARS, canValidateClinicalDraft, clinicalSourceSnapshot, formatClinicalEngineNote, parseClinicalEngineResult, retainClinicalVersion } from '@/lib/clinicalNoteEngine'
 import type { ClinicalEngineResult, ClinicalSources, ClinicalWorkingVersion } from '@/lib/clinicalNoteEngine'
@@ -16,7 +17,7 @@ type WorkingNote = { result: ClinicalEngineResult; sources: ClinicalSources; ori
 const reviewLabels = [
   'J’ai comparé chaque rubrique aux sources, confirmé les locuteurs et corrigé les erreurs ou omissions.',
   'J’ai vérifié les interventions, réactions, observations, hypothèses, scores éventuels et le champ d’exercice. Aucun fait n’a été ajouté sans fondement.',
-  'J’ai examiné les alertes, contradictions et propos préoccupants; aucune évaluation du risque ni aucun consentement ne sont déduits du silence.',
+  'J’ai examiné les alertes, leurs précisions regroupées, les contradictions et les propos préoccupants; aucune évaluation du risque ni aucun consentement ne sont déduits du silence.',
 ]
 
 export default function ClinicalNotesAiTrial({ enabled }: { enabled: boolean }) {
@@ -146,12 +147,7 @@ export default function ClinicalNotesAiTrial({ enabled }: { enabled: boolean }) 
       {work && <div className="min-w-0 space-y-5 border-t border-[#dfd0bf] pt-5">
         <h3 className="font-semibold">Brouillon — {getClinicalNoteTemplate(work.result.noteType).label}{work.edited ? ' · corrigé manuellement' : ''}</h3>
         {stale && <AlertBanner tone="neutral" title="Sources ou type modifiés" description="Ce brouillon et vos corrections sont conservés. Régénérez explicitement pour utiliser les nouvelles sources; validation et copie sont bloquées entre-temps." />}
-        <div className="space-y-3 rounded-xl border border-[#dfd0bf] bg-[#fbf6ef] p-4">
-          <h4 className="font-semibold">À revoir — hors du texte clinique</h4>
-          <p className="text-xs leading-5">La détection automatique peut manquer des éléments. Les indicateurs prioritaires ne constituent ni une évaluation du risque ni un protocole clinique approuvé.</p>
-          {[...work.result.draft.alerts].sort((a, b) => Number(b.priority === 'prioritaire') - Number(a.priority === 'prioritaire')).map((alert, index) => <div key={index} className={alert.priority === 'prioritaire' ? 'rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900' : 'text-sm leading-6'}><strong>{alert.priority === 'prioritaire' ? 'Révision prioritaire · ' : ''}{alert.category.replaceAll('_', ' ')}</strong> — {alert.text}{alert.factIds.length > 0 && <span className="block text-xs">Références : {alert.factIds.join(', ')}</span>}</div>)}
-          {!work.result.draft.alerts.length && <p className="text-sm">Aucune alerte retournée; relecture complète toujours nécessaire.</p>}
-        </div>
+        <ClinicalNotesAlerts alerts={work.result.draft.alerts} />
         <ClinicalNoteEditor result={work.result} disabled={locked || validated} onChange={sections => { setWork({ ...work, edited: true, result: { ...work.result, draft: { ...work.result.draft, sections } } }); invalidate() }} />
         {!validated ? <div className="space-y-3">{reviewLabels.map((label, index) => <label key={label} className="flex items-start gap-3 text-sm leading-6"><input type="checkbox" className="mt-1 h-4 w-4 shrink-0" disabled={locked || stale} checked={checks[index]} onChange={event => setChecks(checks.map((value, i) => i === index ? event.target.checked : value))} />{label}</label>)}
           <button className={buttonClass('primary')} disabled={locked || !canValidateClinicalDraft(stale || !sourcePermissions, work.result.draft.sections, checks)} onClick={() => { archive(work, 'Version relue pour l’exercice'); setValidated(true); setMessage('Version validée uniquement pour l’exercice fictif. Aucun dépôt PsyLog.') }}>Valider pour l’exercice</button>

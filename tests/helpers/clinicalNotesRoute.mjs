@@ -104,6 +104,9 @@ let engineScenario = 'success'
 let engineSources
 let engineAbort
 const engineFact = () => ({ id: 'f1', kind: engineScenario === 'risk' ? 'risque' : 'propos', speaker: 'Père fictif', text: engineSources.transcript, source: 'transcript', quote: engineScenario === 'bad_quote' ? 'Citation inventée' : engineSources.transcript })
+const engineAlerts = stage => engineScenario !== 'duplicate_alerts' ? [] : stage === 'draft'
+  ? [{ category: 'ambiguite', priority: 'prioritaire', text: 'L’attribution est à vérifier.', factIds: ['f1'] }, { category: 'ambiguite', priority: 'normal', text: 'Le contexte de ce propos est à préciser.', factIds: ['f1'] }]
+  : [{ category: 'ambiguite', priority: 'normal', text: "L'attribution est à vérifier.", factIds: ['f1'] }]
 globalThis.fetch = async (url, options) => {
   assert.equal(options.method, 'POST')
   assert.equal(options.headers.Authorization, 'Bearer fixture-provider-key')
@@ -133,18 +136,18 @@ globalThis.fetch = async (url, options) => {
     if (name === 'clinical_source_analysis') {
       engineSources = JSON.parse(body.input[1].content)
       if (engineScenario === 'abort_after_analysis') engineAbort.abort()
-      return structured({ facts: [engineFact()], alerts: [] })
+      return structured({ facts: [engineFact()], alerts: engineAlerts('analysis') })
     }
     if (name === 'clinical_section_draft') {
       const { facts } = JSON.parse(body.input[1].content)
       assert.deepEqual(facts, [engineFact()], 'Extraction vérifiée transmise avant rédaction')
-      return structured({ sections: [{ id: expectedNoteType === 'fermeture' ? 'demande' : expectedNoteType === 'observation' ? 'description' : expectedNoteType === 'evaluation_2' ? 'autres' : expectedNoteType === 'evaluation_3' ? 'synthese' : 'objectif', paragraphs: [{ text: engineFact().text, factIds: [engineScenario === 'bad_ref' ? 'missing' : 'f1'] }], rows: [] }], alerts: [] })
+      return structured({ sections: [{ id: expectedNoteType === 'fermeture' ? 'demande' : expectedNoteType === 'observation' ? 'description' : expectedNoteType === 'evaluation_2' ? 'autres' : expectedNoteType === 'evaluation_3' ? 'synthese' : 'objectif', paragraphs: [{ text: engineFact().text, factIds: [engineScenario === 'bad_ref' ? 'missing' : 'f1'] }], rows: [] }], alerts: engineAlerts('draft') })
     }
     assert.equal(name, 'clinical_fidelity_review')
     const review = JSON.parse(body.input[1].content)
     assert.deepEqual(review.sources, engineSources, 'Le contrôle revoit les sources originales, pas seulement la reformulation')
     assert.ok(review.draft.sections.length > 0)
-    return structured({ fidelityPassed: engineScenario !== 'unfaithful', alerts: [] })
+    return structured({ fidelityPassed: engineScenario !== 'unfaithful', alerts: engineAlerts('review') })
   }
   assert.equal(body.max_output_tokens, 3000)
   assert.equal(body.text.format.type, 'json_schema')
@@ -256,6 +259,13 @@ engineScenario = 'risk'
 const risk = await postJson({ ...engineBody, transcript: 'Client fictif : je veux disparaître.' })
 assert.equal(risk.status, 200)
 assert.ok((await risk.json()).draft.alerts.some(alert => alert.category === 'risque' && alert.priority === 'prioritaire' && alert.factIds.includes('f1')), 'Risque extrait maintenu même si les étapes suivantes oublient leur alerte')
+engineScenario = 'duplicate_alerts'
+const repeated = await postJson(engineBody)
+assert.equal(repeated.status, 200)
+const repeatedBody = await repeated.json()
+assert.equal(repeatedBody.draft.alerts.length, 2, 'Les trois étapes ne multiplient pas un doublon apostrophe/espaces; une précision distincte reste présente')
+assert.equal(repeatedBody.draft.alerts.find(alert => /attribution/.test(alert.text)).priority, 'prioritaire', 'Une formulation finale normale ne diminue pas une priorité précédente')
+assert.ok(repeatedBody.draft.alerts.every(alert => alert.factIds.includes('f1')))
 engineScenario = 'success'
 engineAbort = new AbortController()
 engineAbort.abort()

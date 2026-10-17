@@ -56,6 +56,16 @@ ni omission materiels a la comparaison, locuteurs/limites et manques dans les al
 aucun diagnostic, acte, plan ou prochaine date inventes. Brouillon non valide pour
 laisser la relecture a l'utilisateur. Alertes proches parfois repetees: limite de
 lisibilite encore presente, sans inclusion dans le texte clinique a copier.
+Correctif des alertes: `clinicalNoteAlerts.test.ts` controle apostrophes/espaces,
+ordre des references, priorite maximale, variantes conservees, references supplementaires,
+points sans references ou disjoints, categories separees, regroupement transitif,
+absence de mutation et texte copie inchange. Vraie API simulee: alertes des trois
+etapes dedupliquees sans perdre une precision distincte ni diminuer une priorite.
+Verification locale du correctif: `check:full` reussi, 205 tests et build, les trois
+avertissements lint preexistants seulement. Apercu isole: neuf alertes fictives
+deviennent quatre cartes, les doublons exacts disparaissent, les precisions distinctes
+restent depliables et les references supplementaires sont visibles. Aucun nouvel
+appel IA n'est ajoute au parcours; droits et donnees fictives inchanges.
 Le runner conserve Node natif et `node:test`, sans nouveau framework. Node 24 evite
 les ecarts de support des hooks de resolution; le hook `@/` ne change pas le runtime Next.
 `--test-isolation=none` est preexistant: eviter les mocks globaux non restaures.

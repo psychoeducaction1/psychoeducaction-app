@@ -81,7 +81,14 @@ type evaluation 1, sans contexte/metadata ajoutes ni audio reel. Trois etapes te
 brouillon visible au controle a 43 secondes. Revue comparative: elements essentiels
 repris, lien jeux/sommeil attribue au pere, aucun diagnostic/plan/date/observation
 du jeune invente, rubriques sans source vides, validation humaine encore requise.
-Limite constatee: alertes similaires repetees entre les trois etapes, hors copie.
+Limite constatee lors de cet essai: alertes similaires repetees entre les trois etapes,
+hors copie. Correctif demande ensuite: `clinicalNoteAlerts` retire seulement les vrais
+doublons normalises (apostrophes/espaces, categorie et references identiques), sans
+perte de priorite. `ClinicalNotesAlerts` regroupe les variantes par categorie et
+passages communs; une formulation principale et les precisions distinctes consultables.
+Les alertes sans references ou sur des passages disjoints restent des points separes.
+Toutes les references et nuances sont conservees; aucun nouvel appel IA, modele,
+droit ou stockage ajoute. Correction et publication autorisees dans le meme pilote fictif.
 Aucune qualite generale revendiquee a partir de cet essai unique. Brouillon laisse
 non valide dans l'onglet pour relecture; aucune sauvegarde clinique ni depot PsyLog.
 Sept types,

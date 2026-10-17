@@ -3,6 +3,7 @@ import { CLINICAL_GROUNDING_RULES } from '@/lib/clinicalNoteAnalysisServer'
 import { CLINICAL_NOTE_BLUEPRINTS } from '@/lib/clinicalNoteBlueprints'
 import { clinicalReviewSchema } from '@/lib/clinicalNoteEngineSchemas'
 import { parseClinicalAlerts } from '@/lib/clinicalNoteEngine'
+import { deduplicateClinicalAlerts } from '@/lib/clinicalNoteAlerts'
 import type { ClinicalAnalysis, ClinicalEngineDraft, ClinicalEngineResult, ClinicalSources } from '@/lib/clinicalNoteEngine'
 import type { ClinicalNoteType } from '@/lib/clinicalNoteTemplates'
 import { ClinicalNotesAiError, requestClinicalStructured } from '@/lib/clinicalNotesAiServer'
@@ -21,7 +22,7 @@ fidelityPassed=false si ajout non soutenu, attribution trompeuse, omission clini
   for (const fact of analysis.facts.filter(fact => fact.kind === 'risque')) {
     if (!all.some(alert => alert.category === 'risque' && alert.factIds.includes(fact.id))) all.unshift({ category: 'risque', priority: 'prioritaire', text: 'Propos potentiellement préoccupants à revoir par le professionnel. Aucune évaluation du risque ne peut être déduite de cet indicateur.', factIds: [fact.id] })
   }
-  const unique = [...new Map(all.map(alert => [JSON.stringify(alert), alert])).values()]
+  const unique = deduplicateClinicalAlerts(all)
   if (unique.length > 30) throw new ClinicalNotesAiError('Trop d’éléments à vérifier pour ce court essai. Réduisez la source.', 422)
   return { formatVersion: 2, noteType, analysis, draft: { ...draft, alerts: unique } }
 }
