@@ -1,3 +1,4 @@
+import { isProfessionalCivility } from '@/lib/professionalCivility'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
@@ -5,6 +6,7 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
 type InviteProfessionalBody = {
   full_name?: unknown
   email?: unknown
+  professional_civility?: unknown
   professional_title?: unknown
   professional_phone?: unknown
   professional_license_number?: unknown
@@ -126,6 +128,8 @@ export async function POST(request: NextRequest) {
 
   const fullName = normalizeName(body.full_name)
   const email = normalizeEmail(body.email)
+  const civility = body.professional_civility === '' || body.professional_civility == null ? null : body.professional_civility
+  if (civility !== null && !isProfessionalCivility(civility)) return jsonResponse({ error: 'Civilité invalide.' }, 400)
   const professionalTitle = normalizeOptionalText(body.professional_title)
   const professionalPhone = normalizeOptionalText(body.professional_phone)
   const professionalLicenseNumber = normalizeOptionalText(
@@ -221,6 +225,7 @@ export async function POST(request: NextRequest) {
         full_name: fullName,
         email,
         role: 'professionnel',
+        ...(body.professional_civility !== undefined ? { professional_civility: civility } : {}),
         professional_title: professionalTitle,
         professional_phone: professionalPhone,
         professional_license_number: professionalLicenseNumber,

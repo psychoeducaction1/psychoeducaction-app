@@ -6,12 +6,14 @@ export async function sendResendEmail({
   subject,
   text,
   html,
+  idempotencyKey,
 }: {
   to: string | string[]
   cc?: string[]
   subject: string
   text: string
   html?: string
+  idempotencyKey?: string
 }) {
   const apiKey = process.env.RESEND_API_KEY
   const from =
@@ -25,6 +27,7 @@ export async function sendResendEmail({
     headers: {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
+      ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
     },
     body: JSON.stringify({
       from,

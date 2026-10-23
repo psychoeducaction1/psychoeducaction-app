@@ -1,9 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import {
-  getServiceTakenCount,
-  getUsedAssignmentCount,
-} from '@/app/professionnel/shared'
-
+import type { ServiceAppointmentInput, ServiceAppointment } from '@/lib/serviceAppointment'
 export type ActiveWaitingListAssignmentRequest = {
   id: string
   professional_id: string
@@ -21,33 +17,11 @@ export type AssignableWaitingListClient = {
   second_requester_name: string | null
   contact_email: string | null
   contact_phone: string | null
-  contact_emails: string[] | null
-  contact_phones: string[] | null
+  contact_emails?: string[] | null
+  contact_phones?: string[] | null
   consultation_reason: string | null
   meeting_modality: string[] | string | null
   city: string | null
-}
-
-function normalizeTextList(values: Array<string | null | undefined>): string[] {
-  return Array.from(
-    new Set(values.map((value) => value?.trim()).filter(Boolean) as string[])
-  )
-}
-
-function nullableText(value: string | null | undefined): string | null {
-  return value?.trim() || null
-}
-
-function splitClientName(clientName: string | null) {
-  const parts = clientName?.trim().split(/\s+/).filter(Boolean) ?? []
-  if (parts.length === 0) return { firstName: 'Client', lastName: 'liste d’attente' }
-  if (parts.length === 1) return { firstName: parts[0], lastName: '-' }
-  return { firstName: parts[0], lastName: parts.slice(1).join(' ') }
-}
-
-function getModalities(value: AssignableWaitingListClient['meeting_modality']) {
-  if (Array.isArray(value)) return value.filter(Boolean)
-  return value?.trim() ? [value.trim()] : []
 }
 
 export async function getFreshActiveAssignmentRequest(
@@ -122,119 +96,54 @@ export async function getFreshActiveAssignmentRequest(
   )
 }
 
-export async function recalculateAssignmentRequest(
-  supabase: SupabaseClient,
-  requestId: string
-) {
-  const { data: request } = await supabase
-    .from('assignment_requests')
-    .select('requested_count')
-    .eq('id', requestId)
-    .limit(1)
-    .maybeSingle()
-  if (!request) return
-
-  const { data: assignedClients } = await supabase
-    .from('assigned_clients')
-    .select('is_active')
-    .eq('assignment_request_id', requestId)
-    .is('canceled_at', null)
-  if (!assignedClients) return
-
-  const assignedCount = getServiceTakenCount(assignedClients)
-  const occupiedCount = getUsedAssignmentCount(assignedClients)
-  const requestedCount = Math.max(request.requested_count ?? 0, 0)
-
-  await supabase
-    .from('assignment_requests')
-    .update({
-      assigned_count: assignedCount,
-      remaining_count: Math.max(requestedCount - occupiedCount, 0),
-      is_active: assignedCount < requestedCount,
-    })
-    .eq('id', requestId)
+export type WaitingListAssignmentResult = {
+  serviceAppointment?: ServiceAppointment
+  assignedClientId: string
+  assignmentRequest: ActiveWaitingListAssignmentRequest
+  requesterName: string | null
+  assignedAt: string
+  updatedClient: Record<string, unknown>
+  reused: boolean
 }
 
+// Conserve la clé après une erreur réseau/réponse perdue. Aucun contenu client ici.
+const pendingAssignmentKeys = new Map<string, string>()
+
 export async function createAssignmentFromWaitingListClient({
-  supabase,
-  client,
-  professionalId,
-  outcome = 'pending',
+  supabase, client, professionalId, outcome = 'pending', assignmentProcessId, appointment,
 }: {
   supabase: SupabaseClient
   client: AssignableWaitingListClient
   professionalId: string
   outcome?: 'pending' | 'service_taken'
-}) {
-  const assignmentRequest = await getFreshActiveAssignmentRequest(
-    supabase,
-    professionalId
-  )
-
-  if (!assignmentRequest) {
-    throw new Error('Ce professionnel n’a aucune demande active avec place restante.')
+  assignmentProcessId?: string
+  appointment?: ServiceAppointmentInput
+}): Promise<WaitingListAssignmentResult> {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session?.access_token) throw new Error('Session expirée. Veuillez vous reconnecter.')
+  const intent = [session.user.id, client.id, professionalId, outcome, assignmentProcessId ?? '',
+    appointment?.date ?? '', appointment?.time ?? '', appointment?.modality ?? ''].join('/')
+  let idempotencyKey = pendingAssignmentKeys.get(intent)
+  if (!idempotencyKey) {
+    idempotencyKey = crypto.randomUUID()
+    if (pendingAssignmentKeys.size >= 100) pendingAssignmentKeys.delete(pendingAssignmentKeys.keys().next().value!)
+    pendingAssignmentKeys.set(intent, idempotencyKey)
   }
-
-  const { firstName, lastName } = splitClientName(client.client_name)
-  const requesterName = nullableText(
-    [client.first_requester_name, client.second_requester_name]
-      .map((value) => value?.trim())
-      .filter(Boolean)
-      .join(' / ')
-  )
-  const assignedAt = new Date().toISOString()
-
-  const { data: insertedAssignment, error: insertError } = await supabase
-    .from('assigned_clients')
-    .insert({
-      assignment_request_id: assignmentRequest.id,
-      waiting_list_client_id: client.id,
-      professional_id: professionalId,
-      first_name: firstName,
-      last_name: lastName,
-      email: normalizeTextList([client.contact_email, ...(client.contact_emails ?? [])])[0] ?? null,
-      phone: normalizeTextList([client.contact_phone, ...(client.contact_phones ?? [])])[0] ?? null,
-      requester_name: requesterName,
-      short_comment: nullableText(client.consultation_reason),
-      meeting_modality: nullableText(getModalities(client.meeting_modality).join(', ')),
-      service_address: nullableText(client.city),
-      assigned_date: assignedAt.slice(0, 10),
-      contacted: outcome === 'service_taken',
-      is_active: outcome === 'service_taken' ? true : null,
-      dossier_closed: false,
-      closure_reason: null,
-      meeting_count: 0,
-    })
-    .select('id')
-    .limit(1)
-    .maybeSingle()
-
-  if (insertError) throw insertError
-  if (!insertedAssignment?.id) {
-    throw new Error("L'assignation a été créée, mais son identifiant est introuvable.")
+  const response = await fetch(`/api/direction/waiting-list-clients/${encodeURIComponent(client.id)}/assign`, {
+    method: 'POST', cache: 'no-store',
+    headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ professionalId, outcome, assignmentProcessId, idempotencyKey, appointment }),
+  })
+  const result = await response.json().catch(() => null) as (WaitingListAssignmentResult & { error?: string }) | null
+  if (!response.ok) {
+    // Un refus explicite n'est pas un resultat perdu : une prochaine action
+    // volontaire apres correction/actualisation doit pouvoir obtenir une autre cle.
+    if (response.status >= 400 && response.status < 500) pendingAssignmentKeys.delete(intent)
+    throw new Error(result?.error ?? 'L’assignation n’a pas pu être confirmée.')
   }
-
-  await recalculateAssignmentRequest(supabase, assignmentRequest.id)
-
-  const { data: updatedClient, error: updateError } = await supabase
-    .from('waiting_list_clients')
-    .update({
-      status: 'assigned',
-      assigned_professional_id: professionalId,
-      assigned_at: assignedAt,
-    })
-    .eq('id', client.id)
-    .select('*')
-    .limit(1)
-    .maybeSingle()
-
-  if (updateError) throw updateError
-
-  return {
-    assignedClientId: insertedAssignment.id as string,
-    assignmentRequest,
-    requesterName,
-    assignedAt,
-    updatedClient,
+  if (!result?.assignedClientId || !result.assignmentRequest?.id || !result.updatedClient) {
+    throw new Error('Le résultat de l’assignation est incomplet. Actualisez la fiche.')
   }
+  pendingAssignmentKeys.delete(intent)
+  return result
 }

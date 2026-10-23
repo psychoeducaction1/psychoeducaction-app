@@ -67,6 +67,7 @@ type Profile = {
   id: string;
   full_name: string | null;
   email: string | null;
+  professional_civility: string | null;
   professional_title: string | null;
   professional_phone: string | null;
   professional_license_number: string | null;
@@ -621,7 +622,7 @@ export default function ProfessionnelDetailPage() {
         const profileResponse = await supabase
           .from("profiles")
           .select(
-            "id, full_name, email, professional_title, professional_phone, professional_license_number, pref_languages, pref_age_ranges, pref_client_groups, pref_service_types, pref_office_locations, pref_meeting_modes, pref_motifs, pref_exclusions, pref_matching_notes",
+            "id, full_name, email, professional_civility, professional_title, professional_phone, professional_license_number, pref_languages, pref_age_ranges, pref_client_groups, pref_service_types, pref_office_locations, pref_meeting_modes, pref_motifs, pref_exclusions, pref_matching_notes",
           )
           .eq("id", professionalId)
           .limit(1)
@@ -848,7 +849,7 @@ export default function ProfessionnelDetailPage() {
         })
         .eq("id", professionalId)
         .select(
-          "id, full_name, email, professional_title, professional_phone, professional_license_number, pref_languages, pref_age_ranges, pref_client_groups, pref_service_types, pref_office_locations, pref_meeting_modes, pref_motifs, pref_exclusions, pref_matching_notes",
+          "id, full_name, email, professional_civility, professional_title, professional_phone, professional_license_number, pref_languages, pref_age_ranges, pref_client_groups, pref_service_types, pref_office_locations, pref_meeting_modes, pref_motifs, pref_exclusions, pref_matching_notes",
         )
         .limit(1)
         .maybeSingle();
@@ -3211,6 +3212,7 @@ export default function ProfessionnelDetailPage() {
                 description="Informations utilisees pour les communications aux clients."
               >
                 <dl className="grid gap-4 md:grid-cols-3">
+                    <div><dt>Civilité</dt><dd>{formatText(profile.professional_civility)}</dd></div>
                   <div>
                     <dt className="text-sm font-medium text-[#8a6f5d]">
                       Titre professionnel

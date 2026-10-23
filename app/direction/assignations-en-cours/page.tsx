@@ -4,9 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppNav } from '@/components/AppNav'
 import { Badge, buttonClass, EmptyState } from '@/components/ui/index'
-import { logAudit } from '@/app/professionnel/shared'
 import { supabase } from '@/lib/supabaseClient'
 import { createAssignmentFromWaitingListClient } from '@/lib/waitingListAssignment'
+import { EmailComposerModal, type EmailComposerDrafts } from '@/components/EmailComposerModal'
+import { SERVICE_APPOINTMENT_MODALITIES, validateServiceAppointmentInput, serviceAppointmentSummary, type ServiceAppointmentModality, type ServiceAppointment } from '@/lib/serviceAppointment'
 
 type ProcessStatus =
   | 'to_contact'
@@ -65,6 +66,7 @@ type Profile = {
 }
 
 type ProcessEvent = {
+  metadata?: { service_appointment?: ServiceAppointment; assigned_client_id?: string } | null
   id: string
   assignment_process_id: string
   event_type: string
@@ -215,6 +217,12 @@ export default function AssignmentProcessesPage() {
   })
   const [otherStatusProcessId, setOtherStatusProcessId] = useState('')
   const [otherStatusDetails, setOtherStatusDetails] = useState('')
+  const [serviceConfirmationProcessId, setServiceConfirmationProcessId] = useState('')
+  const [confirmationDraft, setConfirmationDraft] = useState<{ assignmentId: string; drafts: EmailComposerDrafts } | null>(null)
+  const [pendingEmailId, setPendingEmailId] = useState('')
+  const [sendingConfirmation, setSendingConfirmation] = useState(false)
+  const [confirmationError, setConfirmationError] = useState('')
+  const [serviceForm, setServiceForm] = useState<{ date: string; time: string; modality: ServiceAppointmentModality | '' }>({ date: '', time: '', modality: '' })
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -715,7 +723,11 @@ export default function AssignmentProcessesPage() {
       return
     }
 
-    if (!window.confirm(`Confirmer que ${client.client_name ?? 'ce client'} prendra le service avec le professionnel sélectionné ? L’assignation sera créée directement comme service pris.`)) return
+    let appointment
+    try { appointment = validateServiceAppointmentInput(serviceForm) } catch (error) {
+      setError(error instanceof Error ? error.message : 'Rendez-vous invalide.')
+      return
+    }
     setBusyProcessId(process.id)
     setError('')
 
@@ -725,45 +737,23 @@ export default function AssignmentProcessesPage() {
         client,
         professionalId: process.prospective_professional_id,
         outcome: 'service_taken',
+        assignmentProcessId: process.id,
+        appointment,
       })
-      const assignedAt = new Date().toISOString()
-      const { error: processError } = await supabase
-        .from('assignment_processes')
-        .update({ status: 'assigned', assigned_at: assignedAt })
-        .eq('id', process.id)
-      if (processError) throw processError
-
-      await insertEvent(process.id, {
-        event_type: 'assigned',
-        status: 'assigned',
-        note: `Client assigné à ${profilesById.get(process.prospective_professional_id)?.full_name ?? 'un professionnel'}.`,
-      })
-      await closeFollowUpTask(process.id)
+      const assignedAt = result.assignedAt
+      if (result.serviceAppointment) setEvents(current => current.some(event => event.id === `assigned-${result.assignedClientId}`) ? current : [{
+        id: `assigned-${result.assignedClientId}`, assignment_process_id: process.id, event_type: 'assigned', status: 'assigned', contact_method: null,
+        note: 'Premier rendez-vous confirmé', actor_profile_id: actor?.id ?? null, actor_name: actor?.name ?? null,
+        created_at: assignedAt, metadata: { service_appointment: result.serviceAppointment, assigned_client_id: result.assignedClientId },
+      }, ...current])
+      setServiceConfirmationProcessId('')
+      setServiceForm({ date: '', time: '', modality: '' })
       setProcesses((current) => current.map((item) =>
         item.id === process.id
           ? { ...item, status: 'assigned', assigned_at: assignedAt }
           : item
       ))
-
-      if (actor) void logAudit({
-        supabase,
-        actor,
-        action: 'assignment_created',
-        entityType: 'assigned_client',
-        entityId: result.assignedClientId,
-        description: `Service pris confirmé pour ${client.client_name ?? 'un client'} depuis les assignations en cours.`,
-        metadata: {
-          assignment_process_id: process.id,
-          waiting_list_client_id: client.id,
-          professional_id: process.prospective_professional_id,
-          assignment_request_id: result.assignmentRequest.id,
-          client_name: client.client_name,
-          professional_name: profilesById.get(process.prospective_professional_id)?.full_name ?? null,
-          contacted: true,
-          is_active: true,
-        },
-      })
-
+      setPendingEmailId(result.assignedClientId)
       let confirmationMessage =
         'Service pris confirmé. La demande du professionnel a été recalculée.'
       try {
@@ -779,20 +769,28 @@ export default function AssignmentProcessesPage() {
               Authorization: `Bearer ${session.access_token}`,
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ assignedClientId: result.assignedClientId }),
+            body: JSON.stringify({ assignedClientId: result.assignedClientId, action: 'preview' }),
           }
         )
         const emailPayload = (await emailResponse.json().catch(() => null)) as
-          | { error?: string; skipped?: boolean; recipient?: string; cc?: string }
+          | { error?: string; skipped?: boolean; recipient?: string; cc?: string; subject: string; message: string }
           | null
         if (!emailResponse.ok) {
           throw new Error(
             emailPayload?.error ?? 'Le courriel de confirmation n’a pas pu être envoyé.'
           )
         }
+        if (emailPayload && !emailPayload.skipped) {
+          setConfirmationError('')
+          setConfirmationDraft({ assignmentId: result.assignedClientId, drafts: { client: {
+            enabled: true, fromLabel: 'Clinique PsychoÉducAction', to: emailPayload.recipient ?? '', cc: emailPayload.cc,
+            subject: emailPayload.subject, message: emailPayload.message,
+          } } })
+        }
+        if (emailPayload?.skipped) setPendingEmailId('')
         confirmationMessage = emailPayload?.skipped
           ? `${confirmationMessage} Le courriel avait déjà été envoyé.`
-          : `${confirmationMessage} Courriel envoyé au client avec le professionnel en copie conforme.`
+          : `${confirmationMessage} Vérifiez le courriel avant de cliquer sur Envoyer.`
       } catch (emailError) {
         confirmationMessage = `${confirmationMessage} L’assignation reste valide, mais le courriel n’a pas été envoyé : ${
           emailError instanceof Error ? emailError.message : 'erreur inconnue'
@@ -804,6 +802,43 @@ export default function AssignmentProcessesPage() {
     } finally {
       setBusyProcessId('')
     }
+  }
+
+  const sendConfirmationDraft = async (drafts: EmailComposerDrafts) => {
+    if (!confirmationDraft || !drafts.client?.enabled) { setConfirmationDraft(null); return }
+    setSendingConfirmation(true)
+    setConfirmationError('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) throw new Error('Session expirée.')
+      const response = await fetch('/api/direction/service-taken-confirmation', {
+        method: 'POST', headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assignedClientId: confirmationDraft.assignmentId, action: 'send', subject: drafts.client.subject, message: drafts.client.message }),
+      })
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error ?? 'Envoi impossible.')
+      setConfirmationDraft(null)
+      setPendingEmailId('')
+      setMessage(payload.skipped ? 'Le courriel avait déjà été envoyé.' : 'Courriel envoyé au client avec le professionnel en copie conforme.')
+    } catch (error) { setConfirmationError(error instanceof Error ? error.message : 'Envoi impossible.') }
+    finally { setSendingConfirmation(false) }
+  }
+
+  const reopenConfirmation = async (assignmentId = pendingEmailId) => {
+    setPendingEmailId(assignmentId)
+    setConfirmationError('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) throw new Error('Session expirée.')
+      const response = await fetch('/api/direction/service-taken-confirmation', {
+        method: 'POST', headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assignedClientId: assignmentId, action: 'preview' }),
+      })
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error ?? 'Aperçu impossible.')
+      if (payload.skipped) { setPendingEmailId(''); setMessage('Le courriel avait déjà été envoyé.'); return }
+      setConfirmationDraft({ assignmentId, drafts: { client: { enabled: true, fromLabel: 'Clinique PsychoÉducAction', to: payload.recipient, cc: payload.cc, subject: payload.subject, message: payload.message } } })
+    } catch (error) { setError(error instanceof Error ? error.message : 'Aperçu impossible.') }
   }
 
   const runHistoryAction = async (
@@ -914,8 +949,12 @@ export default function AssignmentProcessesPage() {
   return (
     <>
       <AppNav />
+      {confirmationDraft && <EmailComposerModal open drafts={confirmationDraft.drafts} sending={sendingConfirmation}
+        recipientsReadOnly submissionError={confirmationError} onCancel={() => setConfirmationDraft(null)}
+        onSend={drafts => void sendConfirmationDraft(drafts)} />}
       <main className="min-h-screen px-4 py-8 sm:px-6 lg:ml-72 lg:px-10">
         <div className="mx-auto max-w-7xl space-y-6">
+          {pendingEmailId && !confirmationDraft && <button type="button" className={buttonClass('secondary')} onClick={() => void reopenConfirmation()}>Revoir le courriel de confirmation non envoyé</button>}
           <header>
             <p className="text-xs font-semibold uppercase text-[#9b6a3d]">Direction</p>
             <h1 className="mt-2 text-3xl font-semibold text-[#2d211a]">Assignations en cours</h1>
@@ -1118,7 +1157,9 @@ export default function AssignmentProcessesPage() {
                               {professionals.map((profile) => <option key={profile.id} value={profile.id}>{profile.full_name ?? profile.email}</option>)}
                             </select>
                           </label>
-                          <button type="button" disabled={busyProcessId === process.id || !process.prospective_professional_id} onClick={() => void assignClient(process)} className={buttonClass('primary')}>Confirmer le service pris</button>
+                          <button type="button" disabled={busyProcessId === process.id || !process.prospective_professional_id || serviceConfirmationProcessId === process.id}
+                            onClick={() => { setError(''); setServiceConfirmationProcessId(process.id); setServiceForm({ date: '', time: '', modality: '' }) }}
+                            className={buttonClass('primary')}>Confirmer le service pris</button>
                         </div>
                         <div className="mt-3 flex flex-wrap gap-2">
                           <button type="button" onClick={() => { setContactProcessId(process.id); setContactForm({ occurredAt: getLocalDateTimeValue(), method: 'call', note: '' }) }} className={buttonClass('secondary')}>Consigner un contact</button>
@@ -1192,6 +1233,26 @@ export default function AssignmentProcessesPage() {
                       </div>
                     )}
 
+                    {isActive && serviceConfirmationProcessId === process.id && (
+                      <form onSubmit={event => { event.preventDefault(); void assignClient(process) }} className="mt-4 rounded-xl border border-[#dfd0bf] bg-[#fbf6ef] p-4">
+                        <h3 className="font-semibold text-[#332820]">Confirmer le premier rendez-vous</h3>
+                        <p className="mt-2 text-sm text-[#6c5a4d]">Le service sera marqué comme pris seulement après cette confirmation. Ces renseignements seront inclus dans le courriel au client et au professionnel en copie conforme.</p>
+                        <fieldset disabled={busyProcessId === process.id} className="mt-3 grid gap-3 md:grid-cols-3">
+                          <legend className="sr-only">Renseignements du rendez-vous, heure du Québec</legend>
+                          <label className="text-sm">Date du rendez-vous<input required type="date" value={serviceForm.date} onChange={event => setServiceForm(current => ({ ...current, date: event.target.value }))} className={`${inputClass} mt-2`} /></label>
+                          <label className="text-sm">Heure du rendez-vous (Québec)<input required type="time" step="60" value={serviceForm.time} onChange={event => setServiceForm(current => ({ ...current, time: event.target.value }))} className={`${inputClass} mt-2`} /></label>
+                          <label className="text-sm">Modalité<select required value={serviceForm.modality} onChange={event => setServiceForm(current => ({ ...current, modality: event.target.value as ServiceAppointmentModality | '' }))} className={`${inputClass} mt-2`}>
+                            <option value="">Choisir une modalité</option>
+                            {Object.entries(SERVICE_APPOINTMENT_MODALITIES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                          </select></label>
+                        </fieldset>
+                        <div className="mt-3 flex gap-2">
+                          <button type="submit" disabled={busyProcessId === process.id} className={buttonClass('primary')}>{busyProcessId === process.id ? 'Confirmation…' : 'Confirmer le rendez-vous et le service pris'}</button>
+                          <button type="button" disabled={busyProcessId === process.id} onClick={() => { setServiceConfirmationProcessId(''); setServiceForm({ date: '', time: '', modality: '' }) }} className={buttonClass('secondary')}>Annuler</button>
+                        </div>
+                      </form>
+                    )}
+
                     {contactProcessId === process.id && (
                       <div className="mt-4 rounded-xl border border-[#dfd0bf] bg-[#fbf6ef] p-4">
                         <h3 className="font-semibold text-[#332820]">Nouvelle tentative de contact</h3>
@@ -1211,6 +1272,11 @@ export default function AssignmentProcessesPage() {
                           <div key={event.id} className="border-l-2 border-[#d9b591] pl-3 text-sm">
                             <p className="font-medium text-[#332820]">{event.contact_method ? contactMethodLabels[event.contact_method] : event.note || 'Mise à jour'}</p>
                             {event.contact_method && event.note && <p className="mt-1 text-[#6c5a4d]">{event.note}</p>}
+                            {process.status === 'assigned' && event.event_type === 'assigned' && event.metadata?.assigned_client_id && (
+                              <button type="button" className={buttonClass('secondary')} disabled={sendingConfirmation}
+                                onClick={() => void reopenConfirmation(event.metadata!.assigned_client_id!)}>Revoir la confirmation par courriel</button>
+                            )}
+                            {event.metadata?.service_appointment && <p className="mt-1 whitespace-pre-line text-[#6c5a4d]">{serviceAppointmentSummary(event.metadata.service_appointment).join('\n')}</p>}
                             <p className="mt-1 text-xs text-[#8a6f5d]">{formatDateTime(event.created_at)} · {event.actor_name ?? 'Direction'}</p>
                           </div>
                         ))}

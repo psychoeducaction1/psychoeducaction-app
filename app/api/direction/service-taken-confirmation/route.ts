@@ -3,8 +3,11 @@ import { createClient } from '@supabase/supabase-js'
 import { getDirectionContext } from '@/lib/directionServer'
 import { sendResendEmail } from '@/lib/resendEmail'
 import { getBearerToken } from '@/lib/superAdminServer'
+import { readStoredServiceAppointment, type ServiceAppointment } from '@/lib/serviceAppointment'
+import { buildServiceTakenConfirmationEmail, renderServiceConfirmationHtml } from '@/lib/serviceTakenConfirmationEmail'
+import { isProfessionalCivility } from '@/lib/professionalCivility'
 
-type Body = { assignedClientId?: unknown }
+type Body = { assignedClientId?: unknown; action?: unknown; subject?: unknown; message?: unknown }
 
 function json(body: object, status: number) {
   return NextResponse.json(body, { status })
@@ -25,6 +28,8 @@ export async function POST(request: NextRequest) {
     return json({ error: "L'identifiant de l'assignation est requis." }, 400)
   }
 
+  if (payload?.action !== 'preview' && payload?.action !== 'send') return json({ error: 'Choisissez un aperçu ou un envoi explicite.' }, 400)
+  if (payload.action === 'send' && (typeof payload.subject !== 'string' || !payload.subject.trim() || payload.subject.length > 300 || /[\r\n]/.test(payload.subject) || typeof payload.message !== 'string' || !payload.message.trim() || payload.message.length > 30000)) return json({ error: 'Sujet ou message invalide (300 et 30 000 caractères maximum).' }, 400)
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   if (!supabaseUrl || !supabaseAnonKey) {
@@ -38,7 +43,7 @@ export async function POST(request: NextRequest) {
 
   const { data: assignment, error: assignmentError } = await supabase
     .from('assigned_clients')
-    .select('id, first_name, last_name, email, professional_id, is_active, canceled_at')
+    .select('id, first_name, last_name, email, professional_id, is_active, canceled_at, service_appointment')
     .eq('id', assignedClientId)
     .limit(1)
     .maybeSingle()
@@ -47,6 +52,10 @@ export async function POST(request: NextRequest) {
   if (assignment.canceled_at) return json({ error: 'Cette assignation est annulée.' }, 409)
   if (assignment.is_active !== true) {
     return json({ error: 'Le service pris doit être confirmé avant cet envoi.' }, 409)
+  }
+  let appointment: ServiceAppointment
+  try { appointment = readStoredServiceAppointment(assignment.service_appointment) } catch {
+    return json({ error: 'La date, l’heure et la modalité du rendez-vous doivent être enregistrées avant l’envoi de la confirmation.' }, 409)
   }
 
   const clientEmail = assignment.email?.trim() ?? ''
@@ -57,7 +66,7 @@ export async function POST(request: NextRequest) {
 
   const { data: professional, error: professionalError } = await supabase
     .from('profiles')
-    .select('full_name, email, professional_phone, role')
+    .select('full_name, email, professional_phone, professional_civility, role')
     .eq('id', assignment.professional_id)
     .limit(1)
     .maybeSingle()
@@ -76,7 +85,7 @@ export async function POST(request: NextRequest) {
     return json({ error: 'Le téléphone du professionnel est manquant.' }, 400)
   }
 
-  const { data: existingAudit } = await supabase
+  const { data: existingAudit, error: existingAuditError } = await supabase
     .from('audit_logs')
     .select('id')
     .eq('action', 'service_taken_confirmation_email_sent')
@@ -84,46 +93,28 @@ export async function POST(request: NextRequest) {
     .eq('entity_id', assignedClientId)
     .limit(1)
     .maybeSingle()
+  if (existingAuditError) return json({ error: 'Vérification de l’envoi précédent impossible.' }, 500)
   if (existingAudit) {
     return json({ skipped: true, reason: 'deja_envoye' }, 200)
   }
 
-  const clientFirstName = assignment.first_name?.trim() || 'Bonjour'
-  const subject = 'Confirmation de votre rendez-vous – Clinique PsychoÉducAction'
-  const text = [
-    `Bonjour ${clientFirstName},`,
-    '',
-    `Nous vous confirmons qu’un rendez-vous a été réservé avec ${professionalName} dans le cadre de votre demande de service auprès de la Clinique PsychoÉducAction.`,
-    '',
-    'Coordonnées de votre professionnel :',
-    '',
-    `Nom : ${professionalName}`,
-    `Courriel : ${professionalEmail}`,
-    `Téléphone : ${professionalPhone}`,
-    '',
-    'Votre professionnel est en copie conforme de ce courriel afin de faciliter vos communications concernant le rendez-vous.',
-    '',
-    'Pour les rencontres en visioconférence, le lien de connexion vous sera envoyé par le professionnel le jour même de votre rendez-vous.',
-    'Pensez à vérifier vos courriels indésirables, car le message contenant le lien pourrait s’y retrouver.',
-    '',
-    'Pour les rencontres en présentiel à nos bureaux, merci de vous présenter à l’heure exacte de votre rendez-vous.',
-    'Le professionnel vous ouvrira la porte à l’heure prévue.',
-    'Si vous arrivez en avance, nous vous invitons à patienter dans votre voiture ou à l’extérieur du bâtiment jusqu’à l’heure de votre rendez-vous.',
-    '',
-    'Merci!',
-    '',
-    'Clinique PsychoÉducAction',
-    'Tél. : (438) 500-1388',
-    'Courriel : contact@psychoeducaction.com',
-    'www.psychoeducaction.com',
-  ].join('\n')
+  const clientFullName = [assignment.first_name, assignment.last_name].map(value => value?.trim()).filter(value => value && value !== '-').join(' ')
+  if (!clientFullName) return json({ error: 'Le nom du client concerné doit être renseigné avant l’envoi.' }, 409)
+  const professionalCivility = isProfessionalCivility(professional.professional_civility) ? professional.professional_civility : null
+  const template = buildServiceTakenConfirmationEmail({ clientFullName, professionalName, professionalCivility, professionalEmail, professionalPhone, appointment })
 
+  if (payload.action === 'preview') return json({ subject: template.subject, message: template.text, recipient: clientEmail, cc: professionalEmail }, 200)
+  const subject = (payload.subject as string).trim()
+  const text = (payload.message as string).trim()
+  const html = renderServiceConfirmationHtml(text)
   try {
     await sendResendEmail({
       to: clientEmail,
       cc: [professionalEmail],
       subject,
       text,
+      html,
+      idempotencyKey: `service-taken-confirmation/${assignedClientId}`,
     })
   } catch (caughtError) {
     return json(
@@ -154,6 +145,8 @@ export async function POST(request: NextRequest) {
         cc_email: professionalEmail,
         professional_id: assignment.professional_id,
         professional_name: professionalName,
+        service_appointment: appointment,
+        content_edited: subject !== template.subject || text !== template.text,
       },
     })
   } catch (auditError) {

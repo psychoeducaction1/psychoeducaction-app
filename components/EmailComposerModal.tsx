@@ -21,6 +21,8 @@ type EmailComposerModalProps = {
   open: boolean
   drafts: EmailComposerDrafts | null
   sending?: boolean
+  recipientsReadOnly?: boolean
+  submissionError?: string
   onCancel: () => void
   onSend: (drafts: EmailComposerDrafts) => void
 }
@@ -42,11 +44,13 @@ function EmailSection({
   section,
   onChange,
   disabled,
+  recipientsReadOnly,
 }: {
   title: string
   section: EmailComposerSection
   onChange: (section: EmailComposerSection) => void
   disabled?: boolean
+  recipientsReadOnly?: boolean
 }) {
   const inputClass =
     'mt-1 w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] outline-none transition placeholder:text-[#b09c8a] focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd] disabled:cursor-not-allowed disabled:bg-[#f7efe7] disabled:text-[#8a6f5d]'
@@ -80,6 +84,7 @@ function EmailSection({
         <label className="block text-sm font-medium text-[#5d4a3d]">
           À
           <input
+            readOnly={recipientsReadOnly}
             type="email"
             value={section.to}
             disabled={!section.enabled || disabled}
@@ -91,6 +96,7 @@ function EmailSection({
         <label className="block text-sm font-medium text-[#5d4a3d]">
           Cc (copie conforme, optionnel)
           <input
+            readOnly={recipientsReadOnly}
             value={section.cc ?? ''}
             disabled={!section.enabled || disabled}
             onChange={(event) => onChange({ ...section, cc: event.target.value })}
@@ -131,6 +137,8 @@ export function EmailComposerModal({
   open,
   drafts,
   sending = false,
+  recipientsReadOnly = false,
+  submissionError,
   onCancel,
   onSend,
 }: EmailComposerModalProps) {
@@ -197,9 +205,9 @@ export function EmailComposerModal({
           </button>
         </div>
 
-        {error && (
+        {(error || submissionError) && (
           <p className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-            {error}
+            {error || submissionError}
           </p>
         )}
 
@@ -210,6 +218,7 @@ export function EmailComposerModal({
               section={professionalDraft}
               onChange={setProfessionalDraft}
               disabled={sending}
+              recipientsReadOnly={recipientsReadOnly}
             />
           )}
           {clientDraft && (
@@ -218,6 +227,7 @@ export function EmailComposerModal({
               section={clientDraft}
               onChange={setClientDraft}
               disabled={sending}
+              recipientsReadOnly={recipientsReadOnly}
             />
           )}
         </div>

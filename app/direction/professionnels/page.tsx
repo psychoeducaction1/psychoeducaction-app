@@ -16,6 +16,7 @@ import {
   tableRowClass,
   tableShellClass,
 } from '@/components/ui/index'
+import { type ProfessionalCivility } from '@/lib/professionalCivility'
 import { supabase } from '@/lib/supabaseClient'
 import { isSuperAdmin } from '@/lib/superAdmin'
 import {
@@ -28,6 +29,7 @@ type Profile = {
   id: string
   full_name: string | null
   email: string | null
+  professional_civility: ProfessionalCivility | null
   professional_title: string | null
   professional_phone: string | null
   professional_license_number: string | null
@@ -66,6 +68,7 @@ type ProfessionalRow = {
   id: string
   fullName: string
   email: string
+  professionalCivility: ProfessionalCivility | null
   professionalTitle: string
   professionalPhone: string
   professionalLicenseNumber: string
@@ -99,6 +102,9 @@ export default function DirectionProfessionnelsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [inviteFullName, setInviteFullName] = useState('')
   const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteCivility, setInviteCivility] = useState('')
+  const [savingCivility, setSavingCivility] = useState<string | null>(null)
+  const [civilityError, setCivilityError] = useState('')
   const [inviteProfessionalTitle, setInviteProfessionalTitle] = useState('')
   const [inviteProfessionalPhone, setInviteProfessionalPhone] = useState('')
   const [inviteProfessionalLicenseNumber, setInviteProfessionalLicenseNumber] =
@@ -168,7 +174,7 @@ export default function DirectionProfessionnelsPage() {
       const { data: profilesData, error: profilesError } = await supabase
         .from('profiles')
         .select(
-          'id, full_name, email, professional_title, professional_phone, professional_license_number, is_active, platform_access_enabled'
+          'id, full_name, email, professional_civility, professional_title, professional_phone, professional_license_number, is_active, platform_access_enabled'
         )
         .eq('role', 'professionnel')
         .order('full_name', { ascending: true })
@@ -338,6 +344,7 @@ export default function DirectionProfessionnelsPage() {
           id: profile.id,
           fullName: profile.full_name ?? '-',
           email: profile.email ?? '-',
+          professionalCivility: profile.professional_civility,
           professionalTitle: profile.professional_title ?? '-',
           professionalPhone: profile.professional_phone ?? '-',
           professionalLicenseNumber: profile.professional_license_number ?? '-',
@@ -435,6 +442,7 @@ export default function DirectionProfessionnelsPage() {
         body: JSON.stringify({
           full_name: fullName,
           email,
+          professional_civility: inviteCivility || null,
           professional_title: inviteProfessionalTitle.trim(),
           professional_phone: inviteProfessionalPhone.trim(),
           professional_license_number: inviteProfessionalLicenseNumber.trim(),
@@ -455,6 +463,7 @@ export default function DirectionProfessionnelsPage() {
 
       setInviteFullName('')
       setInviteEmail('')
+      setInviteCivility('')
       setInviteProfessionalTitle('')
       setInviteProfessionalPhone('')
       setInviteProfessionalLicenseNumber('')
@@ -876,6 +885,34 @@ export default function DirectionProfessionnelsPage() {
     }
   }
 
+  async function updateCivility(row: ProfessionalRow, value: string) {
+    if (!['', 'M.', 'Mme'].includes(value)) return
+    const civility = (value || null) as ProfessionalCivility | null
+    setSavingCivility(row.id)
+    setCivilityError('')
+    try {
+      const { data, error } = await supabase.from('profiles')
+        .update({ professional_civility: civility }).eq('id', row.id).eq('role', 'professionnel')
+        .select('id').single()
+      if (error || !data) throw new Error('Civilité non sauvegardée')
+      const update = (items: ProfessionalRow[]) => items.map(item => item.id === row.id ? { ...item, professionalCivility: civility } : item)
+      setRows(update)
+      setArchivedRows(update)
+    } catch {
+      setCivilityError('Impossible de sauvegarder la civilité. Réessayez.')
+    } finally { setSavingCivility(null) }
+  }
+
+  function civilitySelect(row: ProfessionalRow) {
+    return <label className="mt-2 block text-xs">Civilité
+      <select aria-label={`Civilité de ${row.fullName}`} className="ml-2 rounded border p-1"
+        value={row.professionalCivility ?? ''} disabled={savingCivility !== null}
+        onChange={event => void updateCivility(row, event.target.value)}>
+        <option value="">Non renseignée</option><option value="M.">M.</option><option value="Mme">Mme</option>
+      </select>
+    </label>
+  }
+
   return (
     <>
       <AppNav />
@@ -945,6 +982,11 @@ export default function DirectionProfessionnelsPage() {
                     />
                   </label>
 
+                  <label className="block text-sm">Civilité
+                    <select value={inviteCivility} onChange={event => setInviteCivility(event.target.value)} className="mt-1 w-full rounded border p-2">
+                      <option value="">Non renseignée</option><option value="M.">M.</option><option value="Mme">Mme</option>
+                    </select>
+                  </label>
                   <label className="block text-sm font-medium text-[#5d4a3d]">
                     Titre professionnel
                     <input
@@ -1071,6 +1113,7 @@ export default function DirectionProfessionnelsPage() {
                 </div>
               )}
 
+              {civilityError && <p role="alert">{civilityError}</p>}
               {platformAccessError && (
                 <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                   {platformAccessError}
@@ -1138,6 +1181,7 @@ export default function DirectionProfessionnelsPage() {
                               >
                                 {row.fullName}
                               </Link>
+                              {civilitySelect(row)}
                             </td>
                             <td className={tableCellClass}>{row.email}</td>
                             <td className={tableCellClass}>
@@ -1300,6 +1344,7 @@ export default function DirectionProfessionnelsPage() {
                               >
                                 {row.fullName}
                               </Link>
+                              {civilitySelect(row)}
                             </td>
                             <td className={tableCellClass}>{row.email}</td>
                             <td className={tableCellClass}>

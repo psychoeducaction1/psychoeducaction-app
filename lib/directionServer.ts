@@ -3,6 +3,7 @@ import 'server-only'
 import { NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getBearerToken } from '@/lib/superAdminServer'
+import { hasPlatformAccess } from '@/lib/platformAccess'
 
 export type DirectionContext = {
   user: {
@@ -13,6 +14,7 @@ export type DirectionContext = {
     role: string | null
     full_name: string | null
     email: string | null
+    platform_access_enabled?: boolean | null
   }
 }
 
@@ -65,13 +67,17 @@ export async function getDirectionContext(
 
   const { data: profile, error: profileError } = await supabaseServer
     .from('profiles')
-    .select('role, full_name, email')
+    .select('role, full_name, email, platform_access_enabled')
     .eq('id', user.id)
     .limit(1)
     .maybeSingle()
 
   if (profileError) {
     return { error: { message: profileError.message, status: 500 } }
+  }
+
+  if (profile && !hasPlatformAccess(profile)) {
+    return { error: { message: 'Votre accès à la plateforme est désactivé.', status: 403 } }
   }
 
   if (profile?.role !== 'direction') {
