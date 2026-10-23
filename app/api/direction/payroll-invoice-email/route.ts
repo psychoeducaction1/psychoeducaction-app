@@ -2,10 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getDirectionContext } from '@/lib/directionServer'
 import { isPayrollAuthorized } from '@/lib/payrollAccess'
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
+import { createHash } from 'node:crypto'
+import { readBoundedJsonObject, JsonBodyError } from '@/lib/boundedJsonBody'
+import type { PayrollInvoiceSnapshot } from '@/lib/payrollInvoiceRegistry'
 
 const ACCOUNTANT_CC_EMAIL = 'DominiqueLeduc@gestionproled.com'
 
 type PayrollInvoiceEmailBody = {
+  invoiceId?: unknown
+  version?: unknown
   to?: unknown
   subject?: unknown
   message?: unknown
@@ -102,20 +107,33 @@ export async function POST(request: NextRequest) {
   let body: PayrollInvoiceEmailBody
 
   try {
-    body = (await request.json()) as PayrollInvoiceEmailBody
-  } catch {
-    return jsonResponse({ error: 'Body JSON invalide.' }, 400)
+    body = await readBoundedJsonObject(request, 16384) as PayrollInvoiceEmailBody
+  } catch (error) {
+    return jsonResponse({ error: error instanceof JsonBodyError ? error.message : 'Body JSON invalide.' }, error instanceof JsonBodyError ? error.status : 400)
   }
 
-  const to = normalizeText(body.to)
+  const invoiceId = normalizeText(body.invoiceId)
+  if (!/^[0-9a-f-]{36}$/i.test(invoiceId) || !Number.isSafeInteger(body.version) || Number(body.version) < 1) {
+    return jsonResponse({ error: 'Une facture enregistrée et sa version sont requises.' }, 400)
+  }
+  const admin = getSupabaseAdmin()
+  const { data: invoice, error: invoiceError } = await admin.from('payroll_invoices').select('professional_id, number').eq('id', invoiceId).maybeSingle()
+  const { data: revision, error: revisionError } = await admin.from('payroll_invoice_versions')
+    .select('snapshot, document_base64, document_name, document_sha256').eq('invoice_id', invoiceId).eq('version', Number(body.version)).maybeSingle()
+  if (invoiceError || revisionError) return jsonResponse({ error: 'Registre de factures indisponible.' }, 503)
+  if (!invoice || !revision?.snapshot || !revision.document_base64) return jsonResponse({ error: 'Facture non finalisée ou original historique : aucun envoi automatique.' }, 409)
+  const snapshot = revision.snapshot as PayrollInvoiceSnapshot
+  const bytes = Buffer.from(revision.document_base64, 'base64')
+  if (createHash('sha256').update(bytes).digest('hex') !== revision.document_sha256) return jsonResponse({ error: 'Intégrité de la facture invalide.' }, 409)
+  const to = normalizeText(snapshot.invoice.professional.email)
   const subject = normalizeText(body.subject)
   const message = normalizeText(body.message)
-  const attachmentBase64 = normalizeText(body.attachmentBase64)
-  const attachmentFileName = normalizeText(body.attachmentFileName)
-  const professionalId = normalizeText(body.professionalId)
-  const professionalName = normalizeText(body.professionalName)
-  const invoiceNumber = normalizeText(body.invoiceNumber)
-  const paymentDate = normalizeText(body.paymentDate)
+  const attachmentBase64 = revision.document_base64
+  const attachmentFileName = revision.document_name
+  const professionalId = invoice.professional_id
+  const professionalName = snapshot.invoice.professional.fullName
+  const invoiceNumber = invoice.number
+  const paymentDate = snapshot.period.dueDate
 
   if (!to) return jsonResponse({ error: 'Le destinataire est requis.' }, 400)
   if (!subject) return jsonResponse({ error: 'Le sujet est requis.' }, 400)
@@ -164,6 +182,9 @@ export async function POST(request: NextRequest) {
         recipient_email: to,
         cc_emails: [ACCOUNTANT_CC_EMAIL],
         invoice_number: invoiceNumber || null,
+        invoice_id: invoiceId,
+        invoice_version: Number(body.version),
+        document_sha256: revision.document_sha256,
         payment_date: paymentDate || null,
         attachment_file_name: attachmentFileName,
       },

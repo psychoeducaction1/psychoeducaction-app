@@ -2,28 +2,28 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import * as XLSX from 'xlsx'
+import { readSpreadsheetRows } from '@/lib/spreadsheetImport'
 import { AppNav } from '@/components/AppNav'
 import { Badge, buttonClass, EmptyState, PageHeader } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
 import { isPayrollAuthorized } from '@/lib/payrollAccess'
 import {
   calculatePayroll,
+  isPayrollDate,
   PAYROLL_CATEGORY_LABELS,
   PAYROLL_CATEGORY_OPTIONS,
+  validatePayrollPeriod,
   type PayrollCalculationResult,
   type PayrollCategory,
   type ProfessionalPayrollInfo,
   type ProfessionalPayrollResult,
 } from '@/lib/payrollCalculator'
 import {
-  buildPayrollInvoiceFileName,
-  buildPayrollInvoiceNumber,
   buildPayrollInvoiceShortNumber,
-  createPayrollInvoiceBlob,
-  downloadPayrollInvoice,
   type InvoicePeriod,
 } from '@/lib/generatePayrollInvoiceDocx'
+import { formatPayrollQuantity } from '@/lib/payrollDecimal'
+import type { PayrollInvoiceRecord } from '@/lib/payrollInvoiceRegistry'
 
 const inputClass =
   'w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] shadow-sm outline-none transition duration-200 focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]'
@@ -90,6 +90,10 @@ async function blobToBase64(blob: Blob): Promise<string> {
 export default function DirectionPaiePage() {
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const calculationSequence = useRef(0)
+  const fileReadController = useRef<AbortController | null>(null)
+  const sourceRows = useRef<unknown[][]>([])
+  useEffect(() => () => { fileReadController.current?.abort(); calculationSequence.current++ }, [])
 
   const [loading, setLoading] = useState(true)
   const [authorized, setAuthorized] = useState(false)
@@ -106,12 +110,44 @@ export default function DirectionPaiePage() {
   const [calculating, setCalculating] = useState(false)
   const [calculationError, setCalculationError] = useState('')
   const [result, setResult] = useState<PayrollCalculationResult | null>(null)
+  const [weeklyContextConfirmed, setWeeklyContextConfirmed] = useState(false)
   const [downloadingId, setDownloadingId] = useState('')
   const [sendingId, setSendingId] = useState('')
   const [invoiceMessage, setInvoiceMessage] = useState('')
+  const [invoiceRecords, setInvoiceRecords] = useState<Record<string, PayrollInvoiceRecord>>({})
   const [invoiceNumbersByProfessionalId, setInvoiceNumbersByProfessionalId] = useState<
     Record<string, string>
   >({})
+
+  useEffect(() => {
+    if (!result?.period) return
+    let canceled = false
+    const period = result.period
+    void (async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session || canceled) return
+      await Promise.all(result.professionalResults.map(async professional => {
+        try {
+          const response = await fetch(`/api/direction/payroll-invoices?professionalId=${professional.professional.id}&start=${period.startDate}&end=${period.endDate}`,
+            { headers: { Authorization: `Bearer ${session.access_token}` } })
+          const payload = await response.json()
+          if (!canceled && response.ok && payload.record) setInvoiceRecords(current => ({ ...current, [professional.professional.id]: payload.record }))
+        } catch { /* La génération signalera explicitement un registre indisponible. */ }
+      }))
+    })()
+    return () => { canceled = true }
+  }, [result])
+
+  const invalidateCalculation = () => {
+    fileReadController.current?.abort()
+    calculationSequence.current += 1
+    setResult(null)
+    sourceRows.current = []
+    setCalculating(false)
+    setWeeklyContextConfirmed(false)
+    setInvoiceMessage('')
+    setInvoiceRecords({})
+  }
 
   useEffect(() => {
     const loadData = async () => {
@@ -192,9 +228,10 @@ export default function DirectionPaiePage() {
 
   const updateProfessionalField = async (
     professionalId: string,
-    field: 'payroll_category' | 'professional_address',
+    field: 'payroll_category' | 'professional_address' | 'professional_title',
     value: string
   ) => {
+    invalidateCalculation()
     setSavingProfessionalId(professionalId)
     setConfigMessage('')
 
@@ -210,6 +247,7 @@ export default function DirectionPaiePage() {
       return
     }
 
+    invalidateCalculation()
     setProfessionals((current) =>
       current.map((professional) =>
         professional.id === professionalId
@@ -217,6 +255,7 @@ export default function DirectionPaiePage() {
               ...professional,
               ...(field === 'payroll_category'
                 ? { payrollCategory: (value || null) as PayrollCategory | null }
+                : field === 'professional_title' ? { professionalTitle: value || null }
                 : { professionalAddress: value || null }),
             }
           : professional
@@ -225,8 +264,10 @@ export default function DirectionPaiePage() {
   }
 
   const handleCalculate = async () => {
+    const sequence = ++calculationSequence.current
     setCalculationError('')
     setResult(null)
+    setWeeklyContextConfirmed(false)
 
     const file = fileInputRef.current?.files?.[0]
 
@@ -240,53 +281,102 @@ export default function DirectionPaiePage() {
       return
     }
 
+    const selectedPeriod = { startDate: periodStart, endDate: periodEnd }
+    try {
+      validatePayrollPeriod(selectedPeriod)
+      if (!isPayrollDate(periodDue)) throw new Error('La date d’échéance doit être valide.')
+    } catch (caughtError) {
+      setCalculationError(caughtError instanceof Error ? caughtError.message : 'Période invalide.')
+      return
+    }
+
     setCalculating(true)
+    fileReadController.current?.abort()
+    const controller = new AbortController()
+    fileReadController.current = controller
 
     try {
-      const buffer = await file.arrayBuffer()
-      const workbook = XLSX.read(buffer, { type: 'array' })
-      const sheet = workbook.Sheets[workbook.SheetNames[0]]
-      const rows = XLSX.utils.sheet_to_json(sheet, {
-        header: 1,
-        defval: null,
-        raw: false,
-      }) as unknown[][]
+      const rows = await readSpreadsheetRows(file, { raw: false }, controller.signal)
 
-      const calculation = calculatePayroll(rows, professionals)
-      setResult(calculation)
+      const calculation = calculatePayroll(rows, professionals, selectedPeriod)
+      if (sequence === calculationSequence.current) { sourceRows.current = rows; setResult(calculation) }
     } catch (caughtError) {
-      setCalculationError(
+      if (sequence === calculationSequence.current) setCalculationError(
         caughtError instanceof Error
           ? caughtError.message
           : 'Erreur inconnue pendant la lecture du fichier.'
       )
     } finally {
-      setCalculating(false)
+      if (sequence === calculationSequence.current) setCalculating(false)
     }
   }
 
-  const handleDownload = async (professionalResult: ProfessionalPayrollResult) => {
+  const prepareInvoice = async (professionalResult: ProfessionalPayrollResult, action = 'prepare', original?: File) => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) throw new Error('Session expirée.')
+    if (!professionalResult.period) throw new Error('Recalculez la paie.')
+    const body: Record<string, unknown> = { professionalId: professionalResult.professional.id,
+      period: { ...professionalResult.period, dueDate: periodDue }, action,
+      rows: action === 'import' ? undefined : sourceRows.current, weeklyContextConfirmed }
+    if (action === 'import' && original) {
+      body.originalBase64 = await blobToBase64(original)
+      body.originalName = original.name
+      body.originalSigned = null // Signature non vérifiée; original conservé, jamais transféré.
+      body.legacyNumber = invoiceNumbersByProfessionalId[professionalResult.professional.id]?.trim()
+    }
+    if (action === 'revise') {
+      const reason = window.prompt('Motif du rectificatif (10 caractères minimum). L’original sera conservé et une nouvelle approbation sera requise.')
+      if (!reason) throw new Error('Rectificatif annulé.')
+      body.reason = reason
+      body.expectedVersion = Number(window.prompt('Version actuelle à corriger', String(invoiceRecords[professionalResult.professional.id]?.version ?? 1)))
+    }
+    const response = await fetch('/api/direction/payroll-invoices', { method: 'POST',
+      headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    const payload = await response.json()
+    if (!response.ok) throw new Error(payload.error ?? 'Enregistrement impossible.')
+    const record = payload.record as PayrollInvoiceRecord
+    setInvoiceRecords(current => ({ ...current, [professionalResult.professional.id]: record }))
+    return { record, token: session.access_token }
+  }
+
+  const downloadVersion = async (record: PayrollInvoiceRecord, token: string, version = record.version) => {
+    const response = await fetch(`/api/direction/payroll-invoices?id=${record.id}&version=${version}`, { headers: { Authorization: `Bearer ${token}` } })
+    if (!response.ok) throw new Error('Téléchargement de la version archivée impossible.')
+    const url = URL.createObjectURL(await response.blob())
+    const link = document.createElement('a')
+    const disposition = response.headers.get('content-disposition') ?? ''
+    link.download = decodeURIComponent(disposition.split("filename*=UTF-8''")[1] ?? `Facture-${record.id}-v${version}.docx`)
+    link.href = url; link.click(); URL.revokeObjectURL(url)
+  }
+
+  const showHistory = async (record: PayrollInvoiceRecord) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('Session expirée.')
+      const response = await fetch(`/api/direction/payroll-invoices?id=${record.id}`, { headers: { Authorization: `Bearer ${session.access_token}` } })
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error ?? 'Historique indisponible.')
+      const versions = payload.versions as { version: number; reason: string | null; original_signed: boolean }[]
+      const chosen = window.prompt(`Versions conservées de ${record.number}\n${versions.map(v => `v${v.version} : ${v.reason ?? 'original'}${v.original_signed ? ' — signature conservée sur cet original seulement' : ''}`).join('\n')}\nVersion à télécharger :`, String(record.version))
+      if (chosen) await downloadVersion(record, session.access_token, Number(chosen))
+    } catch (error) { setInvoiceMessage(error instanceof Error ? error.message : 'Historique indisponible.') }
+  }
+
+  const handleDownload = async (professionalResult: ProfessionalPayrollResult, action = 'prepare', original?: File) => {
     setInvoiceMessage('')
 
-    const invoiceNumber = invoiceNumbersByProfessionalId[professionalResult.professional.id]?.trim()
-
-    if (!invoiceNumber) {
-      setInvoiceMessage(
-        `Veuillez inscrire le numéro de facture pour ${professionalResult.professional.fullName}.`
-      )
+    if (!professionalResult.period || (professionalResult.requiresWeeklyReview && !weeklyContextConfirmed)) {
+      setInvoiceMessage('Recalculez la période et vérifiez les semaines complètes avant d’émettre une facture.')
       return
     }
-
-    const period: InvoicePeriod = {
-      startDate: periodStart,
-      endDate: periodEnd,
-      dueDate: periodDue,
-    }
-
     setDownloadingId(professionalResult.professional.id)
 
     try {
-      await downloadPayrollInvoice(professionalResult, period, { invoiceNumber })
+      const { record, token } = await prepareInvoice(professionalResult, action, original)
+      await downloadVersion(record, token)
+      setInvoiceMessage(`${record.number} — version ${record.version} conservée sous l’identifiant ${record.id}.`)
+    } catch (caughtError) {
+      setInvoiceMessage(caughtError instanceof Error ? caughtError.message : 'La facture n’a pas pu être générée.')
     } finally {
       setDownloadingId('')
     }
@@ -295,21 +385,16 @@ export default function DirectionPaiePage() {
   const handleSendInvoice = async (professionalResult: ProfessionalPayrollResult) => {
     setInvoiceMessage('')
 
+    if (!professionalResult.period || (professionalResult.requiresWeeklyReview && !weeklyContextConfirmed)) {
+      setInvoiceMessage('Recalculez la période et vérifiez les semaines complètes avant d’émettre une facture.')
+      return
+    }
+
     const recipientEmail = professionalResult.professional.email?.trim()
 
     if (!recipientEmail) {
       setInvoiceMessage(
         `Impossible d'envoyer la facture à ${professionalResult.professional.fullName} : aucun courriel professionnel n'est configuré.`
-      )
-      return
-    }
-
-    const invoiceNumberInput =
-      invoiceNumbersByProfessionalId[professionalResult.professional.id]?.trim()
-
-    if (!invoiceNumberInput) {
-      setInvoiceMessage(
-        `Veuillez inscrire le numéro de facture pour ${professionalResult.professional.fullName}.`
       )
       return
     }
@@ -324,24 +409,15 @@ export default function DirectionPaiePage() {
     }
 
     const period: InvoicePeriod = {
-      startDate: periodStart,
-      endDate: periodEnd,
+      ...professionalResult.period,
       dueDate: periodDue,
     }
-    const invoiceNumber = buildPayrollInvoiceNumber(professionalResult, invoiceNumberInput)
-    const attachmentFileName = buildPayrollInvoiceFileName(professionalResult, period, {
-      invoiceNumber: invoiceNumberInput,
-    })
-    const subject = `Facture ${invoiceNumber} - Clinique PsychoÉducAction`
-    const message = buildPayrollEmailMessage(professionalResult, period, invoiceNumberInput)
-
     setSendingId(professionalResult.professional.id)
 
     try {
-      const invoiceBlob = await createPayrollInvoiceBlob(professionalResult, period, {
-        invoiceNumber: invoiceNumberInput,
-      })
-      const attachmentBase64 = await blobToBase64(invoiceBlob)
+      const { record } = await prepareInvoice(professionalResult)
+      const subject = `Facture ${record.number} — version ${record.version} - Clinique PsychoÉducAction`
+      const message = buildPayrollEmailMessage(professionalResult, period, `${record.number} — version ${record.version}`)
       const response = await fetch('/api/direction/payroll-invoice-email', {
         method: 'POST',
         headers: {
@@ -352,11 +428,11 @@ export default function DirectionPaiePage() {
           to: recipientEmail,
           subject,
           message,
-          attachmentBase64,
-          attachmentFileName,
+          invoiceId: record.id,
+          version: record.version,
           professionalId: professionalResult.professional.id,
           professionalName: professionalResult.professional.fullName,
-          invoiceNumber,
+          invoiceNumber: record.number,
           paymentDate: period.dueDate,
         }),
       })
@@ -458,6 +534,14 @@ export default function DirectionPaiePage() {
                     ))}
                   </select>
                   <input
+                    aria-label={`Titre professionnel de ${professional.fullName}`}
+                    value={professional.professionalTitle ?? ''}
+                    onChange={(event) => { invalidateCalculation(); setProfessionals(current => current.map(p => p.id === professional.id ? { ...p, professionalTitle: event.target.value } : p)) }}
+                    onBlur={(event) => void updateProfessionalField(professional.id, 'professional_title', event.target.value)}
+                    placeholder="Titre professionnel (repris tel quel sur la facture)"
+                    className={inputClass}
+                  />
+                  <input
                     value={professional.professionalAddress ?? ''}
                     onChange={(event) =>
                       setProfessionals((current) =>
@@ -492,7 +576,7 @@ export default function DirectionPaiePage() {
                 <input
                   type="date"
                   value={periodStart}
-                  onChange={(event) => setPeriodStart(event.target.value)}
+                  onChange={(event) => { setPeriodStart(event.target.value); invalidateCalculation() }}
                   className={`${inputClass} mt-2`}
                 />
               </label>
@@ -501,7 +585,7 @@ export default function DirectionPaiePage() {
                 <input
                   type="date"
                   value={periodEnd}
-                  onChange={(event) => setPeriodEnd(event.target.value)}
+                  onChange={(event) => { setPeriodEnd(event.target.value); invalidateCalculation() }}
                   className={`${inputClass} mt-2`}
                 />
               </label>
@@ -522,7 +606,7 @@ export default function DirectionPaiePage() {
                 ref={fileInputRef}
                 type="file"
                 accept=".xlsx,.xls"
-                onChange={(event) => setFileName(event.target.files?.[0]?.name ?? '')}
+                onChange={(event) => { setFileName(event.target.files?.[0]?.name ?? ''); invalidateCalculation() }}
                 className={`${inputClass} mt-2`}
               />
             </label>
@@ -535,7 +619,7 @@ export default function DirectionPaiePage() {
             <button
               type="button"
               onClick={handleCalculate}
-              disabled={calculating}
+              disabled={calculating || Boolean(savingProfessionalId)}
               className={`${buttonClass('primary')} mt-4`}
             >
               {calculating ? 'Calcul...' : 'Calculer'}
@@ -553,6 +637,13 @@ export default function DirectionPaiePage() {
                     ))}
                   </ul>
                 </div>
+              )}
+
+              {result.requiresWeeklyReview && result.professionalResults.length > 0 && (
+                <label className="flex items-start gap-3 rounded-xl border border-[#ead2bd] bg-[#fffdf9] p-4 text-sm text-[#5d4a3d]">
+                  <input type="checkbox" checked={weeklyContextConfirmed} onChange={(event) => setWeeklyContextConfirmed(event.target.checked)} className="mt-1" />
+                  J’ai vérifié que l’export contient toutes les rencontres des semaines concernées pour appliquer le bon seuil hebdomadaire. Seules les dates sélectionnées seront payées.
+                </label>
               )}
 
               {invoiceMessage && (
@@ -589,9 +680,9 @@ export default function DirectionPaiePage() {
                               }`}
                           </p>
                         </div>
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                           <label className="flex items-center gap-2 text-xs font-medium text-[#5d4a3d]">
-                            N° facture
+                            Référence historique
                             <input
                               value={
                                 invoiceNumbersByProfessionalId[
@@ -604,18 +695,29 @@ export default function DirectionPaiePage() {
                                   [professionalResult.professional.id]: event.target.value,
                                 }))
                               }
-                              placeholder="#"
-                              inputMode="numeric"
-                              className="w-20 rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] shadow-sm outline-none transition duration-200 focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"
+                              placeholder="PEA-AG-021"
+                              className={inputClass}
                             />
                           </label>
+                          <label className={buttonClass('secondary')}>
+                            Archiver l’original Word/PDF
+                            <input type="file" accept=".docx,.pdf" className="hidden" disabled={Boolean(downloadingId)}
+                              onChange={event => { const file = event.target.files?.[0]; if (file) void handleDownload(professionalResult, 'import', file); event.target.value = '' }} />
+                          </label>
+                          <button type="button" className={buttonClass('secondary')} disabled={Boolean(downloadingId) || Boolean(professionalResult.invoiceIssues?.length)}
+                            onClick={() => void handleDownload(professionalResult, 'revise')}>Préparer un rectificatif</button>
+                          {invoiceRecords[professionalResult.professional.id] && (
+                            <button type="button" className={buttonClass('secondary')} onClick={() => void showHistory(invoiceRecords[professionalResult.professional.id])}>
+                              Historique : {invoiceRecords[professionalResult.professional.id].number} — v{invoiceRecords[professionalResult.professional.id].version}
+                            </button>
+                          )}
                           <Badge tone="success">
                             {formatCurrency(professionalResult.grandTotal)}
                           </Badge>
                           <button
                             type="button"
                             onClick={() => handleDownload(professionalResult)}
-                            disabled={downloadingId === professionalResult.professional.id}
+                            disabled={downloadingId === professionalResult.professional.id || Boolean(professionalResult.invoiceIssues?.length) || Boolean(result.requiresWeeklyReview && !weeklyContextConfirmed)}
                             className={buttonClass('secondary')}
                           >
                             {downloadingId === professionalResult.professional.id
@@ -625,7 +727,7 @@ export default function DirectionPaiePage() {
                           <button
                             type="button"
                             onClick={() => handleSendInvoice(professionalResult)}
-                            disabled={sendingId === professionalResult.professional.id}
+                            disabled={sendingId === professionalResult.professional.id || Boolean(professionalResult.invoiceIssues?.length) || Boolean(result.requiresWeeklyReview && !weeklyContextConfirmed)}
                             className={buttonClass('primary')}
                           >
                             {sendingId === professionalResult.professional.id
@@ -635,12 +737,15 @@ export default function DirectionPaiePage() {
                         </div>
                       </div>
 
+                      {professionalResult.invoiceIssues?.map(issue => <p key={issue} className="mt-2 text-sm text-red-700">{issue}</p>)}
+
                       <div className={`${inputClass} mt-3 overflow-x-auto bg-white`}>
                         <table className="w-full min-w-[500px] text-left text-sm">
                           <thead>
                             <tr className="text-xs uppercase text-[#8a6f5d]">
                               <th className="py-1 pr-2">Description</th>
                               <th className="py-1 pr-2">Heures / quantité</th>
+                              <th className="py-1 pr-2">Prix unitaire (CAD)</th>
                               <th className="py-1 pr-2">Total</th>
                             </tr>
                           </thead>
@@ -648,7 +753,8 @@ export default function DirectionPaiePage() {
                             {professionalResult.lineItems.map((item, index) => (
                               <tr key={index} className="border-t border-[#eadfd2]">
                                 <td className="py-1 pr-2">{item.label}</td>
-                                <td className="py-1 pr-2">{item.totalHours.toFixed(2)}</td>
+                                <td className="py-1 pr-2">{item.totalHours > 0 ? formatPayrollQuantity(item.totalHours, item.unit) : 'À confirmer'}{item.sourceRows?.length ? ` — lignes ${item.sourceRows.join(', ')}` : ''}</td>
+                                <td className="py-1 pr-2">{item.totalHours > 0 ? new Intl.NumberFormat('fr-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 6 }).format(item.totalPay / item.totalHours) : 'À confirmer'}</td>
                                 <td className="py-1 pr-2">{formatCurrency(item.totalPay)}</td>
                               </tr>
                             ))}
@@ -656,8 +762,9 @@ export default function DirectionPaiePage() {
                               <tr className="border-t border-[#eadfd2]">
                                 <td className="py-1 pr-2">Frais de déplacement</td>
                                 <td className="py-1 pr-2">
-                                  {professionalResult.travelKilometersTotal.toFixed(2)} km à 0,64 $
+                                  {formatPayrollQuantity(professionalResult.travelKilometersTotal, 'km')}
                                 </td>
+                                <td className="py-1 pr-2">0,64 $</td>
                                 <td className="py-1 pr-2">
                                   {formatCurrency(professionalResult.travelFeesTotal)}
                                 </td>
@@ -671,6 +778,7 @@ export default function DirectionPaiePage() {
                                 >
                                   <td className="py-1 pr-2">{item.label}</td>
                                   <td className="py-1 pr-2">{item.count}</td>
+                                  <td className="py-1 pr-2">{formatCurrency(item.totalPay / item.count)}</td>
                                   <td className="py-1 pr-2">
                                     {formatCurrency(item.totalPay)}
                                   </td>

@@ -3,7 +3,7 @@
 Validé en développement le 23 octobre 2026. Les migrations d’assignation et de
 civilité ont été appliquées en production après autorisation explicite :
 3 profils M., 22 profils Mme, aucun rendez-vous ajouté aux dossiers historiques.
-Publication applicative préparée; aucun envoi réel effectué.
+Version applicative publiée sur main (commit 9bd8b7c), déploiement Vercel confirmé Ready; aucun envoi réel effectué.
 
 ## Parcours
 

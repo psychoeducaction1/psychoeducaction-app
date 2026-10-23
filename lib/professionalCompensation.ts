@@ -1,5 +1,6 @@
 import type { ProfessionalPayrollInfo } from '@/lib/payrollCalculator'
 import { normalizeEmail } from '@/lib/superAdmin'
+import { decimalProduct, decimalSum } from '@/lib/payrollDecimal'
 
 type CategoryRates = {
   belowThreshold: number
@@ -46,6 +47,7 @@ export type ProfessionalCompensation = {
   clinicRevenue: number
   professionalRate: number
   isFlatRate: boolean
+  professionalHourlyRate?: number
 }
 
 function professionalNameKey(professional: ProfessionalPayrollInfo): string {
@@ -127,11 +129,11 @@ export function calculateProfessionalCompensation({
 
   if (lineType === 'rapport_evaluation') {
     const professionalRate = 0.8
-    const professionalPay = safeClientAmount * professionalRate
+    const professionalPay = decimalProduct(safeClientAmount, professionalRate)
     return {
       professionalPay,
       nancyPay: 0,
-      clinicRevenue: safeClientAmount - professionalPay,
+      clinicRevenue: decimalSum([safeClientAmount, -professionalPay]),
       professionalRate,
       isFlatRate: false,
     }
@@ -149,11 +151,11 @@ export function calculateProfessionalCompensation({
 
   if (isNancyProfessional(professional)) {
     const professionalRate = 0.8
-    const professionalPay = safeClientAmount * professionalRate
+    const professionalPay = decimalProduct(safeClientAmount, professionalRate)
     return {
       professionalPay,
       nancyPay: 0,
-      clinicRevenue: safeClientAmount - professionalPay,
+      clinicRevenue: decimalSum([safeClientAmount, -professionalPay]),
       professionalRate,
       isFlatRate: false,
     }
@@ -161,22 +163,22 @@ export function calculateProfessionalCompensation({
 
   if (isRimProfessional(professional)) {
     const professionalRate = 110 / PSYCHOTHERAPIST_CLIENT_RATE
-    const nancyRate = 35 / PSYCHOTHERAPIST_CLIENT_RATE
     const professionalPay =
       lineType === 'annulation'
-        ? safeClientAmount * professionalRate
-        : 110 * Math.max(durationHours, 0)
+        ? decimalProduct(safeClientAmount, 110, PSYCHOTHERAPIST_CLIENT_RATE)
+        : decimalProduct(110, Math.max(durationHours, 0))
     const nancyPay =
       lineType === 'annulation'
-        ? safeClientAmount * nancyRate
-        : 35 * Math.max(durationHours, 0)
+        ? decimalProduct(safeClientAmount, 35, PSYCHOTHERAPIST_CLIENT_RATE)
+        : decimalProduct(35, Math.max(durationHours, 0))
 
     return {
       professionalPay,
       nancyPay,
-      clinicRevenue: Math.max(safeClientAmount - professionalPay - nancyPay, 0),
+      clinicRevenue: Math.max(decimalSum([safeClientAmount, -professionalPay, -nancyPay]), 0),
       professionalRate,
       isFlatRate: lineType !== 'annulation',
+      professionalHourlyRate: lineType !== 'annulation' ? 110 : undefined,
     }
   }
 
@@ -200,23 +202,24 @@ export function calculateProfessionalCompensation({
     const professionalRate = rate / PSYCHOTHERAPIST_CLIENT_RATE
     const professionalPay =
       lineType === 'annulation'
-        ? safeClientAmount * professionalRate
-        : rate * Math.max(durationHours, 0)
+        ? decimalProduct(safeClientAmount, rate, PSYCHOTHERAPIST_CLIENT_RATE)
+        : decimalProduct(rate, Math.max(durationHours, 0))
 
     return {
       professionalPay,
       nancyPay: 0,
-      clinicRevenue: Math.max(safeClientAmount - professionalPay, 0),
+      clinicRevenue: Math.max(decimalSum([safeClientAmount, -professionalPay]), 0),
       professionalRate,
       isFlatRate: lineType !== 'annulation',
+      professionalHourlyRate: lineType !== 'annulation' ? rate : undefined,
     }
   }
 
-  const professionalPay = safeClientAmount * rate
+  const professionalPay = decimalProduct(safeClientAmount, rate)
   return {
     professionalPay,
     nancyPay: 0,
-    clinicRevenue: Math.max(safeClientAmount - professionalPay, 0),
+    clinicRevenue: Math.max(decimalSum([safeClientAmount, -professionalPay]), 0),
     professionalRate: rate,
     isFlatRate: false,
   }

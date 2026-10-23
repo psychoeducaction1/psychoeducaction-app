@@ -10,6 +10,7 @@ import {
   isTelephoneInterview,
   type PayrollActivityClassification,
 } from '@/lib/payrollActivity'
+import { decimalProduct, decimalSum } from '@/lib/payrollDecimal'
 
 export type PayrollCategory =
   | 'intervenant_psychoeducation'
@@ -30,25 +31,18 @@ export const PAYROLL_CATEGORY_LABELS: Record<PayrollCategory, string> = {
 
 export const TRAVEL_FEE_RATE_PER_KM = 0.64
 
-// Confirmé avec l'utilisateur : le montant réclamé au client indique lui-même le type de
-// suivi, puisque le fichier Excel source n'a pas de colonne dédiée pour ça.
-const RATE_TO_SERVICE_TYPE: Record<number, string> = {
-  110: 'Suivi individuel',
-  120: 'Suivi individuel',
-  125: 'Suivi dyade',
-  130: 'Suivi dyade',
-  145: 'Suivi familial',
+export type PayrollPeriod = { startDate: string; endDate: string }
+
+export function isPayrollDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const date = new Date(`${value}T00:00:00Z`)
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
 }
 
-function getServiceTypeLabel(amount: number): string {
-  return RATE_TO_SERVICE_TYPE[amount] ?? 'Rencontre'
-}
-
-function formatRateAmount(value: number): string {
-  return new Intl.NumberFormat('fr-CA', {
-    style: 'currency',
-    currency: 'CAD',
-  }).format(value)
+export function validatePayrollPeriod(period: PayrollPeriod): void {
+  if (!isPayrollDate(period.startDate) || !isPayrollDate(period.endDate) || period.startDate > period.endDate) {
+    throw new Error('La période de paie doit contenir deux dates valides, dans le bon ordre.')
+  }
 }
 
 // Toujours exclue du calcul, peu importe ce qui apparaît sous son nom dans le fichier.
@@ -64,12 +58,15 @@ export type ProfessionalPayrollInfo = {
 }
 
 export type InvoiceLineItem = {
+  kind?: 'rencontre' | 'entretien_telephonique' | 'rapport_evaluation'
   label: string
   amount: number
   rate: number
   isFlatRate: boolean
   totalHours: number
   totalPay: number
+  unit?: 'h' | 'élément'
+  sourceRows?: number[]
 }
 
 export type PayrollRateGroup = {
@@ -89,6 +86,9 @@ export type CancellationLineItem = {
 }
 
 export type ProfessionalPayrollResult = {
+  invoiceIssues?: string[]
+  period?: PayrollPeriod
+  requiresWeeklyReview?: boolean
   professional: ProfessionalPayrollInfo
   lineItems: InvoiceLineItem[]
   rateGroups: PayrollRateGroup[]
@@ -108,10 +108,15 @@ export type PayrollCalculationWarning = {
     | 'unclassified_row'
     | 'unreadable_date'
     | 'missing_amount'
+    | 'partial_week'
+    | 'out_of_period'
+    | 'invalid_duration'
   message: string
 }
 
 export type PayrollCalculationResult = {
+  period?: PayrollPeriod
+  requiresWeeklyReview?: boolean
   professionalResults: ProfessionalPayrollResult[]
   warnings: PayrollCalculationWarning[]
 }
@@ -204,22 +209,25 @@ function parseDateCell(raw: unknown): { date: string; durationHours: number } | 
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
-  const dateLine = lines.find((line) => /^\d{4}-\d{2}-\d{2}/.test(line))
+  const dateLine = lines.find((line) => /^\d{4}-\d{2}-\d{2}(?:$|\s)/.test(line))
 
   if (!dateLine) return null
 
-  const timeLine = lines.find((line) => /^\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}/.test(line))
+  const timeLine = lines.find((line) => /^\d{1,2}:\d{2}\s*[-–—]\s*\d{1,2}:\d{2}/.test(line))
   const date = dateLine.slice(0, 10)
+  if (!isPayrollDate(date)) return null
   let durationHours = 0
 
   if (timeLine) {
-    const match = timeLine.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/)
+    const match = timeLine.match(/^(\d{1,2}):(\d{2})\s*[-–—]\s*(\d{1,2}):(\d{2})$/)
 
     if (match) {
       const [, startH, startM, endH, endM] = match
       const startMinutes = Number(startH) * 60 + Number(startM)
       const endMinutes = Number(endH) * 60 + Number(endM)
-      durationHours = Math.max(endMinutes - startMinutes, 0) / 60
+      if (Number(startH) < 24 && Number(endH) < 24 && Number(startM) < 60 && Number(endM) < 60) {
+        durationHours = Math.max(endMinutes - startMinutes, 0) / 60
+      }
     }
   }
 
@@ -227,14 +235,21 @@ function parseDateCell(raw: unknown): { date: string; durationHours: number } | 
 }
 
 function getWeekStart(dateStr: string): string {
-  const date = new Date(`${dateStr}T00:00:00`)
-  const day = date.getDay()
+  const date = new Date(`${dateStr}T00:00:00Z`)
+  const day = date.getUTCDay()
   const diffToMonday = day === 0 ? -6 : 1 - day
-  date.setDate(date.getDate() + diffToMonday)
+  date.setUTCDate(date.getUTCDate() + diffToMonday)
+  return date.toISOString().slice(0, 10)
+}
+
+function getWeekEnd(dateStr: string): string {
+  const date = new Date(`${getWeekStart(dateStr)}T00:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + 6)
   return date.toISOString().slice(0, 10)
 }
 
 type MeetingRow = {
+  sourceRow: number
   date: string
   weekStart: string
   durationHours: number
@@ -269,9 +284,23 @@ type ProfessionalBucket = {
  */
 export function calculatePayroll(
   rawRows: unknown[][],
-  professionals: ProfessionalPayrollInfo[]
+  professionals: ProfessionalPayrollInfo[],
+  period?: PayrollPeriod
 ): PayrollCalculationResult {
+  if (period) validatePayrollPeriod(period)
   const warnings: PayrollCalculationWarning[] = []
+  const supportStart = period ? getWeekStart(period.startDate) : null
+  const supportEnd = period ? getWeekEnd(period.endDate) : null
+  const requiresWeeklyReview = Boolean(period && (
+    period.startDate !== supportStart || period.endDate !== supportEnd
+  ))
+  const snapshot = period ? { period: { ...period }, requiresWeeklyReview } : {}
+  if (requiresWeeklyReview) {
+    warnings.push({
+      type: 'partial_week',
+      message: `La période coupe une semaine. Le seuil hebdomadaire utilise les rencontres présentes dans l’export du ${supportStart} au ${supportEnd}, mais seules les dates de la période sont payées. Vérifiez que l’export contient les semaines complètes avant d’émettre les factures.`,
+    })
+  }
 
   const headerRowIndex = rawRows.findIndex(
     (row) => typeof row[0] === 'string' && row[0].trim().toUpperCase() === 'DATE'
@@ -283,7 +312,7 @@ export function calculatePayroll(
       message:
         'Impossible de trouver la ligne d’en-tête (colonne "DATE") dans le fichier - vérifiez qu’il s’agit bien d’un export "Activités détaillées".',
     })
-    return { professionalResults: [], warnings }
+    return { professionalResults: [], warnings, ...snapshot }
   }
 
   const dataRows = rawRows.slice(headerRowIndex + 1)
@@ -315,6 +344,7 @@ export function calculatePayroll(
 
   const buckets = new Map<string, ProfessionalBucket>()
   const unmatchedNamesWarned = new Set<string>()
+  let outsidePeriodCount = 0
 
   const getOrCreateBucket = (professional: ProfessionalPayrollInfo): ProfessionalBucket => {
     const existing = buckets.get(professional.id)
@@ -361,9 +391,20 @@ export function calculatePayroll(
 
     if (classification === 'dossier') return
 
-    if (classification === 'rencontre' || classification === 'rapport_evaluation') {
-      const parsedDate = parseDateCell(row[0])
+    const parsedDate = parseDateCell(row[0])
+    const outsidePeriod = Boolean(period && parsedDate && (
+      parsedDate.date < period.startDate || parsedDate.date > period.endDate
+    ))
+    if (period && !parsedDate) {
+      warnings.push({ type: 'unreadable_date', message: `Date illisible ou impossible pour ${professionalNameRaw} (ligne ${rowNumber}) — activité exclue de la période de paie.` })
+      return
+    }
+    if (outsidePeriod) outsidePeriodCount += 1
+    // Les rencontres des jours voisins servent uniquement au seuil de leur semaine.
+    // Elles ne peuvent ni augmenter la quantité facturée, ni ajouter des frais.
+    if (period && parsedDate && (parsedDate.date < supportStart! || parsedDate.date > supportEnd!)) return
 
+    if (classification === 'rencontre' || classification === 'rapport_evaluation') {
       if (!parsedDate) {
         warnings.push({
           type: 'unreadable_date',
@@ -374,6 +415,7 @@ export function calculatePayroll(
 
       const bucket = getOrCreateBucket(professional)
       bucket.rencontres.push({
+        sourceRow: rowNumber,
         date: parsedDate.date,
         weekStart: getWeekStart(parsedDate.date),
         durationHours: parsedDate.durationHours,
@@ -386,7 +428,7 @@ export function calculatePayroll(
     }
 
     if (classification === 'absence') {
-      const parsedDate = parseDateCell(row[0])
+      if (outsidePeriod) return
       const amount = parseAmount(row[8])
 
       if (!parsedDate) {
@@ -414,7 +456,9 @@ export function calculatePayroll(
     }
 
     if (classification === 'deplacement') {
-      getOrCreateBucket(professional).travelFeesTotal += parseAmount(row[8])
+      if (outsidePeriod) return
+      const bucket = getOrCreateBucket(professional)
+      bucket.travelFeesTotal = decimalSum([bucket.travelFeesTotal, parseAmount(row[8])])
       return
     }
 
@@ -426,10 +470,18 @@ export function calculatePayroll(
     })
   })
 
+  if (outsidePeriodCount > 0) {
+    warnings.push({ type: 'out_of_period', message: `${outsidePeriodCount} activité(s) hors de la période sélectionnée ne sont pas payées dans ce calcul.` })
+  }
+
   const professionalResults: ProfessionalPayrollResult[] = []
 
   buckets.forEach((bucket) => {
-    const { professional, rencontres, travelFeesTotal, cancellations } = bucket
+    const { professional, travelFeesTotal, cancellations } = bucket
+    const rencontres = bucket.rencontres.filter((meeting) => !period || (
+      meeting.date >= period.startDate && meeting.date <= period.endDate
+    ))
+    if (rencontres.length === 0 && cancellations.length === 0 && travelFeesTotal === 0) return
 
     const hasStandardCompensationRule = hasCompensationRule(professional)
 
@@ -445,7 +497,7 @@ export function calculatePayroll(
     }
 
     const meetingsByWeek = new Map<string, MeetingRow[]>()
-    rencontres
+    bucket.rencontres
       .filter((meeting) => meeting.classification === 'rencontre')
       .forEach((meeting) => {
         const list = meetingsByWeek.get(meeting.weekStart) ?? []
@@ -454,6 +506,7 @@ export function calculatePayroll(
       })
 
     const lineItemsMap = new Map<string, InvoiceLineItem>()
+    const invoiceIssues: string[] = []
 
     rencontres.forEach((meeting) => {
       if (
@@ -476,30 +529,45 @@ export function calculatePayroll(
       })
       const rate = calculated.professionalRate
       const pay = calculated.professionalPay
+      const missingDuration = meeting.durationHours <= 0 && (!countAsItem || calculated.isFlatRate)
+      if (missingDuration) {
+        const issue = `Ligne ${meeting.sourceRow} (${meeting.date}) : durée absente, nulle ou invalide. Confirmez l’horaire ou la nature réelle de l’activité (annulation, forfait ou entretien). Aucun ajustement de quantité ou de montant automatique.`
+        invoiceIssues.push(issue)
+        warnings.push({ type: 'invalid_duration', message: `${professional.fullName} — ${issue}` })
+      }
+      if (meeting.classification === 'rencontre' && normalizeSearchText(meeting.detail).includes('annulation')) {
+        const issue = `Ligne ${meeting.sourceRow} (${meeting.date}) : activité classée « Rencontre » avec une mention d’annulation. Confirmez la nature et le statut de cette activité avant émission; le montant et le seuil hebdomadaire ne sont pas modifiés automatiquement.`
+        invoiceIssues.push(issue)
+        warnings.push({ type: 'invalid_duration', message: `${professional.fullName} — ${issue}` })
+      }
+      const kind = meeting.classification === 'rapport_evaluation'
+        ? 'rapport_evaluation' : countAsItem ? 'entretien_telephonique' : 'rencontre'
       const label =
         meeting.classification === 'rapport_evaluation'
           ? "Rapport d'évaluation psychoéducative"
           : countAsItem
             ? 'Entretien téléphonique'
-            : `${getServiceTypeLabel(unitClientAmount)} - Rencontre (${unitClientAmount} $)`
-      const key = calculated.isFlatRate
-        ? `flat-${rate}`
-        : `${label}|${unitClientAmount}|${rate}`
+            : 'Rencontre'
+      const key = `${kind}|${unitClientAmount}|${rate}|${calculated.isFlatRate}|${missingDuration}`
       const existing = lineItemsMap.get(key)
 
       if (existing) {
-        existing.totalHours += quantity
-        existing.totalPay += pay
+        existing.totalHours = decimalSum([existing.totalHours, quantity], 10)
+        existing.totalPay = decimalSum([existing.totalPay, pay])
+        existing.sourceRows!.push(meeting.sourceRow)
         return
       }
 
       lineItemsMap.set(key, {
-        label: calculated.isFlatRate ? 'Rencontre' : label,
+        kind,
+        label,
         amount: unitClientAmount,
         rate,
         isFlatRate: calculated.isFlatRate,
         totalHours: quantity,
         totalPay: pay,
+        unit: countAsItem ? 'élément' : 'h',
+        sourceRows: [meeting.sourceRow],
       })
     })
 
@@ -521,14 +589,12 @@ export function calculatePayroll(
 
       if (existing) {
         existing.count += 1
-        existing.totalPay += calculated.professionalPay
+        existing.totalPay = decimalSum([existing.totalPay, calculated.professionalPay])
         return
       }
 
       cancellationLineItemsMap.set(key, {
-        label: `Annulation - montant facturé ${formatRateAmount(cancellation.amount)} (${Math.round(
-          calculated.professionalRate * 100
-        )} %)`,
+        label: 'Honoraires d’annulation',
         clientAmount: cancellation.amount,
         rate: calculated.professionalRate,
         count: 1,
@@ -541,13 +607,11 @@ export function calculatePayroll(
       lineItems.reduce((groups, item) => {
         const key = item.isFlatRate ? `flat-${item.rate}` : `percent-${item.rate}`
         const existing = groups.get(key)
-        const label = item.isFlatRate
-          ? `${formatRateAmount(item.rate)} / h`
-          : `${Math.round(item.rate * 100)} %`
+        const label = 'Honoraires professionnels'
 
         if (existing) {
           existing.lineItems.push(item)
-          existing.totalPay += item.totalPay
+          existing.totalPay = decimalSum([existing.totalPay, item.totalPay])
         } else {
           groups.set(key, {
             label,
@@ -564,22 +628,21 @@ export function calculatePayroll(
       .map(([, group]) => group)
       .sort((a, b) => a.rate - b.rate)
     const cancellationLineItems = Array.from(cancellationLineItemsMap.values())
-    const cancellationFeesTotal = cancellationLineItems.reduce(
-      (sum, item) => sum + item.totalPay,
-      0
-    )
-    const meetingsPay = lineItems.reduce((sum, item) => sum + item.totalPay, 0)
-    const grandTotal = meetingsPay + travelFeesTotal + cancellationFeesTotal
+    const cancellationFeesTotal = decimalSum(cancellationLineItems.map(item => item.totalPay))
+    const meetingsPay = decimalSum(lineItems.map(item => item.totalPay))
+    const grandTotal = decimalSum([meetingsPay, travelFeesTotal, cancellationFeesTotal])
 
     professionalResults.push({
+      ...snapshot,
       professional,
+      invoiceIssues,
       lineItems,
       rateGroups,
       meetingCount: rencontres.filter(
         (meeting) => meeting.classification === 'rencontre'
       ).length,
       travelFeesTotal,
-      travelKilometersTotal: travelFeesTotal / TRAVEL_FEE_RATE_PER_KM,
+      travelKilometersTotal: decimalProduct(travelFeesTotal, 1, TRAVEL_FEE_RATE_PER_KM, 2),
       cancellationCount: cancellations.length,
       cancellationLineItems,
       cancellationFeesTotal,
@@ -591,5 +654,5 @@ export function calculatePayroll(
     a.professional.fullName.localeCompare(b.professional.fullName, 'fr')
   )
 
-  return { professionalResults, warnings }
+  return { professionalResults, warnings, ...snapshot }
 }

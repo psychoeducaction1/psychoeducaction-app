@@ -13,11 +13,12 @@ import {
   WidthType,
 } from 'docx'
 import type {
-  InvoiceLineItem,
-  PayrollRateGroup,
+  ProfessionalPayrollInfo,
   ProfessionalPayrollResult,
 } from '@/lib/payrollCalculator'
-import { TRAVEL_FEE_RATE_PER_KM } from '@/lib/payrollCalculator'
+import { isPayrollDate, TRAVEL_FEE_RATE_PER_KM, validatePayrollPeriod } from '@/lib/payrollCalculator'
+import { decimalSum, formatPayrollQuantity } from '@/lib/payrollDecimal'
+import type { PayrollInvoiceRecord } from '@/lib/payrollInvoiceRegistry'
 
 export type InvoicePeriod = {
   startDate: string // YYYY-MM-DD
@@ -27,6 +28,68 @@ export type InvoicePeriod = {
 
 export type PayrollInvoiceOptions = {
   invoiceNumber?: string
+  weeklyContextConfirmed?: boolean
+  record?: PayrollInvoiceRecord
+}
+
+export type PayrollInvoiceData = {
+  professional: Pick<ProfessionalPayrollInfo, 'fullName' | 'professionalAddress' | 'professionalPhone' | 'email' | 'professionalTitle'>
+  lineItems: { label: string; quantity: number; unitPay: number; totalPay: number; unit?: 'h' | 'élément' }[]
+  cancellationLineItems: { label: string; count: number; unitPay: number; totalPay: number }[]
+  travelFeesTotal: number
+  travelKilometersTotal: number
+  cancellationCount: number
+  cancellationFeesTotal: number
+  meetingsPay: number
+  grandTotal: number
+}
+
+/** Projection destinée au fournisseur : aucun tarif client, pourcentage ou libellé libre. */
+export function toPayrollInvoiceData(result: ProfessionalPayrollResult): PayrollInvoiceData {
+  if (result.invoiceIssues?.length || result.lineItems.some(item => item.totalHours <= 0)) {
+    throw new Error('Facture bloquée : confirmez les quantités et les règles des activités signalées avant émission.')
+  }
+  const professional = result.professional
+  return {
+    professional: {
+      fullName: professional.fullName,
+      professionalAddress: professional.professionalAddress,
+      professionalPhone: professional.professionalPhone,
+      email: professional.email,
+      professionalTitle: professional.professionalTitle,
+    },
+    lineItems: result.lineItems.map((item) => ({
+      label: item.kind === 'rapport_evaluation' || (!item.kind && item.label.startsWith("Rapport d'évaluation"))
+        ? "Rapport d'évaluation psychoéducative"
+        : item.kind === 'entretien_telephonique' || (!item.kind && item.label === 'Entretien téléphonique')
+          ? 'Entretien téléphonique' : 'Rencontre',
+      quantity: item.totalHours,
+      unitPay: item.totalHours > 0 ? item.totalPay / item.totalHours : 0,
+      totalPay: item.totalPay,
+      unit: item.unit ?? (item.kind === 'entretien_telephonique' ? 'élément' : 'h'),
+    })),
+    cancellationLineItems: result.cancellationLineItems.map((item) => ({
+      label: 'Honoraires d’annulation', count: item.count,
+      unitPay: item.count > 0 ? item.totalPay / item.count : 0, totalPay: item.totalPay,
+    })),
+    travelFeesTotal: result.travelFeesTotal,
+    travelKilometersTotal: result.travelKilometersTotal,
+    cancellationCount: result.cancellationCount,
+    cancellationFeesTotal: result.cancellationFeesTotal,
+    meetingsPay: decimalSum(result.lineItems.map(item => item.totalPay)),
+    grandTotal: result.grandTotal,
+  }
+}
+
+function validateInvoicePeriod(result: ProfessionalPayrollResult, period: InvoicePeriod, options?: PayrollInvoiceOptions) {
+  validatePayrollPeriod(period)
+  if (!isPayrollDate(period.dueDate)) throw new Error('La date d’échéance doit être valide.')
+  if (!result.period || result.period.startDate !== period.startDate || result.period.endDate !== period.endDate) {
+    throw new Error('Recalculez la paie pour cette période avant de générer une facture.')
+  }
+  if (result.requiresWeeklyReview && !options?.weeklyContextConfirmed) {
+    throw new Error('Vérifiez que l’export contient les semaines complètes avant de générer une facture.')
+  }
 }
 
 const CLINIC_NAME = 'Clinique PsychoÉducAction'
@@ -72,11 +135,11 @@ function formatDateFr(value: string): string {
 }
 
 function formatQuantity(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(2)
+  return formatPayrollQuantity(value)
 }
 
 export function buildPayrollInvoiceNumber(
-  result: ProfessionalPayrollResult,
+  result: Pick<PayrollInvoiceData, 'professional'>,
   invoiceNumber: string
 ): string {
   const initials =
@@ -84,15 +147,14 @@ export function buildPayrollInvoiceNumber(
       .split(/\s+/)
       .map((part) => part[0]?.toUpperCase() ?? '')
       .join('') || 'XX'
-  const invoiceDigits = invoiceNumber.replace(/\D/g, '').padStart(3, '0')
+  if (!/^\d{1,9}$/.test(invoiceNumber)) throw new Error('Le numéro historique doit contenir uniquement des chiffres.')
+  const invoiceDigits = invoiceNumber.padStart(3, '0')
 
   return `PEA-${initials}-${invoiceDigits}`
 }
 
 export function buildPayrollInvoiceShortNumber(invoiceNumber: string): string {
-  const invoiceDigits = invoiceNumber.replace(/\D/g, '').padStart(3, '0')
-
-  return invoiceDigits.slice(-2)
+  return invoiceNumber
 }
 
 export function buildPayrollInvoiceFileName(
@@ -101,7 +163,9 @@ export function buildPayrollInvoiceFileName(
   options?: PayrollInvoiceOptions
 ): string {
   const safeName = result.professional.fullName.replace(/[^a-z0-9]+/gi, '-')
-  const invoicePart = options?.invoiceNumber
+  const invoicePart = options?.record
+    ? `${options.record.number}-v${options.record.version}-${options.record.id}`
+    : options?.invoiceNumber
     ? buildPayrollInvoiceNumber(result, options.invoiceNumber)
     : period.endDate
 
@@ -235,7 +299,7 @@ function buildInfoBox(title: string, lines: string[]): Table {
 }
 
 function buildHeaderTable(
-  result: ProfessionalPayrollResult,
+  result: PayrollInvoiceData,
   period: InvoicePeriod,
   logoData: Uint8Array | null,
   options?: PayrollInvoiceOptions
@@ -266,7 +330,7 @@ function buildHeaderTable(
                 alignment: AlignmentType.RIGHT,
                 spacingAfter: 120,
               }),
-              paragraph([run(`N° ${buildPayrollInvoiceNumber(result, options?.invoiceNumber ?? '')}`, { color: COLOR_ACCENT })], {
+              paragraph([run(`N° ${options?.record?.number ?? (options?.invoiceNumber ? buildPayrollInvoiceNumber(result, options.invoiceNumber) : 'BROUILLON')}`, { color: COLOR_ACCENT })], {
                 alignment: AlignmentType.RIGHT,
                 spacingAfter: 40,
               }),
@@ -294,7 +358,7 @@ function buildHeaderTable(
   })
 }
 
-function buildPartyTable(result: ProfessionalPayrollResult): Table {
+function buildPartyTable(result: PayrollInvoiceData): Table {
   const { professional } = result
   const supplierLines = [
     professional.fullName,
@@ -331,23 +395,21 @@ function buildPartyTable(result: ProfessionalPayrollResult): Table {
   })
 }
 
-function buildRateTable(group: PayrollRateGroup): Table {
+function buildRateTable(result: PayrollInvoiceData): Table {
   const headerRow = new TableRow({
     children: ['Description du service', 'Qté', 'Prix unitaire (CAD)', 'Total (CAD)'].map(
       (text, index) => headerCell(text, TABLE_COLUMN_WIDTHS[index])
     ),
   })
 
-  const itemRows = group.lineItems.map((item: InvoiceLineItem) => {
-    const unitPrice = item.isFlatRate ? item.rate : item.amount * item.rate
-
+  const itemRows = result.lineItems.map((item) => {
     return new TableRow({
       children: [
         bodyCell(item.label, TABLE_COLUMN_WIDTHS[0], { bold: true }),
-        bodyCell(formatQuantity(item.totalHours), TABLE_COLUMN_WIDTHS[1], {
+        bodyCell(formatPayrollQuantity(item.quantity, item.unit), TABLE_COLUMN_WIDTHS[1], {
           alignment: AlignmentType.CENTER,
         }),
-        bodyCell(formatCurrency(unitPrice), TABLE_COLUMN_WIDTHS[2], {
+        bodyCell(new Intl.NumberFormat('fr-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 6 }).format(item.unitPay), TABLE_COLUMN_WIDTHS[2], {
           alignment: AlignmentType.RIGHT,
         }),
         bodyCell(formatCurrency(item.totalPay), TABLE_COLUMN_WIDTHS[3], {
@@ -366,7 +428,7 @@ function buildRateTable(group: PayrollRateGroup): Table {
         color: COLOR_WHITE,
         fill: COLOR_GOLD,
       }),
-      bodyCell(formatCurrency(group.totalPay), TABLE_COLUMN_WIDTHS[3], {
+      bodyCell(formatCurrency(result.meetingsPay), TABLE_COLUMN_WIDTHS[3], {
         alignment: AlignmentType.RIGHT,
         bold: true,
         color: COLOR_WHITE,
@@ -382,21 +444,18 @@ function buildRateTable(group: PayrollRateGroup): Table {
   })
 }
 
-function buildRateSection(group: PayrollRateGroup): (Paragraph | Table)[] {
-  const wording = group.isFlatRate
-    ? `Les rencontres ci-dessous sont rémunérées à ${group.label}.`
-    : `Les rencontres ci-dessous sont rémunérées à ${group.label}.`
-
+function buildRateSection(result: PayrollInvoiceData): (Paragraph | Table)[] {
+  if (result.lineItems.length === 0) return []
   return [
-    paragraph([run(wording, { bold: true, color: COLOR_MUTED })], {
+    paragraph([run('Honoraires professionnels', { bold: true, color: COLOR_MUTED })], {
       spacingBefore: 240,
       spacingAfter: 120,
     }),
-    buildRateTable(group),
+    buildRateTable(result),
   ]
 }
 
-function buildExtrasTable(result: ProfessionalPayrollResult): Table | null {
+function buildExtrasTable(result: PayrollInvoiceData): Table | null {
   const rows: TableRow[] = []
 
   if (result.travelFeesTotal > 0) {
@@ -429,7 +488,7 @@ function buildExtrasTable(result: ProfessionalPayrollResult): Table | null {
               bodyCell(String(item.count), TABLE_COLUMN_WIDTHS[1], {
                 alignment: AlignmentType.CENTER,
               }),
-              bodyCell(formatCurrency(item.totalPay / item.count), TABLE_COLUMN_WIDTHS[2], {
+              bodyCell(formatCurrency(item.unitPay), TABLE_COLUMN_WIDTHS[2], {
                 alignment: AlignmentType.RIGHT,
               }),
               bodyCell(formatCurrency(item.totalPay), TABLE_COLUMN_WIDTHS[3], {
@@ -444,7 +503,7 @@ function buildExtrasTable(result: ProfessionalPayrollResult): Table | null {
 
   if (rows.length === 0) return null
 
-  const totalExtras = result.travelFeesTotal + result.cancellationFeesTotal
+  const totalExtras = decimalSum([result.travelFeesTotal, result.cancellationFeesTotal])
 
   return new Table({
     width: { size: TABLE_WIDTH, type: WidthType.DXA },
@@ -480,16 +539,16 @@ function buildExtrasTable(result: ProfessionalPayrollResult): Table | null {
   })
 }
 
-function buildPaymentSummary(result: ProfessionalPayrollResult, period: InvoicePeriod): Table {
-  const totalLines = result.rateGroups.map((group) =>
+function buildPaymentSummary(result: PayrollInvoiceData, period: InvoicePeriod): Table {
+  const totalLines = result.lineItems.length > 0 ? [
     paragraph(
       [
-        run(`${group.label} : `, { bold: true, color: COLOR_TEXT }),
-        run(formatCurrency(group.totalPay), { bold: true, color: COLOR_ACCENT }),
+        run('Honoraires professionnels : ', { bold: true, color: COLOR_TEXT }),
+        run(formatCurrency(result.meetingsPay), { bold: true, color: COLOR_ACCENT }),
       ],
       { spacingAfter: 40 }
     )
-  )
+  ] : []
 
   if (result.travelFeesTotal > 0) {
     totalLines.push(
@@ -560,7 +619,7 @@ function buildPaymentSummary(result: ProfessionalPayrollResult, period: InvoiceP
   })
 }
 
-function buildSignatureSection(result: ProfessionalPayrollResult, period: InvoicePeriod): Table {
+function buildSignatureSection(result: PayrollInvoiceData, period: InvoicePeriod): Table {
   const { professional } = result
   const title = professional.professionalTitle ?? 'Professionnel'
 
@@ -658,7 +717,28 @@ export function generatePayrollInvoiceDocument(
   logoData: Uint8Array | null,
   options?: PayrollInvoiceOptions
 ): Document {
-  const extrasTable = buildExtrasTable(result)
+  validateInvoicePeriod(result, period, options)
+  const invoice = toPayrollInvoiceData(result)
+  return generatePayrollInvoiceDocumentFromData(invoice, period, logoData, options)
+}
+
+// Les régénérations utilisent le snapshot immuable, jamais le profil ou le calcul courant.
+export function generatePayrollInvoiceDocumentFromData(
+  invoice: PayrollInvoiceData, period: InvoicePeriod, logoData: Uint8Array | null,
+  options?: PayrollInvoiceOptions
+): Document {
+  validatePayrollPeriod(period)
+  if (!isPayrollDate(period.dueDate)) throw new Error('Date d’échéance invalide.')
+  if (invoice.lineItems.some(item => !Number.isFinite(item.quantity) || item.quantity <= 0 || !Number.isFinite(item.totalPay) || item.totalPay < 0) ||
+    decimalSum(invoice.lineItems.map(item => item.totalPay)) !== invoice.meetingsPay ||
+    decimalSum(invoice.cancellationLineItems.map(item => item.totalPay)) !== invoice.cancellationFeesTotal ||
+    !Number.isFinite(invoice.travelFeesTotal) || invoice.travelFeesTotal < 0) {
+    throw new Error('Quantités ou montants de facture incohérents : émission bloquée.')
+  }
+  if (decimalSum([invoice.meetingsPay, invoice.cancellationFeesTotal, invoice.travelFeesTotal]) !== invoice.grandTotal) {
+    throw new Error('Les postes de la facture ne correspondent pas au total.')
+  }
+  const extrasTable = buildExtrasTable(invoice)
 
   return new Document({
     background: { color: COLOR_PAGE },
@@ -671,10 +751,14 @@ export function generatePayrollInvoiceDocument(
           },
         },
         children: [
-          buildHeaderTable(result, period, logoData, options),
+          buildHeaderTable(invoice, period, logoData, options),
+          paragraph([run(options?.record
+            ? `Identifiant : ${options.record.id} — Version ${options.record.version}${options.record.version > 1 ? ' — RECTIFICATIF NON SIGNÉ — nouvelle approbation requise' : ''}`
+            : 'BROUILLON NON ÉMIS — aucune signature antérieure ne vaut approbation', { size: 14 })]),
+          ...(options?.record?.reason ? [paragraph([run(`Motif du rectificatif : ${options.record.reason}`)])] : []),
           emptyLine(),
-          buildPartyTable(result),
-          ...result.rateGroups.flatMap((group) => buildRateSection(group)),
+          buildPartyTable(invoice),
+          ...buildRateSection(invoice),
           ...(extrasTable
             ? [
                 paragraph([run('Frais additionnels', { bold: true, color: COLOR_MUTED })], {
@@ -685,9 +769,9 @@ export function generatePayrollInvoiceDocument(
               ]
             : []),
           emptyLine(),
-          buildPaymentSummary(result, period),
+          buildPaymentSummary(invoice, period),
           emptyLine(),
-          buildSignatureSection(result, period),
+          buildSignatureSection(invoice, period),
           paragraph(
             [
               run(`${CLINIC_NAME} - ${CLINIC_ADDRESS}, ${CLINIC_CITY} - ${CLINIC_PHONE}`, {
@@ -708,8 +792,13 @@ export async function createPayrollInvoiceBlob(
   period: InvoicePeriod,
   options?: PayrollInvoiceOptions
 ): Promise<Blob> {
+  validateInvoicePeriod(result, period, options)
   const logoData = await loadLogoImage()
-  const doc = generatePayrollInvoiceDocument(result, period, logoData, options)
+  const registeredSnapshot = options?.record?.snapshot
+  if (options?.record && !registeredSnapshot) throw new Error('Téléchargez les octets archivés de l’original historique; aucune régénération de l’original.')
+  const doc = registeredSnapshot
+    ? generatePayrollInvoiceDocumentFromData(registeredSnapshot.invoice, registeredSnapshot.period, logoData, options)
+    : generatePayrollInvoiceDocument(result, period, logoData, options)
 
   return Packer.toBlob(doc)
 }
