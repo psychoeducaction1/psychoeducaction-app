@@ -12,6 +12,10 @@
   decisions, controles et blocages; documenter les connaissances durables dans le depot.
 
 ## Commandes
+
+Coordination clinique : `tests/clinicalCoordination.test.ts` et
+`scripts/test-clinical-coordination.mjs` avec `PGLITE_MODULE_PATH` (base en mémoire).
+Activation et limites : `docs/clinical-coordination.md`.
 | Commande | Portee |
 | --- | --- |
 | `npm run dev` | Serveur local; autre port si necessaire. |

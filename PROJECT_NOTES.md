@@ -28,6 +28,9 @@ pas une verification des migrations, variables ou balises presentes en productio
 - `.github/workflows/verify.yml`: controles sur PR et push main, sans deploiement.
 
 ## Roles et acces
+- Coordination clinique (25 octobre 2026) : espace privé pour le compte d'Ève et
+  la direction autorisée, tâches et calendrier; adjointes exclues.
+  Procédure, activation et contrôles : `docs/clinical-coordination.md`.
 - Roles de navigation: `direction`, `professionnel`. L'espace employe marketing est retire.
 - Super administrateur = privilege associe a un compte configure et au role direction,
   pas un quatrieme role; voir `lib/superAdmin.ts` et `lib/superAdminServer.ts`.

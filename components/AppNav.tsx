@@ -30,6 +30,7 @@ import {
 } from '@/lib/payrollAccess'
 import { isSuperAdmin } from '@/lib/superAdmin'
 import { isAdministrativeTaskAuthorized } from '@/lib/administrativeTaskAccess'
+import { loadClinicalCoordinationAccess } from '@/lib/clinicalCoordinationClient'
 import { canAccessClinicalNotes } from '@/lib/clinicalNotesAccess'
 
 type UserRole = 'direction' | 'professionnel' | null
@@ -42,6 +43,7 @@ type NavLink = {
 export function AppNav() {
   const pathname = usePathname()
   const router = useRouter()
+  const [coordinationAuthorized, setCoordinationAuthorized] = useState(false)
   const [role, setRole] = useState<UserRole>(null)
   const [profileName, setProfileName] = useState('')
   const [payrollAuthorized, setPayrollAuthorized] = useState(false)
@@ -87,6 +89,8 @@ export function AppNav() {
       setAdministrativeTasksAuthorized(
         isAdministrativeTaskAuthorized({ email: user.email }, data)
       )
+      const coordination = await loadClinicalCoordinationAccess()
+      if (!cancelled) setCoordinationAuthorized(Boolean(coordination.context))
 
     }
 
@@ -183,6 +187,8 @@ export function AppNav() {
           ]
         : []
 
+  if (coordinationAuthorized) navLinks.push({ href: '/coordination-clinique', label: 'Coordination clinique', icon: ListTodo }, { href: '/coordination-clinique/calendrier', label: 'Disponibilités coordination', icon: CalendarDays })
+
   const brandHref =
     displayRole === 'professionnel'
       ? '/professionnel'
@@ -198,7 +204,9 @@ export function AppNav() {
     navLinks.map((link) => {
       const Icon = link.icon
       const isActive =
-        link.href === '/prise-de-notes'
+        link.href.startsWith('/coordination-clinique')
+          ? pathname === link.href
+          : link.href === '/prise-de-notes'
           ? pathname === '/prise-de-notes'
           : displayRole === 'direction'
           ? link.href === '/direction'

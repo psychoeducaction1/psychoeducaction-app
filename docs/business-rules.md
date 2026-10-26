@@ -4,6 +4,12 @@ Reference du code au 12 octobre 2026. Conserver ces regles lors d'une correction
 si la demande les change, mettre a jour implementation, tests et cette reference.
 Ne pas recopier d'identites, de courriels prives ou de donnees de dossiers ici.
 
+## Coordination clinique
+- Accès supplémentaire par UUID explicite au compte professionnel d'Ève et au
+  compte direction autorisé. Le rôle direction seul ne suffit pas aux adjointes.
+  Tables, API et fichiers privés, sans changement de rôle ni de rémunération.
+  Voir `docs/clinical-coordination.md`.
+
 ## Assignations et transitions
 - `assigned_clients.is_active`: `null` = service a confirmer, `true` = service pris,
   `false` = service non pris. `contacted` distingue non contacte et attente de reponse.
