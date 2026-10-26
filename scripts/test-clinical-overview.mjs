@@ -29,6 +29,9 @@ try{
  await db.exec(await readFile('supabase/clinical-coordination-workspace.sql','utf8'))
  await db.exec(`insert into clinical_coordination_staff(profile_id,full_name,email)values('${coordinator}','Coordinatrice fictive','coordinator@example.invalid')`)
  await db.exec(await readFile('supabase/clinical-coordination-readonly-overview.sql','utf8'))
+ await db.exec(`alter table waiting_list_clients add column first_requester_name text,add column second_requester_name text,add column meeting_type text,add column contact_phone text,add column contact_emails text[],add column contact_phones text[],add column assigned_professional_id uuid,add column assigned_at timestamptz;
+ alter table assignment_requests add column assigned_count integer,add column remaining_count integer;`)
+ await db.exec(await readFile('supabase/clinical-direction-readonly-pages.sql','utf8'))
  const as=async(id,run)=>{await db.exec(`set role authenticated;select set_config('request.jwt.claims','${JSON.stringify({sub:id,role:'authenticated'})}',false)`);try{return await run()}finally{await db.exec('reset role')}}
  const read=async view=>(await db.query('select read_clinical_overview($1) as data',[view])).rows[0].data
  await as(coordinator,async()=>{
@@ -38,15 +41,24 @@ try{
   assert.equal((await db.query(`select count(*)::int as n from profiles`)).rows[0].n,1,'Pas de lecture générale des profils')
   for(const table of ['profiles','waiting_list_clients','assignment_requests','assigned_clients'])assert.equal((await db.query(`select has_table_privilege('authenticated','${table}','INSERT,UPDATE,DELETE') as permitted`)).rows[0].permitted,false,'Aucun nouveau droit de mutation')
   await assert.rejects(read('other'),/Vue invalide/)
+  const full=(await db.query("select read_clinical_direction_pages('direction-waiting-list') as data")).rows[0].data
+  assert.equal(full.clients[0].contact_email,'private@example.invalid')
+  assert.equal(full.clients[0].internal_notes,'NE PAS EXPOSER','Les notes de dossier sont visibles dans la nouvelle page complète autorisée')
+  assert.equal(full.professionals.length,2)
+  assert.doesNotMatch(JSON.stringify(full.professionals),/private_salary|999/)
+  const fullDashboard=(await db.query("select read_clinical_direction_pages('direction-dashboard') as data")).rows[0].data
+  assert.equal(fullDashboard.assignedClients.length,3,'Annulation exclue comme dans le dashboard direction')
+  assert.equal(fullDashboard.requests.length,1)
+  await assert.rejects(db.query("select read_clinical_direction_pages('profiles')"),/Vue invalide/)
  })
- await as(other,async()=>{await assert.rejects(read('preferences'),/Accès refusé/)})
+ await as(other,async()=>{await assert.rejects(read('preferences'),/Accès refusé/);await assert.rejects(db.query("select read_clinical_direction_pages('direction-waiting-list')"),/Accès refusé/)})
  await as(director,async()=>{assert.equal((await read('preferences')).professionals.length,2)})
  await db.exec(`insert into assignment_processes values('${client}','interested')`)
  await as(coordinator,async()=>{assert.equal((await read('waiting-list')).waitingList.length,0)})
  await db.exec(`update assignment_processes set status='returned'`)
  await as(coordinator,async()=>{assert.equal((await read('waiting-list')).waitingList.length,1)})
  await db.exec(`update clinical_coordination_staff set is_active=false`)
- await as(coordinator,async()=>{await assert.rejects(read('dashboard'),/Accès refusé/)})
+ await as(coordinator,async()=>{await assert.rejects(read('dashboard'),/Accès refusé/);await assert.rejects(db.query("select read_clinical_direction_pages('direction-dashboard')"),/Accès refusé/)})
  await db.exec(`update clinical_coordination_staff set is_active=true;update profiles set platform_access_enabled=false where id='${coordinator}'`)
  await as(coordinator,async()=>{await assert.rejects(read('waiting-list'),/Accès refusé/)})
  await db.exec('set role anon');await assert.rejects(read('preferences'),/permission denied/);await db.exec('reset role')

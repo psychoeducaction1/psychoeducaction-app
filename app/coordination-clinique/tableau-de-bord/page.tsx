@@ -1,2 +1,2 @@
-import { ClinicalOverview } from '@/components/ClinicalOverview'
-export default function Page() { return <ClinicalOverview view="dashboard" /> }
+import { DirectionDashboard } from '@/components/DirectionDashboard'
+export default function Page() { return <DirectionDashboard readOnly /> }

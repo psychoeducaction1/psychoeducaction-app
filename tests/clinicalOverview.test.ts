@@ -25,3 +25,8 @@ test('API de consultation : identité, appartenance explicite, panne et vues bor
   const r = spawnSync(process.execPath, ['--import', './tests/register-aliases.mjs', '--experimental-strip-types', 'tests/helpers/clinicalOverviewRoutes.mjs'], { encoding: 'utf8', windowsHide: true, timeout: 15000 })
   assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`)
 })
+
+test('les vrais composants direction partagés rendent la consultation complète sans action pour Ève', () => {
+  const r = spawnSync(process.execPath, ['--import', './tests/register-aliases.mjs', '--experimental-strip-types', 'tests/helpers/directionReadonlyRender.mjs'], { encoding: 'utf8', windowsHide: true, timeout: 20000 })
+  assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`)
+})

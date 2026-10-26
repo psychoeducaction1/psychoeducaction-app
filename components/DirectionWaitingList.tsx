@@ -1,0 +1,3742 @@
+﻿'use client'
+
+import { type FormEvent, type RefObject, useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { loadClinicalDirectionPage } from '@/lib/clinicalDirectionClient'
+import { AppNav } from '@/components/AppNav'
+import {
+  EmailComposerModal,
+  type EmailComposerDrafts,
+  type EmailComposerSection,
+} from '@/components/EmailComposerModal'
+import {
+  Badge,
+  type BadgeTone,
+  buttonClass,
+  EmptyState,
+  tableBodyClass,
+  tableCellClass,
+  tableClass,
+  tableHeadCellClass,
+  tableHeaderClass,
+  tableRowClass,
+  tableShellClass,
+} from '@/components/ui/index'
+import { supabase } from '@/lib/supabaseClient'
+import { isSuperAdmin } from '@/lib/superAdmin'
+import {
+  getAssignmentRequestMetrics,
+  logAudit,
+} from '@/app/professionnel/shared'
+import {
+  createAssignmentFromWaitingListClient,
+  type ActiveWaitingListAssignmentRequest,
+} from '@/lib/waitingListAssignment'
+import {
+  buildClientAssignmentEmailTemplate,
+  buildProfessionalAssignmentEmailTemplate,
+} from '@/lib/assignmentEmailTemplates'
+import {
+  getSuggestedProfessionals,
+  type MatchingProfessional,
+} from '@/lib/professionalMatching'
+import type { ProfessionalStructuredPreferencesRow } from '@/lib/professionalPreferences'
+import { createWaitingListClient } from '@/lib/waitingListDuplicates'
+import {
+  getActiveAssignmentProcessClientIds,
+  getWaitingListClientSections,
+} from '@/lib/waitingListFilters'
+
+type WaitingListClient = {
+  id: string
+  created_at: string | null
+  contact_date: string | null
+  status: string | null
+  priority_level: string | null
+  service_requested: string | null
+  client_name: string | null
+  first_requester_name: string | null
+  second_requester_name: string | null
+  birth_date: string | null
+  city: string | null
+  meeting_modality: string[] | null
+  meeting_type: string | null
+  availability: string | null
+  contact_email: string | null
+  contact_phone: string | null
+  contact_emails: string[] | null
+  contact_phones: string[] | null
+  consultation_reason: string | null
+  internal_notes: string | null
+  assigned_professional_id: string | null
+  assigned_at: string | null
+}
+
+type Professional = MatchingProfessional &
+  ProfessionalStructuredPreferencesRow & {
+    id: string
+    full_name: string | null
+    email: string | null
+    professional_title: string | null
+    professional_phone: string | null
+    professional_license_number: string | null
+  }
+
+type AuditActor = {
+  id: string
+  role: string | null
+  name: string | null
+}
+
+type ActiveAssignmentRequest = ActiveWaitingListAssignmentRequest
+
+type PendingEmailNotification = {
+  assignedClientId: string
+  professionalId: string
+  professionalName: string
+  clientName: string | null
+  clientEmail: string | null
+  waitingListClientId: string
+  assignmentRequestId: string
+  previousPendingCount: number | null
+}
+
+
+type WaitingListForm = {
+  status: string
+  priority_level: string
+  contact_date: string
+  service_requested: string
+  client_name: string
+  first_requester_name: string
+  second_requester_name: string
+  birth_date: string
+  address: string
+  meeting_modality: string[]
+  availability: string
+  contact_email: string
+  contact_phone: string
+  contact_emails: string[]
+  contact_phones: string[]
+  consultation_reason: string
+  internal_notes: string
+}
+
+const waitingListSelect =
+  'id, created_at, contact_date, status, priority_level, service_requested, client_name, first_requester_name, second_requester_name, birth_date, city, meeting_modality, meeting_type, availability, contact_email, contact_phone, contact_emails, contact_phones, consultation_reason, internal_notes, assigned_professional_id, assigned_at'
+
+const CLIENTS_PER_PAGE = 10
+const HISTORY_CLIENTS_PER_PAGE = 5
+
+const statusOptions = [
+  'waiting',
+  'assignment_in_progress',
+  'assigned',
+  'active',
+  'closed',
+  'blacklisted',
+]
+
+const statusLabels: Record<string, string> = {
+  waiting: 'En attente',
+  assignment_in_progress: 'Assignation en cours',
+  assigned: 'Assigné',
+  active: 'Actif',
+  closed: 'Fermé',
+  blacklisted: 'Liste noire',
+}
+
+const statusTones: Record<string, BadgeTone> = {
+  waiting: 'warning',
+  assignment_in_progress: 'neutral',
+  assigned: 'success',
+  active: 'success',
+  closed: 'muted',
+  blacklisted: 'danger',
+}
+
+const priorityOptions = ['normal', 'urgent', 'existing_or_transfer']
+
+const priorityLabels: Record<string, string> = {
+  normal: 'Normal',
+  urgent: 'Urgent',
+  existing_or_transfer: 'Existant / transfert',
+}
+
+const priorityTones: Record<string, BadgeTone> = {
+  normal: 'neutral',
+  urgent: 'danger',
+  existing_or_transfer: 'warning',
+}
+
+const prioritySortOrder: Record<string, number> = {
+  urgent: 0,
+  existing_or_transfer: 1,
+  normal: 2,
+}
+
+const serviceOptions = [
+  'Intervention psychosociale',
+  'Psychoéducation',
+  'Psychothérapie',
+  'Évaluation psychologique',
+]
+
+const meetingModalityOptions = [
+  'Présentiel — bureau de Longueuil',
+  'Présentiel — bureau de Montréal',
+  'Visioconférence',
+  'À domicile',
+]
+
+const emptyWaitingListForm: WaitingListForm = {
+  status: 'waiting',
+  priority_level: 'normal',
+  contact_date: '',
+  service_requested: serviceOptions[0],
+  client_name: '',
+  first_requester_name: '',
+  second_requester_name: '',
+  birth_date: '',
+  address: '',
+  meeting_modality: [],
+  availability: '',
+  contact_email: '',
+  contact_phone: '',
+  contact_emails: [''],
+  contact_phones: [''],
+  consultation_reason: '',
+  internal_notes: '',
+}
+
+function formatText(value: string | null | undefined): string {
+  return value?.trim() || '-'
+}
+
+function nullableText(value: string): string | null {
+  const trimmedValue = value.trim()
+  return trimmedValue || null
+}
+
+function normalizeTextList(values: Array<string | null | undefined>): string[] {
+  const uniqueValues = new Set<string>()
+
+  values.forEach((value) => {
+    const trimmedValue = value?.trim()
+
+    if (trimmedValue) {
+      uniqueValues.add(trimmedValue)
+    }
+  })
+
+  return Array.from(uniqueValues)
+}
+
+function getContactEmails(client: WaitingListClient): string[] {
+  return normalizeTextList([
+    client.contact_email,
+    ...(client.contact_emails ?? []),
+  ])
+}
+
+function getContactPhones(client: WaitingListClient): string[] {
+  return normalizeTextList([
+    client.contact_phone,
+    ...(client.contact_phones ?? []),
+  ])
+}
+
+// Défensif : tant que la migration SQL (single texte -> tableau) n'est pas
+// exécutée, la colonne peut encore renvoyer une simple chaîne.
+function getMeetingModalities(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter(
+      (item): item is string => typeof item === 'string' && item.trim().length > 0
+    )
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    return [value.trim()]
+  }
+
+  return []
+}
+
+function formatModalities(value: unknown): string {
+  const modalities = getMeetingModalities(value)
+  return modalities.length > 0 ? modalities.join(', ') : '-'
+}
+
+function formatDate(value: string | null | undefined): string {
+  if (!value) return '-'
+
+  const date = new Date(value.includes('T') ? value : `${value}T00:00:00`)
+
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+
+  return new Intl.DateTimeFormat('fr-CA', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  }).format(date)
+}
+
+function calculateAge(
+  birthDateValue: string | null | undefined,
+  referenceDate = new Date()
+): number | null {
+  if (!birthDateValue) return null
+
+  const datePart = birthDateValue.slice(0, 10)
+  const [birthYear, birthMonth, birthDay] = datePart.split('-').map(Number)
+
+  if (!birthYear || !birthMonth || !birthDay) return null
+
+  const birthDate = new Date(birthYear, birthMonth - 1, birthDay)
+
+  if (
+    Number.isNaN(birthDate.getTime()) ||
+    birthDate.getFullYear() !== birthYear ||
+    birthDate.getMonth() !== birthMonth - 1 ||
+    birthDate.getDate() !== birthDay ||
+    birthDate > referenceDate
+  ) {
+    return null
+  }
+
+  let age = referenceDate.getFullYear() - birthYear
+  const birthdayHasPassed =
+    referenceDate.getMonth() > birthMonth - 1 ||
+    (referenceDate.getMonth() === birthMonth - 1 &&
+      referenceDate.getDate() >= birthDay)
+
+  if (!birthdayHasPassed) age -= 1
+
+  return age
+}
+
+function formatBirthDateWithAge(value: string | null | undefined): string {
+  if (!value) return '-'
+
+  const age = calculateAge(value)
+  const datePart = value.slice(0, 10)
+  const formattedDate = /^\d{4}-\d{2}-\d{2}$/.test(datePart)
+    ? datePart
+    : formatDate(value)
+
+  return age === null ? formattedDate : `${formattedDate} (${age} ans)`
+}
+
+function formatRequester(client: WaitingListClient): string {
+  return (
+    [client.first_requester_name, client.second_requester_name]
+      .map((value) => value?.trim())
+      .filter(Boolean)
+      .join(' / ') || '-'
+  )
+}
+
+function getContactSortValue(client: WaitingListClient): number {
+  const fallbackDate = client.contact_date ?? client.created_at
+
+  if (!fallbackDate) return Number.MAX_SAFE_INTEGER
+
+  const date = new Date(
+    fallbackDate.includes('T') ? fallbackDate : `${fallbackDate}T00:00:00`
+  )
+
+  return Number.isNaN(date.getTime()) ? Number.MAX_SAFE_INTEGER : date.getTime()
+}
+
+function sortClientsByContactDate(
+  clientsToSort: WaitingListClient[]
+): WaitingListClient[] {
+  return [...clientsToSort].sort(
+    (firstClient, secondClient) =>
+      getContactSortValue(firstClient) - getContactSortValue(secondClient)
+  )
+}
+
+function sortWaitingClients(clientsToSort: WaitingListClient[]): WaitingListClient[] {
+  return [...clientsToSort].sort((firstClient, secondClient) => {
+    const firstPriority =
+      prioritySortOrder[firstClient.priority_level ?? ''] ?? Number.MAX_SAFE_INTEGER
+    const secondPriority =
+      prioritySortOrder[secondClient.priority_level ?? ''] ?? Number.MAX_SAFE_INTEGER
+
+    if (firstPriority !== secondPriority) {
+      return firstPriority - secondPriority
+    }
+
+    return getContactSortValue(firstClient) - getContactSortValue(secondClient)
+  })
+}
+
+function normalizeSearchValue(value: string | null | undefined): string {
+  return value?.trim().toLowerCase() ?? ''
+}
+
+function clientMatchesSearch(
+  client: WaitingListClient,
+  normalizedSearchQuery: string
+): boolean {
+  if (!normalizedSearchQuery) return true
+
+  return [
+    client.client_name,
+    client.first_requester_name,
+    client.second_requester_name,
+    ...getContactEmails(client),
+    ...getContactPhones(client),
+    client.city,
+    client.service_requested,
+    ...getMeetingModalities(client.meeting_modality),
+  ]
+    .map(normalizeSearchValue)
+    .some((value) => value.includes(normalizedSearchQuery))
+}
+
+function isThirdPartyClient(client: WaitingListClient): boolean {
+  const searchableText = normalizeSearchValue(
+    `${client.internal_notes ?? ''} ${client.consultation_reason ?? ''} ${client.service_requested ?? ''}`
+  )
+  return /\b(ivac|pae|cnesst)\b/.test(searchableText)
+}
+
+function normalizeOption(value: string | null, options: string[]): string {
+  return value && options.includes(value) ? value : options[0]
+}
+
+function clientToForm(client: WaitingListClient): WaitingListForm {
+  return {
+    status: statusOptions.includes(client.status ?? '')
+      ? client.status ?? 'waiting'
+      : 'waiting',
+    priority_level: priorityOptions.includes(client.priority_level ?? '')
+      ? client.priority_level ?? 'normal'
+      : 'normal',
+    contact_date: client.contact_date ?? '',
+    service_requested: normalizeOption(client.service_requested, serviceOptions),
+    client_name: client.client_name ?? '',
+    first_requester_name: client.first_requester_name ?? '',
+    second_requester_name: client.second_requester_name ?? '',
+    birth_date: client.birth_date ?? '',
+    address: client.city ?? '',
+    meeting_modality: getMeetingModalities(client.meeting_modality).filter(
+      (modality) => meetingModalityOptions.includes(modality)
+    ),
+    availability: client.availability ?? '',
+    contact_email: getContactEmails(client)[0] ?? '',
+    contact_phone: getContactPhones(client)[0] ?? '',
+    contact_emails:
+      getContactEmails(client).length > 0 ? getContactEmails(client) : [''],
+    contact_phones:
+      getContactPhones(client).length > 0 ? getContactPhones(client) : [''],
+    consultation_reason: client.consultation_reason ?? '',
+    internal_notes: client.internal_notes ?? '',
+  }
+}
+
+function buildPayload(form: WaitingListForm) {
+  const contactEmails = normalizeTextList(form.contact_emails)
+  const contactPhones = normalizeTextList(form.contact_phones)
+
+  return {
+    status: form.status,
+    priority_level: form.priority_level,
+    contact_date: nullableText(form.contact_date),
+    service_requested: form.service_requested,
+    client_name: nullableText(form.client_name),
+    first_requester_name: nullableText(form.first_requester_name),
+    second_requester_name: nullableText(form.second_requester_name),
+    birth_date: nullableText(form.birth_date),
+    city: nullableText(form.address),
+    meeting_modality: form.meeting_modality.length > 0 ? form.meeting_modality : null,
+    availability: nullableText(form.availability),
+    contact_email: contactEmails[0] ?? null,
+    contact_phone: contactPhones[0] ?? null,
+    contact_emails: contactEmails.length > 0 ? contactEmails : null,
+    contact_phones: contactPhones.length > 0 ? contactPhones : null,
+    consultation_reason: nullableText(form.consultation_reason),
+    internal_notes: nullableText(form.internal_notes),
+  }
+}
+
+export function DirectionWaitingList({ readOnly = false }: { readOnly?: boolean }) {
+  const router = useRouter()
+  const editSectionRef = useRef<HTMLElement | null>(null)
+  const assignmentSectionRef = useRef<HTMLElement | null>(null)
+  const waitingSectionRef = useRef<HTMLElement | null>(null)
+  const historySectionRef = useRef<HTMLElement | null>(null)
+  const [clients, setClients] = useState<WaitingListClient[]>([])
+  const [auditActor, setAuditActor] = useState<AuditActor | null>(null)
+  const [canUseSuperAdminActions, setCanUseSuperAdminActions] = useState(false)
+  const [professionals, setProfessionals] = useState<Professional[]>([])
+  const [activeRequests, setActiveRequests] = useState<ActiveAssignmentRequest[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState<WaitingListForm>(emptyWaitingListForm)
+  const [editingClientId, setEditingClientId] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState<WaitingListForm>(emptyWaitingListForm)
+  const [assigningClientId, setAssigningClientId] = useState<string | null>(null)
+  const [selectedProfessionalId, setSelectedProfessionalId] = useState('')
+  const [savingClient, setSavingClient] = useState(false)
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [savingAssignment, setSavingAssignment] = useState(false)
+  const [permanentlyDeletingClientId, setPermanentlyDeletingClientId] =
+    useState('')
+  const [restoringWaitingListClientId, setRestoringWaitingListClientId] =
+    useState('')
+  const [markingOffPlatformClientId, setMarkingOffPlatformClientId] =
+    useState('')
+  const [startingAssignmentProcessClientId, setStartingAssignmentProcessClientId] =
+    useState('')
+  const [activeAssignmentProcessClientIds, setActiveAssignmentProcessClientIds] =
+    useState<Set<string>>(new Set())
+  const [formMessage, setFormMessage] = useState('')
+  const [formError, setFormError] = useState('')
+  const [waitingPage, setWaitingPage] = useState(0)
+  const [historyPage, setHistoryPage] = useState(0)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [serviceFilter, setServiceFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [minimumAgeFilter, setMinimumAgeFilter] = useState('')
+  const [maximumAgeFilter, setMaximumAgeFilter] = useState('')
+  const [modalityFilter, setModalityFilter] = useState<string[]>([])
+  const [professionalFilter, setProfessionalFilter] = useState('all')
+  const [hideThirdPartyClients, setHideThirdPartyClients] = useState(false)
+  const [expandedMotifIds, setExpandedMotifIds] = useState<Record<string, boolean>>({})
+  const [suggestionClient, setSuggestionClient] = useState<WaitingListClient | null>(null)
+  const [suggestionProfessionalId, setSuggestionProfessionalId] = useState('')
+  const [suggestionRequestCount, setSuggestionRequestCount] = useState('1')
+  const [savingSuggestionAction, setSavingSuggestionAction] = useState(false)
+  const [suggestionNotifyProfessional, setSuggestionNotifyProfessional] = useState(false)
+  const [suggestionNotifyClient, setSuggestionNotifyClient] = useState(false)
+  const [administrativeTaskClient, setAdministrativeTaskClient] =
+    useState<WaitingListClient | null>(null)
+  const [administrativeTaskProfessionalId, setAdministrativeTaskProfessionalId] =
+    useState('')
+  const [savingAdministrativeTask, setSavingAdministrativeTask] = useState(false)
+  const [notifyProfessional, setNotifyProfessional] = useState(false)
+  const [notifyClient, setNotifyClient] = useState(false)
+  const [emailComposerDrafts, setEmailComposerDrafts] =
+    useState<EmailComposerDrafts | null>(null)
+  const [pendingEmailNotification, setPendingEmailNotification] =
+    useState<PendingEmailNotification | null>(null)
+  const [sendingComposedEmails, setSendingComposedEmails] = useState(false)
+
+  useEffect(() => {
+    const loadWaitingList = async () => {
+      setLoading(true)
+      setError(null)
+      if (readOnly) {
+        setAuditActor(null); setCanUseSuperAdminActions(false); setEditingClientId(null); setAssigningClientId(null)
+        try {
+          const snapshot = await loadClinicalDirectionPage<{ clients: WaitingListClient[]; professionals: Professional[]; processes: { waiting_list_client_id: string; status: string }[] }>('direction-waiting-list')
+          setClients(sortClientsByContactDate(snapshot.clients)); setProfessionals(snapshot.professionals)
+          setActiveAssignmentProcessClientIds(getActiveAssignmentProcessClientIds(snapshot.processes)); setActiveRequests([])
+        } catch (e) { setClients([]); setProfessionals([]); setError(e instanceof Error ? e.message : 'Consultation indisponible.') }
+        setLoading(false); return
+      }
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser()
+
+      if (userError || !user) {
+        router.push('/login')
+        return
+      }
+
+      const { data: currentProfile, error: currentProfileError } = await supabase
+        .from('profiles')
+        .select('role, full_name, email')
+        .eq('id', user.id)
+        .limit(1)
+        .maybeSingle()
+
+      if (currentProfileError || currentProfile?.role !== 'direction') {
+        router.push('/')
+        return
+      }
+
+      setAuditActor({
+        id: user.id,
+        role: currentProfile.role,
+        name: currentProfile.full_name ?? currentProfile.email ?? null,
+      })
+      setCanUseSuperAdminActions(isSuperAdmin(user, currentProfile))
+
+      const { data, error: waitingListError } = await supabase
+        .from('waiting_list_clients')
+        .select(waitingListSelect)
+        .order('contact_date', { ascending: true })
+        .order('created_at', { ascending: true })
+
+      if (waitingListError) {
+        setError(waitingListError.message)
+        setLoading(false)
+        return
+      }
+
+      const loadedClients = (data ?? []) as WaitingListClient[]
+      setClients(sortClientsByContactDate(loadedClients))
+
+      const requestedClientId = new URLSearchParams(window.location.search).get('client')
+      const requestedClient = loadedClients.find(
+        (client) => client.id === requestedClientId
+      )
+      if (requestedClient) {
+        setEditingClientId(requestedClient.id)
+        setEditForm(clientToForm(requestedClient))
+      }
+
+      const { data: processData, error: processError } = await supabase
+        .from('assignment_processes')
+        .select('waiting_list_client_id, status')
+
+      if (processError) {
+        setError(processError.message)
+        setLoading(false)
+        return
+      }
+
+      setActiveAssignmentProcessClientIds(
+        getActiveAssignmentProcessClientIds(processData ?? [])
+      )
+
+      const { data: professionalsData, error: professionalsError } = await supabase
+        .from('profiles')
+        .select(
+          'id, full_name, email, professional_title, professional_phone, professional_license_number, pref_languages, pref_age_ranges, pref_client_groups, pref_service_types, pref_office_locations, pref_meeting_modes, pref_motifs, pref_exclusions, pref_matching_notes'
+        )
+        .eq('role', 'professionnel')
+        .eq('is_active', true)
+        .order('full_name', { ascending: true })
+
+      if (professionalsError) {
+        setError(professionalsError.message)
+        setLoading(false)
+        return
+      }
+
+      const activeProfessionals = (professionalsData ?? []) as Professional[]
+      setProfessionals(activeProfessionals)
+      setSelectedProfessionalId((currentValue) =>
+        currentValue || activeProfessionals[0]?.id || ''
+      )
+
+      const professionalIds = activeProfessionals.map(
+        (professional) => professional.id
+      )
+
+      if (professionalIds.length > 0) {
+        const requestsResponse = await supabase
+          .from('assignment_requests')
+          .select(
+            'id, professional_id, is_active, requested_count, assigned_count, remaining_count'
+          )
+          .eq('is_active', true)
+          .in('professional_id', professionalIds)
+          .order('created_at', { ascending: false })
+
+        if (requestsResponse.error) {
+          setError(requestsResponse.error.message)
+          setLoading(false)
+          return
+        }
+
+        const requests =
+          (requestsResponse.data ?? []) as ActiveAssignmentRequest[]
+        const requestIds = requests.map((request) => request.id)
+
+        const assignedClientsResponse =
+          requestIds.length > 0
+            ? await supabase
+                .from('assigned_clients')
+                .select('assignment_request_id, is_active')
+                .in('assignment_request_id', requestIds)
+                .is('canceled_at', null)
+            : { data: [], error: null }
+
+        if (assignedClientsResponse.error) {
+          setError(assignedClientsResponse.error.message)
+          setLoading(false)
+          return
+        }
+
+        const serviceTakenCountByRequestId = new Map<string, number>()
+        const occupiedCountByRequestId = new Map<string, number>()
+
+        ;(
+          (assignedClientsResponse.data ?? []) as Array<{
+            assignment_request_id: string | null
+            is_active: boolean | null
+          }>
+        ).forEach((client) => {
+          if (!client.assignment_request_id) return
+
+          if (client.is_active === true) {
+            serviceTakenCountByRequestId.set(
+              client.assignment_request_id,
+              (serviceTakenCountByRequestId.get(client.assignment_request_id) ??
+                0) + 1
+            )
+            occupiedCountByRequestId.set(
+              client.assignment_request_id,
+              (occupiedCountByRequestId.get(client.assignment_request_id) ?? 0) +
+                1
+            )
+          } else if (client.is_active === null) {
+            occupiedCountByRequestId.set(
+              client.assignment_request_id,
+              (occupiedCountByRequestId.get(client.assignment_request_id) ?? 0) +
+                1
+            )
+          }
+        })
+
+        setActiveRequests(
+          requests
+            .map((request) => {
+              const assignedCount = serviceTakenCountByRequestId.get(request.id) ?? 0
+              const occupiedCount = occupiedCountByRequestId.get(request.id) ?? 0
+              const requestedCount = Math.max(request.requested_count ?? 0, 0)
+              const remainingCount = Math.max(requestedCount - occupiedCount, 0)
+
+              return {
+                ...request,
+                assigned_count: assignedCount,
+                occupied_count: occupiedCount,
+                remaining_count: remainingCount,
+              }
+            })
+            .filter((request) =>
+              getAssignmentRequestMetrics({
+                isActive: request.is_active,
+                requestedCount: request.requested_count,
+                acceptedCount: request.assigned_count,
+                occupiedCount: request.occupied_count,
+                remainingCount: request.remaining_count,
+              }).isActive
+            )
+        )
+      } else {
+        setActiveRequests([])
+      }
+
+      setLoading(false)
+    }
+
+    loadWaitingList()
+  }, [router, readOnly])
+
+  useEffect(() => {
+    if (!assigningClientId) return
+
+    window.setTimeout(() => {
+      assignmentSectionRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      })
+    }, 0)
+  }, [assigningClientId])
+
+  useEffect(() => {
+    if (!editingClientId) return
+
+    window.setTimeout(() => {
+      editSectionRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      })
+    }, 0)
+  }, [editingClientId])
+
+  const updateFormField = (
+    field: keyof WaitingListForm,
+    value: string | string[]
+  ) => {
+    setForm((currentForm) => ({ ...currentForm, [field]: value }))
+  }
+
+  const updateEditFormField = (
+    field: keyof WaitingListForm,
+    value: string | string[]
+  ) => {
+    setEditForm((currentForm) => ({ ...currentForm, [field]: value }))
+  }
+
+  const startEditing = (client: WaitingListClient) => {
+    if (readOnly) throw new Error('Lecture seule : action interdite.')
+    setEditingClientId(client.id)
+    setEditForm(clientToForm(client))
+    setShowForm(false)
+    setAssigningClientId(null)
+    setFormError('')
+    setFormMessage('')
+  }
+
+  const startAssigning = (client: WaitingListClient) => {
+    if (readOnly) throw new Error('Lecture seule : action interdite.')
+    if (client.status !== 'waiting') {
+      setFormError('Ce client est déjà assigné ou n’est plus en attente.')
+      setFormMessage('')
+      return
+    }
+
+    setAssigningClientId(client.id)
+    setEditingClientId(null)
+    setShowForm(false)
+    setFormError('')
+    setFormMessage('')
+    setNotifyProfessional(false)
+    setNotifyClient(false)
+    setSelectedProfessionalId(
+      client.assigned_professional_id ||
+        selectedProfessionalId ||
+        professionals[0]?.id ||
+        ''
+    )
+  }
+
+  const handleStartAssignmentProcess = async (
+    client: WaitingListClient,
+    options: {
+      prospectiveProfessionalId?: string | null
+      skipConfirmation?: boolean
+    } = {}
+  ): Promise<boolean> => {
+    if (readOnly) throw new Error('Lecture seule : action interdite.')
+    if (client.status !== 'waiting') {
+      setFormError('Seul un client en attente peut être déplacé vers les assignations en cours.')
+      return false
+    }
+
+    if (
+      !options.skipConfirmation &&
+      !window.confirm(
+        `Démarrer une démarche d’assignation pour ${client.client_name ?? 'ce client'} ?\n\nLe client sera retiré de la liste d’attente active et apparaîtra dans « Assignations en cours ».`
+      )
+    ) {
+      return false
+    }
+
+    setStartingAssignmentProcessClientId(client.id)
+    setFormError('')
+    setFormMessage('')
+
+    const startedAt = new Date().toISOString()
+    const { data: process, error: processError } = await supabase
+      .from('assignment_processes')
+      .insert({
+        waiting_list_client_id: client.id,
+        status: 'to_contact',
+        prospective_professional_id: options.prospectiveProfessionalId ?? null,
+        responsible_profile_id: auditActor?.id ?? null,
+        created_by: auditActor?.id ?? null,
+        started_at: startedAt,
+      })
+      .select('id')
+      .limit(1)
+      .maybeSingle()
+
+    if (processError || !process) {
+      setStartingAssignmentProcessClientId('')
+      setFormError(
+        processError?.message ?? 'Impossible de démarrer la démarche d’assignation.'
+      )
+      return false
+    }
+
+    const { error: waitingListUpdateError } = await supabase
+      .from('waiting_list_clients')
+      .update({ status: 'assignment_in_progress' })
+      .eq('id', client.id)
+
+    if (waitingListUpdateError) {
+      await supabase.from('assignment_processes').delete().eq('id', process.id)
+      setStartingAssignmentProcessClientId('')
+      setFormError(waitingListUpdateError.message)
+      return false
+    }
+
+    const { error: eventError } = await supabase
+      .from('assignment_process_events')
+      .insert([
+        {
+          assignment_process_id: process.id,
+          event_type: 'process_started',
+          status: 'to_contact',
+          note: 'Client déplacé depuis la liste d’attente.',
+          actor_profile_id: auditActor?.id ?? null,
+          actor_name: auditActor?.name ?? null,
+        },
+        ...(options.prospectiveProfessionalId
+          ? [
+              {
+                assignment_process_id: process.id,
+                event_type: 'professional_selected',
+                status: 'to_contact',
+                note: `Professionnel envisagé : ${
+                  professionals.find(
+                    (professional) =>
+                      professional.id === options.prospectiveProfessionalId
+                  )?.full_name ?? 'Professionnel'
+                }.`,
+                actor_profile_id: auditActor?.id ?? null,
+                actor_name: auditActor?.name ?? null,
+              },
+            ]
+          : []),
+      ])
+
+    setStartingAssignmentProcessClientId('')
+    setActiveAssignmentProcessClientIds((current) => {
+      const next = new Set(current)
+      next.add(client.id)
+      return next
+    })
+    setFormMessage(
+      eventError
+        ? 'Démarche démarrée. L’événement initial n’a toutefois pas pu être journalisé.'
+        : 'Client déplacé vers les assignations en cours.'
+    )
+
+    if (auditActor) {
+      void logAudit({
+        supabase,
+        actor: auditActor,
+        action: 'assignment_process_started',
+        entityType: 'waiting_list_client',
+        entityId: client.id,
+        description: `Démarche d’assignation démarrée pour ${client.client_name ?? 'un client'}.`,
+        metadata: {
+          assignment_process_id: process.id,
+          client_name: client.client_name,
+          started_at: startedAt,
+          prospective_professional_id: options.prospectiveProfessionalId ?? null,
+        },
+      })
+    }
+    return true
+  }
+
+  const openAdministrativeTask = (client: WaitingListClient) => {
+    if (readOnly) throw new Error('Lecture seule : action interdite.')
+    setAdministrativeTaskClient(client)
+    const firstSuggestion = getSuggestedProfessionals(client, professionals)[0]
+    setAdministrativeTaskProfessionalId(
+      firstSuggestion?.professional.id ?? professionals[0]?.id ?? ''
+    )
+    setFormError('')
+    setFormMessage('')
+  }
+
+  const openSuggestions = (client: WaitingListClient) => {
+    if (readOnly) throw new Error('Lecture seule : action interdite.')
+    const suggestions = getSuggestedProfessionals(client, professionals)
+    setSuggestionClient(client)
+    setSuggestionProfessionalId(
+      suggestions[0]?.professional.id ?? professionals[0]?.id ?? ''
+    )
+    setSuggestionRequestCount('1')
+    setSuggestionNotifyProfessional(false)
+    setSuggestionNotifyClient(false)
+    setFormError('')
+    setFormMessage('')
+  }
+
+  const professionalHasAssignmentCapacity = (professionalId: string) =>
+    activeRequests.some(
+      (request) =>
+        request.professional_id === professionalId &&
+        getAssignmentRequestMetrics({
+          isActive: request.is_active,
+          requestedCount: request.requested_count,
+          acceptedCount: request.assigned_count,
+          occupiedCount: request.occupied_count,
+          remainingCount: request.remaining_count,
+        }).isActive
+    )
+
+  const addAssignmentRequestCapacity = async (
+    professionalId: string,
+    amount: number
+  ): Promise<ActiveAssignmentRequest> => {
+    if (readOnly) throw new Error('Lecture seule : action interdite.')
+    const normalizedAmount = Math.min(Math.max(Math.trunc(amount), 1), 10)
+    const { data: existingRequest, error: loadError } = await supabase
+      .from('assignment_requests')
+      .select('id, professional_id, is_active, requested_count, assigned_count, remaining_count')
+      .eq('professional_id', professionalId)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (loadError) throw loadError
+
+    let savedRequest: ActiveAssignmentRequest
+    if (existingRequest) {
+      const nextRequestedCount =
+        Math.max(existingRequest.requested_count ?? 0, 0) + normalizedAmount
+      const nextRemainingCount =
+        Math.max(existingRequest.remaining_count ?? 0, 0) + normalizedAmount
+      const { data: updatedRequest, error: updateError } = await supabase
+        .from('assignment_requests')
+        .update({
+          requested_count: nextRequestedCount,
+          remaining_count: nextRemainingCount,
+          is_active: true,
+        })
+        .eq('id', existingRequest.id)
+        .select('id, professional_id, is_active, requested_count, assigned_count, remaining_count')
+        .limit(1)
+        .maybeSingle()
+      if (updateError) throw updateError
+      if (!updatedRequest) throw new Error('La demande mise à jour est introuvable.')
+      savedRequest = updatedRequest as ActiveAssignmentRequest
+    } else {
+      const { data: insertedRequest, error: insertError } = await supabase
+        .from('assignment_requests')
+        .insert({
+          professional_id: professionalId,
+          is_active: true,
+          requested_count: normalizedAmount,
+          assigned_count: 0,
+          remaining_count: normalizedAmount,
+          request_comment: 'Demande créée par la direction depuis les suggestions.',
+        })
+        .select('id, professional_id, is_active, requested_count, assigned_count, remaining_count')
+        .limit(1)
+        .maybeSingle()
+      if (insertError) throw insertError
+      if (!insertedRequest) throw new Error('La demande créée est introuvable.')
+      savedRequest = insertedRequest as ActiveAssignmentRequest
+    }
+
+    const requestWithCapacity = {
+      ...savedRequest,
+      occupied_count: Math.max(
+        (savedRequest.requested_count ?? 0) - (savedRequest.remaining_count ?? 0),
+        0
+      ),
+    }
+    setActiveRequests((currentRequests) => [
+      requestWithCapacity,
+      ...currentRequests.filter(
+        (request) => request.professional_id !== professionalId
+      ),
+    ])
+
+    const professional = professionals.find((item) => item.id === professionalId)
+    if (auditActor) {
+      void logAudit({
+        supabase,
+        actor: auditActor,
+        action: existingRequest
+          ? 'assignment_request_capacity_added'
+          : 'assignment_request_created',
+        entityType: 'assignment_request',
+        entityId: savedRequest.id,
+        description: `${normalizedAmount} assignation${normalizedAmount > 1 ? 's' : ''} ajoutée${normalizedAmount > 1 ? 's' : ''} pour ${professional?.full_name ?? 'un professionnel'}.`,
+        metadata: {
+          professional_id: professionalId,
+          professional_name: professional?.full_name ?? null,
+          added_requested_count: normalizedAmount,
+          created_from_suggestions: true,
+        },
+      })
+    }
+
+    return requestWithCapacity
+  }
+
+  const handleSuggestionRequestOnly = async () => {
+    if (readOnly) throw new Error('Lecture seule : action interdite.')
+    if (!suggestionProfessionalId || savingSuggestionAction) return
+    setSavingSuggestionAction(true)
+    setFormError('')
+    try {
+      await addAssignmentRequestCapacity(
+        suggestionProfessionalId,
+        Number(suggestionRequestCount)
+      )
+      setFormMessage('Demande d’assignation ajoutée pour ce professionnel.')
+    } catch (caughtError) {
+      setFormError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'La demande n’a pas pu être créée.'
+      )
+    } finally {
+      setSavingSuggestionAction(false)
+    }
+  }
+
+  const handleSuggestionAssignment = async () => {
+    if (readOnly) throw new Error('Lecture seule : action interdite.')
+    if (!suggestionClient || !suggestionProfessionalId || savingSuggestionAction) return
+    if (!professionalHasAssignmentCapacity(suggestionProfessionalId)) {
+      setFormMessage('')
+      setFormError(
+        'Ajoutez d’abord une demande de client pour ce professionnel avant de créer l’assignation.'
+      )
+      return
+    }
+    setSavingSuggestionAction(true)
+    setFormError('')
+    try {
+      const assigned = await assignClientToProfessional({
+        client: suggestionClient,
+        professionalId: suggestionProfessionalId,
+        shouldNotifyProfessional: suggestionNotifyProfessional,
+        shouldNotifyClient: suggestionNotifyClient,
+      })
+      if (assigned) setSuggestionClient(null)
+    } catch (caughtError) {
+      setFormError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'L’assignation n’a pas pu être créée.'
+      )
+    } finally {
+      setSavingSuggestionAction(false)
+    }
+  }
+
+  const handleSuggestionAssignmentProcess = async () => {
+    if (readOnly) throw new Error('Lecture seule : action interdite.')
+    if (!suggestionClient || !suggestionProfessionalId || savingSuggestionAction) return
+    if (!professionalHasAssignmentCapacity(suggestionProfessionalId)) {
+      setFormMessage('')
+      setFormError(
+        'Ajoutez d’abord une demande de client pour ce professionnel avant de mettre le dossier en assignation en cours.'
+      )
+      return
+    }
+    setSavingSuggestionAction(true)
+    setFormError('')
+    try {
+      const started = await handleStartAssignmentProcess(suggestionClient, {
+        prospectiveProfessionalId: suggestionProfessionalId,
+        skipConfirmation: true,
+      })
+      if (started) setSuggestionClient(null)
+    } catch (caughtError) {
+      setFormError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'La démarche d’assignation n’a pas pu être créée.'
+      )
+    } finally {
+      setSavingSuggestionAction(false)
+    }
+  }
+
+  const handleSuggestionOffPlatform = async () => {
+    if (readOnly) throw new Error('Lecture seule : action interdite.')
+    if (!suggestionClient || savingSuggestionAction) return
+    setSavingSuggestionAction(true)
+    const marked = await handleMarkOffPlatformClient(suggestionClient)
+    if (marked) setSuggestionClient(null)
+    setSavingSuggestionAction(false)
+  }
+
+  const handleCreateAdministrativeTask = async (event: FormEvent) => {
+    if (readOnly) throw new Error('Lecture seule : action interdite.')
+    event.preventDefault()
+    if (!administrativeTaskClient || !administrativeTaskProfessionalId) return
+
+    const professional = professionals.find(
+      (candidate) => candidate.id === administrativeTaskProfessionalId
+    )
+    if (!professional) {
+      setFormError('Le professionnel choisi est introuvable.')
+      return
+    }
+
+    setSavingAdministrativeTask(true)
+    setFormError('')
+    setFormMessage('')
+
+    const clientName = administrativeTaskClient.client_name ?? 'Client sans nom'
+    const professionalName =
+      professional.full_name ?? professional.email ?? 'Professionnel sans nom'
+    const dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+    const description = [
+      `Client : ${clientName}`,
+      `Professionnel ciblé : ${professionalName}`,
+      `Service : ${administrativeTaskClient.service_requested ?? '-'}`,
+      `Téléphone : ${getContactPhones(administrativeTaskClient).join(', ') || '-'}`,
+      `Courriel : ${getContactEmails(administrativeTaskClient).join(', ') || '-'}`,
+      `Motif : ${administrativeTaskClient.consultation_reason ?? '-'}`,
+    ].join('\n')
+
+    const { data: task, error: taskError } = await supabase
+      .from('administrative_tasks')
+      .insert({
+        title: `Assigner ${clientName} à ${professionalName}`,
+        description,
+        assigned_to: 'both',
+        status: 'pending',
+        due_at: dueAt,
+        source_type: 'waiting_list_assignment',
+        source_id: administrativeTaskClient.id,
+        created_by: auditActor?.id ?? null,
+      })
+      .select('id')
+      .limit(1)
+      .maybeSingle()
+
+    if (taskError || !task?.id) {
+      setSavingAdministrativeTask(false)
+      setFormError(
+        taskError?.code === '23505'
+          ? 'Une tâche administrative active existe déjà pour ce client.'
+          : taskError?.message ?? 'La tâche administrative n’a pas pu être créée.'
+      )
+      return
+    }
+
+    const { data: { session } } = await supabase.auth.getSession()
+    if (session?.access_token) {
+      const notificationResponse = await fetch(
+        '/api/direction/administrative-task-notification',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ taskId: task.id }),
+        }
+      )
+      if (!notificationResponse.ok) {
+        console.error('[administrative-task-notification] Notification non envoyée.')
+      }
+    }
+
+    if (auditActor) {
+      void logAudit({
+        supabase,
+        actor: auditActor,
+        action: 'administrative_task_created_from_waiting_list',
+        entityType: 'waiting_list_client',
+        entityId: administrativeTaskClient.id,
+        description: `Tâche créée pour assigner ${clientName} à ${professionalName}.`,
+        metadata: {
+          administrative_task_id: task.id,
+          professional_id: professional.id,
+          professional_name: professionalName,
+        },
+      })
+    }
+
+    setSavingAdministrativeTask(false)
+    setAdministrativeTaskClient(null)
+    setAdministrativeTaskProfessionalId('')
+    setFormMessage('Tâche envoyée aux adjointes administratives.')
+  }
+
+  const stopEditing = () => {
+    setEditingClientId(null)
+    setEditForm(emptyWaitingListForm)
+    setFormError('')
+  }
+
+  const getPendingAssignmentCount = async (
+    professionalId: string
+  ): Promise<number | null> => {
+    const { count, error: countError } = await supabase
+      .from('assigned_clients')
+      .select('id', { count: 'exact', head: true })
+      .eq('professional_id', professionalId)
+      .is('is_active', null)
+      .is('canceled_at', null)
+
+    if (countError) {
+      console.error(
+        '[professional-assignment-notification] Impossible de compter les assignations en attente:',
+        countError
+      )
+      return null
+    }
+
+    return count ?? 0
+  }
+
+  const sendProfessionalAssignmentNotification = async ({
+    professionalId,
+    previousPendingCount,
+    email,
+  }: {
+    professionalId: string
+    previousPendingCount: number | null
+    email?: EmailComposerSection
+  }): Promise<'sent' | 'skipped' | 'failed'> => {
+    if (readOnly) throw new Error('Lecture seule : action interdite.')
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession()
+
+    if (sessionError || !session?.access_token) {
+      console.error(
+        "[professional-assignment-notification] Session introuvable pour l'envoi.",
+        sessionError
+      )
+      return 'failed'
+    }
+
+    try {
+      console.log('[professional-assignment-notification] Appel route:', {
+        professionalId,
+        pendingBefore: previousPendingCount,
+      })
+
+      const response = await fetch(
+        '/api/direction/professional-assignment-notification',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            professionalId,
+            previousPendingCount,
+            to: email?.to,
+            subject: email?.subject,
+            message: email?.message,
+          }),
+        }
+      )
+
+      const result = (await response.json().catch(() => null)) as
+        | {
+            error?: string
+            skipped?: boolean
+            reason?: string
+            pendingBefore?: number | null
+            pendingAfter?: number
+          }
+        | null
+
+      console.log('[professional-assignment-notification] Réponse route:', {
+        professionalId,
+        status: response.status,
+        ok: response.ok,
+        skipped: result?.skipped ?? false,
+        reason: result?.reason ?? null,
+        pendingBefore: result?.pendingBefore ?? previousPendingCount,
+        pendingAfter: result?.pendingAfter ?? null,
+      })
+
+      if (!response.ok) {
+        console.error(
+          "[professional-assignment-notification] Échec de l'envoi:",
+          result?.error ?? response.statusText
+        )
+        return 'failed'
+      }
+
+      return result?.skipped ? 'skipped' : 'sent'
+    } catch (notificationError) {
+      console.error(
+        "[professional-assignment-notification] Erreur réseau pendant l'envoi:",
+        notificationError
+      )
+      return 'failed'
+    }
+  }
+
+  const sendClientAssignmentNotification = async (
+    assignedClientId: string,
+    email?: EmailComposerSection
+  ): Promise<boolean> => {
+    if (readOnly) throw new Error('Lecture seule : action interdite.')
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession()
+
+    if (sessionError || !session?.access_token) {
+      console.error(
+        "[client-assignment-notification] Session introuvable pour l'envoi.",
+        sessionError
+      )
+      return false
+    }
+
+    try {
+      console.log('[client-assignment-notification] Appel route:', {
+        assignedClientId,
+      })
+
+      const response = await fetch(
+        '/api/direction/client-assignment-notification',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            assignedClientId,
+            to: email?.to,
+            cc: email?.cc,
+            subject: email?.subject,
+            message: email?.message,
+          }),
+        }
+      )
+
+      const result = (await response.json().catch(() => null)) as
+        | {
+            error?: string
+            skipped?: boolean
+            reason?: string
+          }
+        | null
+
+      console.log('[client-assignment-notification] Réponse route:', {
+        assignedClientId,
+        status: response.status,
+        ok: response.ok,
+        skipped: result?.skipped ?? false,
+        reason: result?.reason ?? null,
+      })
+
+      if (!response.ok) {
+        console.error(
+          "[client-assignment-notification] Échec de l'envoi:",
+          result?.error ?? response.statusText
+        )
+        return false
+      }
+
+      return true
+    } catch (notificationError) {
+      console.error(
+        "[client-assignment-notification] Erreur réseau pendant l'envoi:",
+        notificationError
+      )
+      return false
+    }
+  }
+
+  const handleCreateClient = async (event: FormEvent<HTMLFormElement>) => {
+    if (readOnly) throw new Error('Lecture seule : action interdite.')
+    event.preventDefault()
+
+    if (savingClient) return
+
+    setFormMessage('')
+    setFormError('')
+
+    if (!form.client_name.trim()) {
+      setFormError('Le nom du client est requis.')
+      return
+    }
+
+    setSavingClient(true)
+
+    let data: WaitingListClient
+    try {
+      const result = await createWaitingListClient<WaitingListClient>(
+        supabase, { ...buildPayload(form), status: 'waiting' }, waitingListSelect
+      )
+      data = result.client
+      if (!result.created) {
+        setClients((current) => current.some((client) => client.id === data.id)
+          ? current : sortClientsByContactDate([...current, data]))
+        setShowForm(false)
+        startEditing(data)
+        setFormMessage('Une demande avec les mêmes renseignements existe déjà. Sa fiche a été ouverte ; aucun nouveau dossier n’a été créé.')
+        return
+      }
+    } catch (caught) {
+      setFormError(caught && typeof caught === 'object' && 'message' in caught
+        ? String(caught.message) : 'Impossible de vérifier ou de créer le dossier.')
+      return
+    } finally {
+      setSavingClient(false)
+    }
+
+    if (data) {
+      setClients((currentClients) => [
+        ...sortClientsByContactDate([
+          data as WaitingListClient,
+          ...currentClients,
+        ]),
+      ])
+      if (auditActor) {
+        void logAudit({
+          supabase,
+          actor: auditActor,
+          action: 'waiting_list_client_created',
+          entityType: 'waiting_list_client',
+          entityId: (data as WaitingListClient).id,
+          description: `Client ${form.client_name.trim()} ajouté à la liste d’attente.`,
+          metadata: {
+            client_name: form.client_name.trim(),
+            requester_name: nullableText(
+              [form.first_requester_name, form.second_requester_name]
+                .map((value) => value.trim())
+                .filter(Boolean)
+                .join(' / ')
+            ),
+            contact_email: normalizeTextList(form.contact_emails)[0] ?? null,
+            priority_level: form.priority_level,
+            service_requested: form.service_requested,
+          },
+        })
+      }
+    }
+
+    setForm(emptyWaitingListForm)
+    setShowForm(false)
+    setFormMessage('Client ajouté à la liste d’attente.')
+  }
+
+  const handleUpdateClient = async (event: FormEvent<HTMLFormElement>) => {
+    if (readOnly) throw new Error('Lecture seule : action interdite.')
+    event.preventDefault()
+
+    if (!editingClientId || savingEdit) return
+
+    setFormMessage('')
+    setFormError('')
+
+    if (!editForm.client_name.trim()) {
+      setFormError('Le nom du client est requis.')
+      return
+    }
+
+    setSavingEdit(true)
+
+    const { data, error: updateError } = await supabase
+      .from('waiting_list_clients')
+      .update(buildPayload(editForm))
+      .eq('id', editingClientId)
+      .select(waitingListSelect)
+      .limit(1)
+      .maybeSingle()
+
+    setSavingEdit(false)
+
+    if (updateError) {
+      setFormError(updateError.message)
+      return
+    }
+
+    if (data) {
+      setClients((currentClients) =>
+        sortClientsByContactDate(
+          currentClients.map((client) =>
+            client.id === editingClientId ? (data as WaitingListClient) : client
+          )
+        )
+      )
+    }
+
+    setEditingClientId(null)
+    setEditForm(emptyWaitingListForm)
+    setFormMessage('Client modifié avec succès.')
+  }
+
+  const handlePermanentDeleteClient = async (client: WaitingListClient) => {
+    if (readOnly) throw new Error('Lecture seule : action interdite.')
+    const confirmed = window.confirm(
+      'Cette action supprimera définitivement le client ainsi que toutes les données associées.\n\nCette action est irréversible.'
+    )
+
+    if (!confirmed) return
+
+    setFormMessage('')
+    setFormError('')
+    setPermanentlyDeletingClientId(client.id)
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+
+    if (!session?.access_token) {
+      setFormError('Session introuvable.')
+      setPermanentlyDeletingClientId('')
+      return
+    }
+
+    const response = await fetch(`/api/direction/waiting-list-clients/${client.id}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
+    })
+
+    setPermanentlyDeletingClientId('')
+
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as
+        | { error?: string }
+        | null
+      setFormError(body?.error ?? 'La suppression définitive a échoué.')
+      return
+    }
+
+    setClients((currentClients) =>
+      currentClients.filter((currentClient) => currentClient.id !== client.id)
+    )
+
+    if (editingClientId === client.id) {
+      setEditingClientId(null)
+      setEditForm(emptyWaitingListForm)
+    }
+
+    setFormMessage('Client supprimé définitivement.')
+  }
+
+  const handleRestoreWaitingListClient = async (client: WaitingListClient) => {
+    if (readOnly) throw new Error('Lecture seule : action interdite.')
+    const confirmed = window.confirm(
+      [
+        "Remettre ce client dans la liste d'attente ?",
+        '',
+        'Le client réapparaîtra dans la liste des clients en attente et pourra être réassigné à un autre professionnel.',
+        '',
+        'Cette action ne supprime aucun historique.',
+      ].join('\n')
+    )
+
+    if (!confirmed) return
+
+    setFormMessage('')
+    setFormError('')
+    setRestoringWaitingListClientId(client.id)
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+
+    if (!session?.access_token) {
+      setFormError('Session introuvable.')
+      setRestoringWaitingListClientId('')
+      return
+    }
+
+    const response = await fetch(
+      `/api/direction/waiting-list-clients/${client.id}/restore`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      }
+    )
+    const result = (await response.json().catch(() => null)) as
+      | { error?: string; skipped?: boolean; message?: string }
+      | null
+
+    setRestoringWaitingListClientId('')
+
+    if (!response.ok) {
+      setFormError(
+        result?.error ?? "Impossible de remettre ce client en liste d'attente."
+      )
+      return
+    }
+
+    if (result?.skipped) {
+      setFormMessage(
+        result.message ?? "Ce client est déjà présent dans la liste d'attente."
+      )
+      return
+    }
+
+    setClients((currentClients) =>
+      sortClientsByContactDate(
+        currentClients.map((currentClient) =>
+          currentClient.id === client.id
+            ? {
+                ...currentClient,
+                status: 'waiting',
+                assigned_professional_id: null,
+                assigned_at: null,
+              }
+            : currentClient
+        )
+      )
+    )
+    setFormMessage("Client remis dans la liste d'attente.")
+  }
+
+  const handleMarkOffPlatformClient = async (
+    client: WaitingListClient
+  ): Promise<boolean> => {
+    if (readOnly) throw new Error('Lecture seule : action interdite.')
+    const confirmed = window.confirm(
+      [
+        'Marquer ce client comme pris en charge hors plateforme ?',
+        '',
+        "Le client sera retiré des clients en attente et restera accessible dans l'historique.",
+        '',
+        'Aucune assignation ne sera créée.',
+      ].join('\n')
+    )
+
+    if (!confirmed) return false
+
+    setFormMessage('')
+    setFormError('')
+    setMarkingOffPlatformClientId(client.id)
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+
+    if (!session?.access_token) {
+      setFormError('Session introuvable.')
+      setMarkingOffPlatformClientId('')
+      return false
+    }
+
+    const response = await fetch(
+      `/api/direction/waiting-list-clients/${client.id}/mark-off-platform`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      }
+    )
+    const result = (await response.json().catch(() => null)) as
+      | { error?: string; skipped?: boolean; message?: string }
+      | null
+
+    setMarkingOffPlatformClientId('')
+
+    if (!response.ok) {
+      setFormError(
+        result?.error ??
+          'Impossible de marquer ce client comme pris en charge hors plateforme.'
+      )
+      return false
+    }
+
+    if (result?.skipped) {
+      setFormMessage(result.message ?? 'Ce client est déjà retiré de la liste active.')
+      return false
+    }
+
+    setClients((currentClients) =>
+      sortClientsByContactDate(
+        currentClients.map((currentClient) =>
+          currentClient.id === client.id
+            ? {
+                ...currentClient,
+                status: 'closed',
+                assigned_professional_id: null,
+                assigned_at: null,
+              }
+            : currentClient
+        )
+      )
+    )
+
+    if (assigningClientId === client.id) {
+      setAssigningClientId(null)
+      setSelectedProfessionalId('')
+      setNotifyProfessional(false)
+      setNotifyClient(false)
+    }
+
+    if (editingClientId === client.id) {
+      setEditingClientId(null)
+      setEditForm(emptyWaitingListForm)
+    }
+
+    setFormMessage('Client marqué comme pris en charge hors plateforme.')
+    return true
+  }
+
+  const getComposerFromLabel = () =>
+    'Clinique PsychoÉducAction (adresse d’envoi configurée)'
+
+  const getClientAppUrl = () =>
+    typeof window === 'undefined'
+      ? 'https://app.psychoeducaction.com'
+      : window.location.origin
+
+  const buildEmailComposerDrafts = ({
+    professional,
+    client,
+    enableProfessional,
+    enableClient,
+  }: {
+    professional: Professional | undefined
+    client: WaitingListClient
+    enableProfessional: boolean
+    enableClient: boolean
+  }): EmailComposerDrafts => {
+    const professionalEmail = buildProfessionalAssignmentEmailTemplate({
+      professionalName: professional?.full_name,
+      professionalEmail: professional?.email,
+      appUrl: getClientAppUrl(),
+    })
+    const clientEmail = buildClientAssignmentEmailTemplate({
+      professionalName: professional?.full_name,
+      professionalEmail: professional?.email,
+      professionalTitle: professional?.professional_title,
+      professionalPhone: professional?.professional_phone,
+      professionalLicenseNumber: professional?.professional_license_number,
+    })
+
+    return {
+      professional: {
+        enabled: enableProfessional,
+        fromLabel: getComposerFromLabel(),
+        to: professionalEmail.to,
+        subject: professionalEmail.subject,
+        message: professionalEmail.message,
+      },
+      client: {
+        enabled: enableClient,
+        fromLabel: getComposerFromLabel(),
+        to: getContactEmails(client)[0] ?? '',
+        cc: clientEmail.cc?.join(', ') ?? '',
+        subject: clientEmail.subject,
+        message: clientEmail.message,
+      },
+    }
+  }
+
+  const logNotificationNotSent = ({
+    pendingNotification,
+    notificationType,
+    reason,
+  }: {
+    pendingNotification: PendingEmailNotification
+    notificationType: 'professional_assignment' | 'client_assignment'
+    reason: string
+  }) => {
+    if (readOnly) throw new Error('Lecture seule : action interdite.')
+    if (!auditActor) return
+
+    const isProfessional = notificationType === 'professional_assignment'
+
+    void logAudit({
+      supabase,
+      actor: auditActor,
+      action: isProfessional
+        ? 'professional_notification_not_sent'
+        : 'client_notification_not_sent',
+      entityType: 'assigned_client',
+      entityId: pendingNotification.assignedClientId,
+      description: isProfessional
+        ? `Courriel professionnel non envoyé à ${pendingNotification.professionalName}.`
+        : `Courriel client non envoyé pour ${pendingNotification.clientName ?? 'client sans nom'}.`,
+      metadata: {
+        client_name: pendingNotification.clientName,
+        client_email: pendingNotification.clientEmail,
+        professional_name: pendingNotification.professionalName,
+        professional_id: pendingNotification.professionalId,
+        waiting_list_client_id: pendingNotification.waitingListClientId,
+        assignment_request_id: pendingNotification.assignmentRequestId,
+        notification_type: notificationType,
+        reason,
+      },
+    })
+  }
+
+  const sendComposedAssignmentEmails = async (
+    drafts: EmailComposerDrafts,
+    pendingNotification: PendingEmailNotification
+  ) => {
+    if (readOnly) throw new Error('Lecture seule : action interdite.')
+    const professionalDraft = drafts.professional
+    const clientDraft = drafts.client
+
+    if (professionalDraft?.enabled) {
+      const notificationStatus = await sendProfessionalAssignmentNotification({
+        professionalId: pendingNotification.professionalId,
+        previousPendingCount: pendingNotification.previousPendingCount,
+        email: professionalDraft,
+      })
+
+      if (auditActor) {
+        const notificationSent = notificationStatus === 'sent'
+        const notificationSkipped = notificationStatus === 'skipped'
+        void logAudit({
+          supabase,
+          actor: auditActor,
+          action: notificationSent
+            ? 'professional_notification_sent'
+            : notificationSkipped
+              ? 'professional_notification_not_sent'
+              : 'professional_notification_failed',
+          entityType: 'assigned_client',
+          entityId: pendingNotification.assignedClientId,
+          description: notificationSent
+            ? `Courriel professionnel envoyé à ${pendingNotification.professionalName}.`
+            : notificationSkipped
+              ? `Courriel professionnel non envoyé à ${pendingNotification.professionalName} (cooldown ou envoi ignoré).`
+              : `Courriel professionnel non envoyé à ${pendingNotification.professionalName}.`,
+          metadata: {
+            client_name: pendingNotification.clientName,
+            professional_name: pendingNotification.professionalName,
+            professional_id: pendingNotification.professionalId,
+            recipient_email: professionalDraft.to.trim(),
+            notification_type: 'professional_assignment',
+            customized: true,
+          },
+        })
+      }
+    } else {
+      logNotificationNotSent({
+        pendingNotification,
+        notificationType: 'professional_assignment',
+        reason: 'composer_unchecked',
+      })
+    }
+
+    if (clientDraft?.enabled) {
+      const notificationSent = await sendClientAssignmentNotification(
+        pendingNotification.assignedClientId,
+        clientDraft
+      )
+
+      if (auditActor) {
+        void logAudit({
+          supabase,
+          actor: auditActor,
+          action: notificationSent
+            ? 'client_notification_sent'
+            : 'client_notification_failed',
+          entityType: 'assigned_client',
+          entityId: pendingNotification.assignedClientId,
+          description: notificationSent
+            ? `Courriel client envoyé pour ${pendingNotification.clientName ?? 'client sans nom'}.`
+            : `Courriel client non envoyé pour ${pendingNotification.clientName ?? 'client sans nom'}.`,
+          metadata: {
+            client_name: pendingNotification.clientName,
+            client_email: pendingNotification.clientEmail,
+            professional_name: pendingNotification.professionalName,
+            professional_id: pendingNotification.professionalId,
+            recipient_email: clientDraft.to.trim(),
+            waiting_list_client_id: pendingNotification.waitingListClientId,
+            assignment_request_id: pendingNotification.assignmentRequestId,
+            notification_type: 'client_assignment',
+            customized: true,
+          },
+        })
+      }
+    } else {
+      logNotificationNotSent({
+        pendingNotification,
+        notificationType: 'client_assignment',
+        reason: 'composer_unchecked',
+      })
+    }
+  }
+
+  const handleSendComposedEmails = async (drafts: EmailComposerDrafts) => {
+    if (readOnly) throw new Error('Lecture seule : action interdite.')
+    if (!pendingEmailNotification) return
+
+    setSendingComposedEmails(true)
+    setFormError('')
+
+    try {
+      await sendComposedAssignmentEmails(drafts, pendingEmailNotification)
+      setFormMessage('Assignation créée. Courriels traités.')
+      setEmailComposerDrafts(null)
+      setPendingEmailNotification(null)
+    } finally {
+      setSendingComposedEmails(false)
+    }
+  }
+
+  const handleCancelComposedEmails = () => {
+    if (readOnly) throw new Error('Lecture seule : action interdite.')
+    if (pendingEmailNotification) {
+      if (emailComposerDrafts?.professional?.enabled) {
+        logNotificationNotSent({
+          pendingNotification: pendingEmailNotification,
+          notificationType: 'professional_assignment',
+          reason: 'composer_closed',
+        })
+      }
+
+      if (emailComposerDrafts?.client?.enabled) {
+        logNotificationNotSent({
+          pendingNotification: pendingEmailNotification,
+          notificationType: 'client_assignment',
+          reason: 'composer_closed',
+        })
+      }
+    }
+
+    setEmailComposerDrafts(null)
+    setPendingEmailNotification(null)
+    setFormMessage('Assignation créée. Aucun courriel envoyé.')
+  }
+
+  const assignClientToProfessional = async ({
+    client,
+    professionalId,
+    shouldNotifyProfessional,
+    shouldNotifyClient,
+  }: {
+    client: WaitingListClient
+    professionalId: string
+    shouldNotifyProfessional: boolean
+    shouldNotifyClient: boolean
+  }): Promise<boolean> => {
+    if (readOnly) throw new Error('Lecture seule : action interdite.')
+    setFormMessage('')
+    setFormError('')
+
+    if (client.status !== 'waiting') {
+      setFormError('Ce client est déjà assigné ou n’est plus en attente.')
+      return false
+    }
+
+    if (!professionalId) {
+      setFormError('Veuillez choisir un professionnel.')
+      return false
+    }
+
+    const previousPendingCount = await getPendingAssignmentCount(
+      professionalId
+    )
+
+    let assignmentResult: Awaited<
+      ReturnType<typeof createAssignmentFromWaitingListClient>
+    >
+
+    try {
+      assignmentResult = await createAssignmentFromWaitingListClient({
+        supabase,
+        client,
+        professionalId,
+      })
+    } catch (caughtError) {
+      setFormError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Impossible de créer l'assignation."
+      )
+      return false
+    }
+
+    if (assignmentResult.updatedClient) {
+      setClients((currentClients) =>
+        sortClientsByContactDate(
+          currentClients.map((currentClient) =>
+            currentClient.id === client.id
+              ? (assignmentResult.updatedClient as WaitingListClient)
+              : currentClient
+          )
+        )
+      )
+    }
+    setActiveRequests((currentRequests) =>
+      currentRequests.flatMap((request) => {
+        if (request.id !== assignmentResult.assignmentRequest.id) return [request]
+        const nextRemainingCount = Math.max((request.remaining_count ?? 0) - 1, 0)
+        if (nextRemainingCount === 0) return []
+        return [
+          {
+            ...request,
+            remaining_count: nextRemainingCount,
+            occupied_count: (request.occupied_count ?? 0) + 1,
+          },
+        ]
+      })
+    )
+
+    setAssigningClientId(null)
+    setNotifyProfessional(false)
+    setNotifyClient(false)
+    setFormMessage('Client assigné au professionnel avec succès.')
+    const selectedProfessional = professionals.find(
+      (professional) => professional.id === professionalId
+    )
+
+    if (auditActor) {
+      void logAudit({
+        supabase,
+        actor: auditActor,
+        action: 'assignment_created',
+        entityType: 'assigned_client',
+        entityId: assignmentResult.assignedClientId,
+        description: `Client ${client.client_name ?? 'sans nom'} assigné à ${
+          selectedProfessional?.full_name ?? 'professionnel inconnu'
+        }.`,
+        metadata: {
+          client_name: client.client_name,
+          professional_name: selectedProfessional?.full_name ?? null,
+          requester_name: assignmentResult.requesterName,
+          client_email: getContactEmails(client)[0] ?? null,
+          professional_id: professionalId,
+          waiting_list_client_id: client.id,
+          assignment_request_id: assignmentResult.assignmentRequest.id,
+          has_assignment_request: true,
+          assignment_mode: 'request_assignment',
+        },
+      })
+    }
+
+    const pendingNotification: PendingEmailNotification = {
+      assignedClientId: assignmentResult.assignedClientId,
+      professionalId,
+      professionalName:
+        selectedProfessional?.full_name ?? selectedProfessional?.email ?? 'professionnel inconnu',
+      clientName: client.client_name,
+      clientEmail: getContactEmails(client)[0] ?? null,
+      waitingListClientId: client.id,
+      assignmentRequestId: assignmentResult.assignmentRequest.id,
+      previousPendingCount,
+    }
+
+    if (shouldNotifyProfessional || shouldNotifyClient) {
+      setPendingEmailNotification(pendingNotification)
+      setEmailComposerDrafts(
+        buildEmailComposerDrafts({
+          professional: selectedProfessional,
+          client,
+          enableProfessional: shouldNotifyProfessional,
+          enableClient: shouldNotifyClient,
+        })
+      )
+    } else {
+      logNotificationNotSent({
+        pendingNotification,
+        notificationType: 'professional_assignment',
+        reason: 'checkbox_unchecked',
+      })
+      logNotificationNotSent({
+        pendingNotification,
+        notificationType: 'client_assignment',
+        reason: 'checkbox_unchecked',
+      })
+    }
+    return true
+  }
+
+  const handleAssignClient = async (event: FormEvent<HTMLFormElement>) => {
+    if (readOnly) throw new Error('Lecture seule : action interdite.')
+    event.preventDefault()
+
+    if (!assigningClientId || savingAssignment) return
+    const client = clients.find(
+      (currentClient) => currentClient.id === assigningClientId
+    )
+    if (!client) {
+      setFormError('Client introuvable.')
+      return
+    }
+
+    setSavingAssignment(true)
+    await assignClientToProfessional({
+      client,
+      professionalId: selectedProfessionalId,
+      shouldNotifyProfessional: notifyProfessional,
+      shouldNotifyClient: notifyClient,
+    })
+    setSavingAssignment(false)
+  }
+
+  const inputClass =
+    'w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] shadow-sm outline-none transition duration-200 placeholder:text-[#b09c8a] focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]'
+
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase()
+  const minimumAge = minimumAgeFilter === '' ? null : Number(minimumAgeFilter)
+  const maximumAge = maximumAgeFilter === '' ? null : Number(maximumAgeFilter)
+  const hasActiveFilters =
+    serviceFilter !== 'all' ||
+    statusFilter !== 'all' ||
+    minimumAgeFilter !== '' ||
+    maximumAgeFilter !== '' ||
+    modalityFilter.length > 0 ||
+    professionalFilter !== 'all' ||
+    hideThirdPartyClients
+  const filteredClients = clients.filter((client) => {
+    if (normalizedSearchQuery && !clientMatchesSearch(client, normalizedSearchQuery)) {
+      return false
+    }
+    if (serviceFilter !== 'all' && client.service_requested !== serviceFilter) {
+      return false
+    }
+    if (statusFilter !== 'all' && client.status !== statusFilter) {
+      return false
+    }
+    if (minimumAge !== null || maximumAge !== null) {
+      const clientAge = calculateAge(client.birth_date)
+
+      if (clientAge !== null) {
+        if (minimumAge !== null && clientAge < minimumAge) return false
+        if (maximumAge !== null && clientAge > maximumAge) return false
+      }
+    }
+    if (modalityFilter.length > 0) {
+      const clientModalities = getMeetingModalities(client.meeting_modality)
+      const hasMatchingModality = modalityFilter.some((modality) =>
+        clientModalities.includes(modality)
+      )
+      if (!hasMatchingModality) return false
+    }
+    if (hideThirdPartyClients && isThirdPartyClient(client)) return false
+    if (professionalFilter !== 'all') {
+      const selectedProfessional = professionals.find(
+        (professional) => professional.id === professionalFilter
+      )
+      if (
+        !selectedProfessional ||
+        getSuggestedProfessionals(client, [selectedProfessional]).length === 0
+      ) {
+        return false
+      }
+    }
+    return true
+  })
+  const hasSearchQuery = normalizedSearchQuery.length > 0 || hasActiveFilters
+  const emptySearchMessage = 'Aucun client ne correspond à cette recherche.'
+  const {
+    waiting: filteredWaitingClients,
+    history: historyClients,
+  } = getWaitingListClientSections(
+    filteredClients,
+    activeAssignmentProcessClientIds
+  )
+  const waitingClients = sortWaitingClients(filteredWaitingClients)
+  const selectedProfessionalHasActiveRequest = activeRequests.some(
+    (request) =>
+      request.professional_id === selectedProfessionalId &&
+      getAssignmentRequestMetrics({
+        isActive: request.is_active,
+        requestedCount: request.requested_count,
+        acceptedCount: request.assigned_count,
+        occupiedCount: request.occupied_count,
+        remainingCount: request.remaining_count,
+      }).isActive
+  )
+  const selectedProfessionalHasNoActiveRequest =
+    Boolean(selectedProfessionalId) && !selectedProfessionalHasActiveRequest
+  const selectedAssignmentClient = assigningClientId
+    ? clients.find((client) => client.id === assigningClientId) ?? null
+    : null
+  const selectedAssignmentClientHasEmail = Boolean(
+    selectedAssignmentClient && getContactEmails(selectedAssignmentClient).length > 0
+  )
+  const suggestionMatches = suggestionClient
+    ? getSuggestedProfessionals(suggestionClient, professionals)
+    : []
+  const selectedSuggestionProfessional = professionals.find(
+    (professional) => professional.id === suggestionProfessionalId
+  )
+  const selectedSuggestionHasCapacity = suggestionProfessionalId
+    ? professionalHasAssignmentCapacity(suggestionProfessionalId)
+    : false
+  const suggestionClientHasEmail = Boolean(
+    suggestionClient && getContactEmails(suggestionClient).length > 0
+  )
+  const getPageCount = (totalCount: number, pageSize = CLIENTS_PER_PAGE) =>
+    Math.max(Math.ceil(totalCount / pageSize), 1)
+  const getPaginatedClients = (
+    sectionClients: WaitingListClient[],
+    currentPage: number,
+    pageSize = CLIENTS_PER_PAGE
+  ) =>
+    sectionClients.slice(
+      currentPage * pageSize,
+      currentPage * pageSize + pageSize
+    )
+  const waitingPageCount = getPageCount(waitingClients.length)
+  const historyPageCount = getPageCount(
+    historyClients.length,
+    HISTORY_CLIENTS_PER_PAGE
+  )
+  const safeWaitingPage = Math.min(waitingPage, waitingPageCount - 1)
+  const safeHistoryPage = Math.min(historyPage, historyPageCount - 1)
+  const paginatedWaitingClients = getPaginatedClients(
+    waitingClients,
+    safeWaitingPage
+  )
+  const paginatedHistoryClients = getPaginatedClients(
+    historyClients,
+    safeHistoryPage,
+    HISTORY_CLIENTS_PER_PAGE
+  )
+
+  const renderConsultationReason = (client: WaitingListClient) => {
+    const isExpanded = expandedMotifIds[client.id] === true
+
+    return (
+      <div className="space-y-2">
+        <p
+          className={`break-words text-sm text-[#6c5a4d] ${
+            isExpanded
+              ? 'whitespace-pre-wrap'
+              : 'line-clamp-2 whitespace-normal'
+          }`}
+        >
+          {formatText(client.consultation_reason)}
+        </p>
+        {client.consultation_reason?.trim() && (
+          <button
+            type="button"
+            className="text-sm font-medium text-[#6d3f1f] underline decoration-[#d9b591] underline-offset-2 hover:decoration-[#9b6a3d]"
+            onClick={() =>
+              setExpandedMotifIds((currentIds) => ({
+                ...currentIds,
+                [client.id]: !isExpanded,
+              }))
+            }
+          >
+            {isExpanded ? 'Masquer le motif' : 'Voir le motif'}
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  const renderContactInfo = (client: WaitingListClient) => {
+    const emails = getContactEmails(client)
+    const phones = getContactPhones(client)
+
+    if (emails.length === 0 && phones.length === 0) return '-'
+
+    return (
+      <div className="space-y-3 text-sm text-[#6c5a4d]">
+        {emails.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold uppercase text-[#8a6f5d]">
+              Courriels
+            </p>
+            <div className="mt-1 space-y-1">
+              {emails.map((email) => (
+                readOnly ? <span key={email} className="block break-words">{email}</span> : <a
+                  key={email}
+                  href={`mailto:${email}`}
+                  className="block break-words text-[#6d3f1f] underline decoration-[#d9b591] underline-offset-2 hover:decoration-[#9b6a3d]"
+                >
+                  {email}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+        {phones.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold uppercase text-[#8a6f5d]">
+              Téléphones
+            </p>
+            <div className="mt-1 space-y-1">
+              {phones.map((phone) => (
+                <p key={phone} className="break-words">
+                  {phone}
+                </p>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const renderInternalNotes = (client: WaitingListClient) => {
+    if (!client.internal_notes?.trim()) return null
+
+    return (
+      <div className="mt-3 rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-3">
+        <p className="text-xs font-semibold uppercase text-[#8a6f5d]">
+          Notes internes
+        </p>
+        <p className="mt-1 whitespace-pre-wrap break-words text-sm text-[#6c5a4d]">
+          {client.internal_notes.trim()}
+        </p>
+      </div>
+    )
+  }
+
+  const renderClientsTable = (
+    sectionClients: WaitingListClient[],
+    emptyMessage: string,
+    allowAssignment: boolean
+  ) => (
+    <div className={tableShellClass}>
+      <table className={`${tableClass} w-full min-w-[1320px]`}>
+        <thead className={tableHeaderClass}>
+          <tr>
+            <th className={tableHeadCellClass}>Priorité</th>
+            <th className={tableHeadCellClass}>Statut</th>
+            <th className={tableHeadCellClass}>Date de contact</th>
+            <th className={tableHeadCellClass}>Service demandé</th>
+            <th className={tableHeadCellClass}>Client</th>
+            <th className={tableHeadCellClass}>Requérant</th>
+            <th className={tableHeadCellClass}>Date de naissance</th>
+            <th className={tableHeadCellClass}>Adresse complète</th>
+            <th className={tableHeadCellClass}>Modalité</th>
+            <th className={tableHeadCellClass}>Préférence horaire</th>
+            <th className={tableHeadCellClass}>Contact</th>
+            <th className={`${tableHeadCellClass} min-w-[24rem]`}>Motif</th>
+            {!readOnly && <th className={`${tableHeadCellClass} w-28`}>Actions</th>}
+          </tr>
+        </thead>
+        <tbody className={tableBodyClass}>
+          {sectionClients.length === 0 ? (
+            <tr>
+              <td colSpan={readOnly ? 12 : 13} className="px-4 py-8">
+                <EmptyState title={emptyMessage} />
+              </td>
+            </tr>
+          ) : (
+            sectionClients.map((client) => {
+              const isAlreadyAssigned = client.status === 'assigned'
+
+              return (
+                <tr
+                  key={client.id}
+                  className={`${tableRowClass} ${
+                    isAlreadyAssigned ? 'bg-[#f7f2eb] opacity-80' : ''
+                  }`}
+                >
+                  <td className="px-3 py-2 align-top text-[#6c5a4d]">
+                    <div className="flex w-28 flex-col items-start gap-2">
+                      <Badge tone={priorityTones[client.priority_level ?? ''] ?? 'muted'}>
+                        {priorityLabels[client.priority_level ?? ''] ??
+                          formatText(client.priority_level)}
+                      </Badge>
+                      {!readOnly && allowAssignment && (
+                        <>
+                          <button
+                            type="button"
+                            className={`${buttonClass('primary')} !min-h-8 !w-full justify-center whitespace-nowrap px-2 py-1 text-xs`}
+                            onClick={() => startAssigning(client)}
+                          >
+                            Assigner
+                          </button>
+                          <button
+                            type="button"
+                            disabled={startingAssignmentProcessClientId === client.id}
+                            className="min-h-8 w-full rounded-lg border border-[#d7a83e] bg-[#fff3c4] px-2 py-1 text-xs font-semibold leading-tight text-[#6f4c00] transition hover:bg-[#ffe9a0] disabled:cursor-wait disabled:opacity-60"
+                            onClick={() => void handleStartAssignmentProcess(client)}
+                          >
+                            {startingAssignmentProcessClientId === client.id
+                              ? 'Déplacement...'
+                              : 'Démarrer une assignation'}
+                          </button>
+                          <button
+                            type="button"
+                            className={`${buttonClass('secondary')} !min-h-8 !w-full justify-center whitespace-normal px-2 py-1 text-xs`}
+                            onClick={() => openSuggestions(client)}
+                          >
+                            Suggestions
+                          </button>
+                          <button
+                            type="button"
+                            className="min-h-8 w-full rounded-lg border border-[#c9b39d] bg-white px-2 py-1 text-xs font-semibold leading-tight text-[#6d3f1f] transition hover:bg-[#f7efe7]"
+                            onClick={() => openAdministrativeTask(client)}
+                          >
+                            Tâche aux adjointes
+                          </button>
+                        </>
+                      )}
+                      {!readOnly && !allowAssignment && isAlreadyAssigned && (
+                        <button
+                          type="button"
+                          className={`${buttonClass('secondary')} !min-h-8 !w-full justify-center whitespace-nowrap px-2 py-1 text-xs`}
+                          disabled
+                        >
+                          Déjà assigné
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 align-top text-[#6c5a4d]">
+                    <div className="space-y-1">
+                      <Badge tone={statusTones[client.status ?? ''] ?? 'muted'}>
+                        {statusLabels[client.status ?? ''] ??
+                          formatText(client.status)}
+                      </Badge>
+                      {isAlreadyAssigned && (
+                        <p className="text-xs font-medium text-[#8a6f5d]">
+                          Assignation faite
+                        </p>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 align-top text-[#6c5a4d]">
+                    {formatDate(client.contact_date ?? client.created_at)}
+                  </td>
+                  <td className="px-3 py-2 align-top text-[#6c5a4d]">
+                    {formatText(client.service_requested)}
+                  </td>
+                  <td className="px-3 py-2 align-top text-[#6c5a4d]">
+                    {formatText(client.client_name)}
+                  </td>
+                  <td className="px-3 py-2 align-top text-[#6c5a4d]">
+                    {formatRequester(client)}
+                  </td>
+                  <td className="px-3 py-2 align-top text-[#6c5a4d]">
+                    {formatBirthDateWithAge(client.birth_date)}
+                  </td>
+                  <td className="px-3 py-2 align-top text-[#6c5a4d]">
+                    {formatText(client.city)}
+                  </td>
+                  <td className="px-3 py-2 align-top text-[#6c5a4d]">
+                    {formatModalities(client.meeting_modality)}
+                  </td>
+                  <td className="px-3 py-2 align-top text-[#6c5a4d]">
+                    {formatText(client.availability)}
+                  </td>
+                  <td className="px-3 py-2 align-top text-[#6c5a4d]">
+                    {renderContactInfo(client)}
+                  </td>
+                  <td className="min-w-[24rem] px-3 py-2 align-top">
+                    {renderConsultationReason(client)}
+                    {renderInternalNotes(client)}
+                  </td>
+                  {!readOnly && (<td className="w-28 px-3 py-2 align-top text-[#6c5a4d]">
+                    <div className="flex w-24 flex-col gap-2">
+                      <button
+                        type="button"
+                        className={`${buttonClass('secondary')} !min-h-8 !w-full justify-center whitespace-nowrap px-2 py-1 text-xs`}
+                        onClick={() => startEditing(client)}
+                      >
+                        Modifier
+                      </button>
+                      {allowAssignment && client.status === 'waiting' && (
+                        <button
+                          type="button"
+                          className="inline-flex !min-h-8 !w-full items-center justify-center whitespace-normal rounded-xl border border-[#d6a436] bg-[#fff4c7] px-2 py-1 text-center text-xs font-semibold text-[#6b4a00] shadow-sm transition duration-200 hover:border-[#b88719] hover:bg-[#ffe79a] disabled:cursor-not-allowed disabled:opacity-60"
+                          disabled={markingOffPlatformClientId === client.id}
+                          onClick={() => void handleMarkOffPlatformClient(client)}
+                        >
+                          {markingOffPlatformClientId === client.id
+                            ? 'Traitement...'
+                            : 'Hors plateforme'}
+                        </button>
+                      )}
+                      {canUseSuperAdminActions && (
+                        <button
+                          type="button"
+                          className={`${buttonClass('danger')} !min-h-8 !w-full justify-center whitespace-normal px-2 py-1 text-xs`}
+                          disabled={permanentlyDeletingClientId === client.id}
+                          onClick={() => handlePermanentDeleteClient(client)}
+                        >
+                          {permanentlyDeletingClientId === client.id
+                            ? 'Suppression...'
+                            : 'Supprimer définitivement'}
+                        </button>
+                      )}
+                      {!allowAssignment && client.status !== 'waiting' && (
+                        <button
+                          type="button"
+                          className={`${buttonClass('secondary')} !min-h-8 !w-full justify-center whitespace-normal px-2 py-1 text-xs`}
+                          disabled={restoringWaitingListClientId === client.id}
+                          onClick={() => void handleRestoreWaitingListClient(client)}
+                        >
+                          {restoringWaitingListClientId === client.id
+                            ? 'Restauration...'
+                            : "Remettre en liste d'attente"}
+                        </button>
+                      )}
+                    </div>
+                  </td>)}
+                </tr>
+              )
+            })
+          )}
+        </tbody>
+      </table>
+    </div>
+  )
+
+  const renderPagination = ({
+    totalCount,
+    currentPage,
+    pageCount,
+    onPageChange,
+    sectionRef,
+    pageSize = CLIENTS_PER_PAGE,
+  }: {
+    totalCount: number
+    currentPage: number
+    pageCount: number
+    onPageChange: (page: number) => void
+    sectionRef: RefObject<HTMLElement | null>
+    pageSize?: number
+  }) => {
+    if (totalCount <= pageSize) return null
+    const changePage = (nextPage: number) => {
+      onPageChange(nextPage)
+      window.setTimeout(() => {
+        sectionRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        })
+      }, 0)
+    }
+
+    return (
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-[#7a6859]">
+          Page {currentPage + 1} sur {pageCount}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className={`${buttonClass('secondary')} !w-auto min-w-10 px-3`}
+            onClick={() => changePage(Math.max(currentPage - 1, 0))}
+            disabled={currentPage === 0}
+          >
+            &lt;
+          </button>
+          {Array.from({ length: pageCount }, (_, pageIndex) => (
+            <button
+              key={pageIndex}
+              type="button"
+              className={`min-h-10 min-w-10 rounded-xl px-3 py-2 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-[#ead2bd] ${
+                pageIndex === currentPage
+                  ? 'border border-[#d8b992] bg-[#8a5633] text-white shadow-[0_8px_18px_rgba(138,86,51,0.18)]'
+                  : 'border border-[#eadfd2] bg-[#fffdf9] text-[#6c5a4d] hover:border-[#d8b992] hover:bg-[#fffaf4] hover:text-[#332820]'
+              }`}
+              onClick={() => changePage(pageIndex)}
+              aria-current={pageIndex === currentPage ? 'page' : undefined}
+            >
+              {pageIndex + 1}
+            </button>
+          ))}
+          <button
+            type="button"
+            className={`${buttonClass('secondary')} !w-auto min-w-10 px-3`}
+            onClick={() => changePage(Math.min(currentPage + 1, pageCount - 1))}
+            disabled={currentPage >= pageCount - 1}
+          >
+            &gt;
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  const renderClientForm = ({
+    currentForm,
+    onChange,
+    onSubmit,
+    submitLabel,
+    saving,
+    showStatus,
+    onCancel,
+  }: {
+    currentForm: WaitingListForm
+    onChange: (field: keyof WaitingListForm, value: string | string[]) => void
+    onSubmit: (event: FormEvent<HTMLFormElement>) => void
+    submitLabel: string
+    saving: boolean
+    showStatus: boolean
+    onCancel: () => void
+  }) => {
+    const updateListValue = (
+      field: 'contact_emails' | 'contact_phones',
+      index: number,
+      value: string
+    ) => {
+      onChange(
+        field,
+        currentForm[field].map((currentValue, currentIndex) =>
+          currentIndex === index ? value : currentValue
+        )
+      )
+    }
+
+    const addListValue = (field: 'contact_emails' | 'contact_phones') => {
+      onChange(field, [...currentForm[field], ''])
+    }
+
+    const removeListValue = (
+      field: 'contact_emails' | 'contact_phones',
+      index: number
+    ) => {
+      const nextValues = currentForm[field].filter(
+        (_currentValue, currentIndex) => currentIndex !== index
+      )
+
+      onChange(field, nextValues.length > 0 ? nextValues : [''])
+    }
+
+    return (
+    <form onSubmit={onSubmit} className="mt-5 space-y-5">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {showStatus && (
+          <label className="text-sm font-medium text-[#5d4a3d]">
+            Statut
+            <select
+              value={currentForm.status}
+              onChange={(event) => onChange('status', event.target.value)}
+              className={`${inputClass} mt-1`}
+            >
+              {statusOptions.map((status) => (
+                <option key={status} value={status}>
+                  {statusLabels[status]}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <label className="text-sm font-medium text-[#5d4a3d]">
+          Priorité
+          <select
+            value={currentForm.priority_level}
+            onChange={(event) => onChange('priority_level', event.target.value)}
+            className={`${inputClass} mt-1`}
+          >
+            {priorityOptions.map((priority) => (
+              <option key={priority} value={priority}>
+                {priorityLabels[priority]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-sm font-medium text-[#5d4a3d]">
+          Date de contact
+          <input
+            type="date"
+            value={currentForm.contact_date}
+            onChange={(event) => onChange('contact_date', event.target.value)}
+            className={`${inputClass} mt-1`}
+          />
+        </label>
+        <label className="text-sm font-medium text-[#5d4a3d]">
+          Service demandé
+          <select
+            value={currentForm.service_requested}
+            onChange={(event) =>
+              onChange('service_requested', event.target.value)
+            }
+            className={`${inputClass} mt-1`}
+          >
+            {serviceOptions.map((service) => (
+              <option key={service} value={service}>
+                {service}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-sm font-medium text-[#5d4a3d]">
+          Nom du client
+          <input
+            value={currentForm.client_name}
+            onChange={(event) => onChange('client_name', event.target.value)}
+            className={`${inputClass} mt-1`}
+          />
+        </label>
+        <label className="text-sm font-medium text-[#5d4a3d]">
+          1er requérant
+          <input
+            value={currentForm.first_requester_name}
+            onChange={(event) =>
+              onChange('first_requester_name', event.target.value)
+            }
+            className={`${inputClass} mt-1`}
+          />
+        </label>
+        <label className="text-sm font-medium text-[#5d4a3d]">
+          2e requérant
+          <input
+            value={currentForm.second_requester_name}
+            onChange={(event) =>
+              onChange('second_requester_name', event.target.value)
+            }
+            className={`${inputClass} mt-1`}
+          />
+        </label>
+        <label className="text-sm font-medium text-[#5d4a3d]">
+          Date de naissance
+          <input
+            type="date"
+            value={currentForm.birth_date}
+            onChange={(event) => onChange('birth_date', event.target.value)}
+            className={`${inputClass} mt-1`}
+          />
+        </label>
+        <label className="text-sm font-medium text-[#5d4a3d]">
+          Adresse complète
+          <input
+            value={currentForm.address}
+            onChange={(event) => onChange('address', event.target.value)}
+            className={`${inputClass} mt-1`}
+          />
+        </label>
+        <div className="text-sm font-medium text-[#5d4a3d]">
+          Modalité de rencontre
+          <div className="mt-1 space-y-2 rounded-xl border border-[#dfd0bf] bg-white px-3 py-2.5 shadow-sm">
+            {meetingModalityOptions.map((modality) => (
+              <label
+                key={modality}
+                className="flex items-center gap-2 text-sm font-normal text-[#332820]"
+              >
+                <input
+                  type="checkbox"
+                  checked={currentForm.meeting_modality.includes(modality)}
+                  onChange={(event) => {
+                    const nextModalities = event.target.checked
+                      ? [...currentForm.meeting_modality, modality]
+                      : currentForm.meeting_modality.filter((m) => m !== modality)
+                    onChange('meeting_modality', nextModalities)
+                  }}
+                  className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
+                />
+                {modality}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div className="space-y-2 text-sm font-medium text-[#5d4a3d]">
+          <p>Courriel</p>
+          {currentForm.contact_emails.map((email, index) => (
+            <div key={`email-${index}`} className="flex gap-2">
+              <input
+                type="email"
+                value={email}
+                onChange={(event) =>
+                  updateListValue('contact_emails', index, event.target.value)
+                }
+                className={inputClass}
+              />
+              {currentForm.contact_emails.length > 1 && (
+                <button
+                  type="button"
+                  className={buttonClass('secondary')}
+                  onClick={() => removeListValue('contact_emails', index)}
+                >
+                  Supprimer
+                </button>
+              )}
+            </div>
+          ))}
+          <button
+            type="button"
+            className="text-sm font-medium text-[#6d3f1f] underline decoration-[#d9b591] underline-offset-2 hover:decoration-[#9b6a3d]"
+            onClick={() => addListValue('contact_emails')}
+          >
+            Ajouter un autre courriel
+          </button>
+        </div>
+        <div className="space-y-2 text-sm font-medium text-[#5d4a3d]">
+          <p>Téléphone</p>
+          {currentForm.contact_phones.map((phone, index) => (
+            <div key={`phone-${index}`} className="flex gap-2">
+              <input
+                value={phone}
+                onChange={(event) =>
+                  updateListValue('contact_phones', index, event.target.value)
+                }
+                className={inputClass}
+              />
+              {currentForm.contact_phones.length > 1 && (
+                <button
+                  type="button"
+                  className={buttonClass('secondary')}
+                  onClick={() => removeListValue('contact_phones', index)}
+                >
+                  Supprimer
+                </button>
+              )}
+            </div>
+          ))}
+          <button
+            type="button"
+            className="text-sm font-medium text-[#6d3f1f] underline decoration-[#d9b591] underline-offset-2 hover:decoration-[#9b6a3d]"
+            onClick={() => addListValue('contact_phones')}
+          >
+            Ajouter un autre téléphone
+          </button>
+        </div>
+        <label className="text-sm font-medium text-[#5d4a3d] md:col-span-2 xl:col-span-1">
+          Préférence horaire
+          <input
+            value={currentForm.availability}
+            onChange={(event) => onChange('availability', event.target.value)}
+            className={`${inputClass} mt-1`}
+          />
+        </label>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <label className="text-sm font-medium text-[#5d4a3d]">
+          Motif de consultation
+          <textarea
+            value={currentForm.consultation_reason}
+            onChange={(event) =>
+              onChange('consultation_reason', event.target.value)
+            }
+            className={`${inputClass} mt-1 min-h-28 resize-y`}
+          />
+        </label>
+        <label className="text-sm font-medium text-[#5d4a3d]">
+          Notes internes
+          <textarea
+            value={currentForm.internal_notes}
+            onChange={(event) => onChange('internal_notes', event.target.value)}
+            className={`${inputClass} mt-1 min-h-28 resize-y`}
+          />
+        </label>
+      </div>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+        <button
+          type="button"
+          className={buttonClass('secondary')}
+          onClick={onCancel}
+          disabled={saving}
+        >
+          Annuler
+        </button>
+        <button
+          type="submit"
+          className={buttonClass('primary')}
+          disabled={saving}
+        >
+          {saving ? 'Sauvegarde...' : submitLabel}
+        </button>
+      </div>
+    </form>
+    )
+  }
+
+  return (
+    <>
+      <AppNav />
+      {!readOnly && emailComposerDrafts && (
+        <EmailComposerModal
+          open
+          drafts={emailComposerDrafts}
+          sending={sendingComposedEmails}
+          onCancel={handleCancelComposedEmails}
+          onSend={handleSendComposedEmails}
+        />
+      )}
+      {!readOnly && suggestionClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4 py-6">
+          <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold text-[#9b6a3d]">Suggestions</p>
+                <h2 className="mt-1 text-xl font-semibold text-[#332820]">
+                  Choisir un professionnel pour {suggestionClient.client_name ?? 'ce client'}
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-[#7a6859]">
+                  Sélectionnez une suggestion ou choisissez un autre professionnel, puis créez la demande ou l’assignation directement.
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label="Fermer"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#dfd0bf] bg-white text-xl text-[#7a6859] hover:bg-[#f7efe7]"
+                onClick={() => setSuggestionClient(null)}
+              >
+                ×
+              </button>
+            </div>
+
+            <section className="mt-5">
+              <h3 className="text-sm font-semibold uppercase text-[#8a5633]">
+                Professionnels suggérés
+              </h3>
+              {suggestionMatches.length === 0 ? (
+                <p className="mt-2 rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-4 text-sm text-[#7a6859]">
+                  Aucun professionnel ne satisfait actuellement tous les critères. Vous pouvez quand même en choisir un manuellement ci-dessous.
+                </p>
+              ) : (
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  {suggestionMatches.map((suggestion) => {
+                    const selected = suggestion.professional.id === suggestionProfessionalId
+                    return (
+                      <button
+                        key={suggestion.professional.id}
+                        type="button"
+                        className={`rounded-xl border p-4 text-left transition ${
+                          selected
+                            ? 'border-[#9b6a3d] bg-[#f7e9da] ring-2 ring-[#ead2bd]'
+                            : 'border-[#eadfd2] bg-white hover:border-[#c9a27d]'
+                        }`}
+                        onClick={() =>
+                          setSuggestionProfessionalId(suggestion.professional.id)
+                        }
+                      >
+                        <span className="block font-semibold text-[#332820]">
+                          {suggestion.professional.full_name ??
+                            suggestion.professional.email ??
+                            'Professionnel sans nom'}
+                        </span>
+                        <span className="mt-1 block text-sm leading-5 text-[#7a6859]">
+                          {suggestion.reasons.join(', ')}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </section>
+
+            <label className="mt-5 block text-sm font-medium text-[#5d4a3d]">
+              Tous les professionnels actifs
+              <select
+                value={suggestionProfessionalId}
+                onChange={(event) => setSuggestionProfessionalId(event.target.value)}
+                className={`${inputClass} mt-2`}
+              >
+                <option value="">Choisir un professionnel</option>
+                {professionals.map((professional) => (
+                  <option key={professional.id} value={professional.id}>
+                    {professional.full_name ?? professional.email ?? 'Professionnel sans nom'}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {selectedSuggestionProfessional && (
+              <div className="mt-4 rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-[#332820]">
+                      {selectedSuggestionProfessional.full_name ??
+                        selectedSuggestionProfessional.email}
+                    </p>
+                    <p className="mt-1 text-sm text-[#7a6859]">
+                      {selectedSuggestionHasCapacity
+                        ? 'Une demande active possède une place disponible.'
+                        : 'Aucune place active : ajoutez d’abord une demande de client.'}
+                    </p>
+                  </div>
+                  <Badge tone={selectedSuggestionHasCapacity ? 'success' : 'warning'}>
+                    {selectedSuggestionHasCapacity ? 'Place disponible' : 'Demande requise'}
+                  </Badge>
+                </div>
+
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+                  <label className="text-sm font-medium text-[#5d4a3d]">
+                    Nombre de demandes à ajouter
+                    <input
+                      type="number"
+                      min="1"
+                      max="10"
+                      step="1"
+                      value={suggestionRequestCount}
+                      onChange={(event) => setSuggestionRequestCount(event.target.value)}
+                      className={`${inputClass} mt-1 w-32`}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className={buttonClass('secondary')}
+                    disabled={savingSuggestionAction || !suggestionProfessionalId}
+                    onClick={() => void handleSuggestionRequestOnly()}
+                  >
+                    Ajouter la demande seulement
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="mt-4 rounded-xl border border-[#eadfd2] bg-white p-4">
+              <p className="text-sm font-semibold text-[#332820]">Notifications d’assignation</p>
+              <div className="mt-3 flex flex-wrap gap-5">
+                <label className="flex items-center gap-2 text-sm text-[#5d4a3d]">
+                  <input
+                    type="checkbox"
+                    checked={suggestionNotifyProfessional}
+                    onChange={(event) => setSuggestionNotifyProfessional(event.target.checked)}
+                    className="h-4 w-4 accent-[#8a5633]"
+                  />
+                  Aviser le professionnel
+                </label>
+                <label className="flex items-center gap-2 text-sm text-[#5d4a3d]">
+                  <input
+                    type="checkbox"
+                    checked={suggestionNotifyClient}
+                    disabled={!suggestionClientHasEmail}
+                    onChange={(event) => setSuggestionNotifyClient(event.target.checked)}
+                    className="h-4 w-4 accent-[#8a5633] disabled:opacity-50"
+                  />
+                  Aviser le client
+                </label>
+              </div>
+            </div>
+
+            {formError && (
+              <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {formError}
+              </p>
+            )}
+            {formMessage && (
+              <p className="mt-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+                {formMessage}
+              </p>
+            )}
+
+            <div className="mt-6 flex flex-col gap-3 border-t border-[#eadfd2] pt-5 sm:flex-row sm:flex-wrap sm:justify-end">
+              <button
+                type="button"
+                className="inline-flex min-h-10 items-center justify-center rounded-xl border border-[#d6a436] bg-[#fff4c7] px-4 py-2 text-sm font-semibold text-[#6b4a00] transition hover:bg-[#ffe79a] disabled:opacity-60"
+                disabled={savingSuggestionAction}
+                onClick={() => void handleSuggestionOffPlatform()}
+              >
+                Assignation hors plateforme
+              </button>
+              <button
+                type="button"
+                className={buttonClass('secondary')}
+                disabled={savingSuggestionAction}
+                onClick={() => setSuggestionClient(null)}
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                className={buttonClass('secondary')}
+                disabled={savingSuggestionAction || !suggestionProfessionalId}
+                onClick={() => void handleSuggestionAssignmentProcess()}
+              >
+                {savingSuggestionAction ? 'Traitement...' : 'Mettre assignation en cours'}
+              </button>
+              <button
+                type="button"
+                className={buttonClass('primary')}
+                disabled={savingSuggestionAction || !suggestionProfessionalId}
+                onClick={() => void handleSuggestionAssignment()}
+              >
+                {savingSuggestionAction ? 'Traitement...' : 'Assigner'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {!readOnly && administrativeTaskClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4 py-8">
+          <form
+            onSubmit={handleCreateAdministrativeTask}
+            className="w-full max-w-lg rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-6 shadow-xl"
+          >
+            <h2 className="text-xl font-semibold text-[#332820]">
+              Envoyer aux tâches administratives
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-[#7a6859]">
+              Les adjointes recevront une tâche pour assigner{' '}
+              <strong>{administrativeTaskClient.client_name ?? 'ce client'}</strong>{' '}
+              au professionnel choisi.
+            </p>
+            <label className="mt-5 block text-sm font-medium text-[#5d4a3d]">
+              Professionnel ciblé
+              <select
+                required
+                value={administrativeTaskProfessionalId}
+                onChange={(event) =>
+                  setAdministrativeTaskProfessionalId(event.target.value)
+                }
+                className={`${inputClass} mt-2`}
+              >
+                <option value="">Choisir un professionnel</option>
+                {professionals.map((professional) => (
+                  <option key={professional.id} value={professional.id}>
+                    {professional.full_name ?? professional.email ?? 'Professionnel sans nom'}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                className={buttonClass('secondary')}
+                disabled={savingAdministrativeTask}
+                onClick={() => {
+                  setAdministrativeTaskClient(null)
+                  setAdministrativeTaskProfessionalId('')
+                }}
+              >
+                Annuler
+              </button>
+              <button
+                type="submit"
+                className={buttonClass('primary')}
+                disabled={savingAdministrativeTask || !administrativeTaskProfessionalId}
+              >
+                {savingAdministrativeTask ? 'Création...' : 'Créer la tâche'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+      <main className="min-h-screen px-4 py-8 sm:px-6 lg:ml-72 lg:px-10">
+        <div className="mx-auto max-w-7xl">
+          <div className="mb-8">
+            <p className="text-sm font-medium text-[#9b6a3d]">{readOnly ? "Coordination clinique · Lecture seule" : "Direction"}</p>
+            <h1 className="mt-1 text-3xl font-semibold text-[#332820]">
+              Liste d&apos;attente
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#7a6859]">
+              Vue de consultation des clients en attente de service.
+            </p>
+          </div>
+
+          {loading && (
+            <div className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 text-sm text-[#7a6859]">
+              Chargement de la liste d&apos;attente...
+            </div>
+          )}
+
+          {!loading && error && (
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
+              Erreur: {error}
+            </div>
+          )}
+
+          {!loading && !error && (
+            <div className="space-y-6">
+              <section className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.05)]">
+                <label className="block text-sm font-medium text-[#5d4a3d]">
+                  Recherche
+                  <input
+                    type="search"
+                    value={searchQuery}
+                    onChange={(event) => {
+                      setSearchQuery(event.target.value)
+                      setWaitingPage(0)
+                      setHistoryPage(0)
+                    }}
+                    placeholder="Rechercher un client, requérant, courriel ou téléphone..."
+                    className={`${inputClass} mt-2`}
+                  />
+                </label>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                  <label className="block text-sm font-medium text-[#5d4a3d]">
+                    Service demandé
+                    <select
+                      value={serviceFilter}
+                      onChange={(event) => {
+                        setServiceFilter(event.target.value)
+                        setWaitingPage(0)
+                        setHistoryPage(0)
+                      }}
+                      className={`${inputClass} mt-2`}
+                    >
+                      <option value="all">Tous les services</option>
+                      {serviceOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="block text-sm font-medium text-[#5d4a3d]">
+                    Statut
+                    <select
+                      value={statusFilter}
+                      onChange={(event) => {
+                        setStatusFilter(event.target.value)
+                        setWaitingPage(0)
+                        setHistoryPage(0)
+                      }}
+                      className={`${inputClass} mt-2`}
+                    >
+                      <option value="all">Tous les statuts</option>
+                      {statusOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {statusLabels[option] ?? option}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="block text-sm font-medium text-[#5d4a3d]">
+                    Âge minimum
+                    <input
+                      type="number"
+                      min="0"
+                      max="120"
+                      step="1"
+                      value={minimumAgeFilter}
+                      onChange={(event) => {
+                        setMinimumAgeFilter(event.target.value)
+                        setWaitingPage(0)
+                        setHistoryPage(0)
+                      }}
+                      placeholder="Ex. 18"
+                      className={`${inputClass} mt-2`}
+                    />
+                  </label>
+
+                  <label className="block text-sm font-medium text-[#5d4a3d]">
+                    Âge maximum
+                    <input
+                      type="number"
+                      min="0"
+                      max="120"
+                      step="1"
+                      value={maximumAgeFilter}
+                      onChange={(event) => {
+                        setMaximumAgeFilter(event.target.value)
+                        setWaitingPage(0)
+                        setHistoryPage(0)
+                      }}
+                      placeholder="Ex. 65"
+                      className={`${inputClass} mt-2`}
+                    />
+                  </label>
+
+                  <label className="block text-sm font-medium text-[#5d4a3d]">
+                    Professionnel suggéré
+                    <select
+                      value={professionalFilter}
+                      onChange={(event) => {
+                        setProfessionalFilter(event.target.value)
+                        setWaitingPage(0)
+                        setHistoryPage(0)
+                      }}
+                      className={`${inputClass} mt-2`}
+                    >
+                      <option value="all">Tous les professionnels</option>
+                      {professionals.map((professional) => (
+                        <option key={professional.id} value={professional.id}>
+                          {professional.full_name ?? professional.email ?? 'Professionnel sans nom'}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                </div>
+
+                <div className="mt-4">
+                  <p className="block text-sm font-medium text-[#5d4a3d]">
+                    Modalité de rencontre
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2 rounded-xl border border-[#dfd0bf] bg-white px-3 py-2.5 shadow-sm">
+                    {meetingModalityOptions.map((option) => (
+                      <label
+                        key={option}
+                        className="flex items-center gap-2 text-sm font-normal text-[#332820]"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={modalityFilter.includes(option)}
+                          onChange={(event) => {
+                            setModalityFilter((current) =>
+                              event.target.checked
+                                ? [...current, option]
+                                : current.filter((modality) => modality !== option)
+                            )
+                            setWaitingPage(0)
+                            setHistoryPage(0)
+                          }}
+                          className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
+                        />
+                        {option}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <label className="mt-4 flex items-center gap-2 text-sm font-medium text-[#5d4a3d]">
+                  <input
+                    type="checkbox"
+                    checked={hideThirdPartyClients}
+                    onChange={(event) => {
+                      setHideThirdPartyClients(event.target.checked)
+                      setWaitingPage(0)
+                      setHistoryPage(0)
+                    }}
+                    className="h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
+                  />
+                  Masquer les dossiers IVAC, PAE et CNESST
+                </label>
+
+                {hasActiveFilters && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setServiceFilter('all')
+                      setStatusFilter('all')
+                      setMinimumAgeFilter('')
+                      setMaximumAgeFilter('')
+                      setModalityFilter([])
+                      setProfessionalFilter('all')
+                      setHideThirdPartyClients(false)
+                      setWaitingPage(0)
+                      setHistoryPage(0)
+                    }}
+                    className="mt-3 text-sm font-semibold text-[#8a5633] underline decoration-[#d9b591] underline-offset-2 hover:decoration-[#9b6a3d]"
+                  >
+                    Réinitialiser les filtres
+                  </button>
+                )}
+
+                {hasSearchQuery && filteredClients.length === 0 && (
+                  <p className="mt-3 rounded-xl border border-[#eadfd2] bg-[#f7efe7] px-4 py-3 text-sm text-[#7a6859]">
+                    {emptySearchMessage}
+                  </p>
+                )}
+              </section>
+
+              {!readOnly && (<section className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.05)]">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h2 className="text-base font-semibold text-[#332820]">
+                      Ajouter un client
+                    </h2>
+                    <p className="mt-1 text-sm text-[#7a6859]">
+                      Création manuelle dans la liste d’attente, sans assignation.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className={buttonClass(showForm ? 'secondary' : 'primary')}
+                    onClick={() => {
+                      setShowForm((currentValue) => !currentValue)
+                      setEditingClientId(null)
+                      setAssigningClientId(null)
+                      setFormError('')
+                      setFormMessage('')
+                    }}
+                  >
+                    {showForm ? 'Fermer' : 'Ajouter un client'}
+                  </button>
+                </div>
+
+                {formMessage && (
+                  <div className="mt-4 rounded-xl border border-[#d6c7aa] bg-[#f1ead9] px-4 py-3 text-sm text-[#5f5932]">
+                    {formMessage}
+                  </div>
+                )}
+
+                {formError && (
+                  <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {formError}
+                  </div>
+                )}
+
+                {showForm &&
+                  renderClientForm({
+                    currentForm: form,
+                    onChange: updateFormField,
+                    onSubmit: handleCreateClient,
+                    submitLabel: 'Ajouter à la liste',
+                    saving: savingClient,
+                    showStatus: false,
+                    onCancel: () => {
+                      setShowForm(false)
+                      setForm(emptyWaitingListForm)
+                      setFormError('')
+                    },
+                  })}
+              </section>)}
+
+              {!readOnly && editingClientId && (
+                <section
+                  ref={editSectionRef}
+                  className="scroll-mt-6 rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.05)]"
+                >
+                  <div>
+                    <h2 className="text-base font-semibold text-[#332820]">
+                      Modifier le client
+                    </h2>
+                    <p className="mt-1 text-sm text-[#7a6859]">
+                      Mise à jour des informations de la liste d’attente.
+                    </p>
+                  </div>
+                  {renderClientForm({
+                    currentForm: editForm,
+                    onChange: updateEditFormField,
+                    onSubmit: handleUpdateClient,
+                    submitLabel: 'Enregistrer les modifications',
+                    saving: savingEdit,
+                    showStatus: true,
+                    onCancel: stopEditing,
+                  })}
+                </section>
+              )}
+
+              {!readOnly && assigningClientId && (
+                <section
+                  ref={assignmentSectionRef}
+                  className="scroll-mt-6 rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.05)]"
+                >
+                  <div>
+                    <h2 className="text-base font-semibold text-[#332820]">
+                      Assigner le client
+                    </h2>
+                    <p className="mt-1 text-sm text-[#7a6859]">
+                      Choisissez un professionnel actif ayant une demande active
+                      avec place restante.
+                    </p>
+                  </div>
+                  <form onSubmit={handleAssignClient} className="mt-5 space-y-4">
+                    <label className="text-sm font-medium text-[#5d4a3d]">
+                      Professionnel
+                      <select
+                        value={selectedProfessionalId}
+                        onChange={(event) =>
+                          setSelectedProfessionalId(event.target.value)
+                        }
+                        className={`${inputClass} mt-1`}
+                      >
+                        {professionals.length === 0 ? (
+                          <option value="">Aucun professionnel actif</option>
+                        ) : (
+                          professionals.map((professional) => (
+                            <option key={professional.id} value={professional.id}>
+                              {professional.full_name || professional.email || 'Sans nom'}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                    </label>
+                    {selectedProfessionalHasNoActiveRequest ? (
+                      <div className="rounded-xl border border-[#eadfd2] bg-[#fffaf4] px-4 py-3 text-sm text-[#7a6859]">
+                        Ce professionnel n’a aucune demande active avec place restante.
+                      </div>
+                    ) : (
+                      <div className="rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-4">
+                        <p className="text-sm font-semibold text-[#332820]">
+                          Souhaitez-vous envoyer les notifications ?
+                        </p>
+                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                          <label className="flex items-start gap-2 text-sm text-[#6c5a4d]">
+                            <input
+                              type="checkbox"
+                              checked={notifyProfessional}
+                              onChange={(event) =>
+                                setNotifyProfessional(event.target.checked)
+                              }
+                              className="mt-0.5 h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
+                            />
+                            Envoyer un courriel au professionnel
+                          </label>
+                          <label className="flex items-start gap-2 text-sm text-[#6c5a4d]">
+                            <input
+                              type="checkbox"
+                              checked={notifyClient}
+                              onChange={(event) => setNotifyClient(event.target.checked)}
+                              className="mt-0.5 h-4 w-4 rounded border-[#dfd0bf] accent-[#8a5633]"
+                            />
+                            Envoyer un courriel au client
+                          </label>
+                        </div>
+                        {!selectedAssignmentClientHasEmail && (
+                          <p className="mt-2 text-xs text-[#8a6f5d]">
+                            Aucun courriel client par défaut : vous pourrez
+                            indiquer un destinataire dans la fenêtre d’envoi.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+                      <button
+                        type="button"
+                        className={buttonClass('secondary')}
+                        onClick={() => {
+                          setAssigningClientId(null)
+                          setFormError('')
+                        }}
+                        disabled={savingAssignment}
+                      >
+                        Annuler
+                      </button>
+                      <button
+                        type="submit"
+                        className={buttonClass('primary')}
+                        disabled={
+                          savingAssignment ||
+                          professionals.length === 0 ||
+                          selectedProfessionalHasNoActiveRequest
+                        }
+                      >
+                        {savingAssignment
+                          ? 'Assignation...'
+                          : 'Créer l’assignation'}
+                      </button>
+                    </div>
+                  </form>
+                </section>
+              )}
+
+              <section ref={waitingSectionRef} className="scroll-mt-6 space-y-3">
+                <div>
+                  <h2 className="text-base font-semibold text-[#332820]">
+                    Clients en attente ({waitingClients.length})
+                  </h2>
+                  <p className="mt-1 text-sm text-[#7a6859]">
+                    Liste active des clients à assigner.
+                  </p>
+                </div>
+                {renderClientsTable(
+                  paginatedWaitingClients,
+                  hasSearchQuery ? emptySearchMessage : 'Aucun client en attente.',
+                  true
+                )}
+                {renderPagination({
+                  totalCount: waitingClients.length,
+                  currentPage: safeWaitingPage,
+                  pageCount: waitingPageCount,
+                  onPageChange: setWaitingPage,
+                  sectionRef: waitingSectionRef,
+                })}
+              </section>
+
+              <section ref={historySectionRef} className="scroll-mt-6 space-y-3">
+                <div>
+                  <h2 className="text-base font-semibold text-[#332820]">
+                    Historique clients ({historyClients.length})
+                  </h2>
+                  <p className="mt-1 text-sm text-[#7a6859]">
+                    Clients assignés, actifs, fermés ou inscrits en liste noire.
+                    Le motif de consultation et les notes restent consultables.
+                  </p>
+                </div>
+                {renderClientsTable(
+                  paginatedHistoryClients,
+                  hasSearchQuery ? emptySearchMessage : 'Aucun client dans l’historique.',
+                  false
+                )}
+                {renderPagination({
+                  totalCount: historyClients.length,
+                  currentPage: safeHistoryPage,
+                  pageCount: historyPageCount,
+                  onPageChange: setHistoryPage,
+                  sectionRef: historySectionRef,
+                  pageSize: HISTORY_CLIENTS_PER_PAGE,
+                })}
+              </section>
+
+              {!readOnly && (<div className="hidden">
+                <table className={`${tableClass} w-full`}>
+                  <thead className={tableHeaderClass}>
+                    <tr>
+                      <th className={tableHeadCellClass}>Priorité</th>
+                      <th className={tableHeadCellClass}>Statut</th>
+                      <th className={tableHeadCellClass}>Service demandé</th>
+                      <th className={tableHeadCellClass}>Client</th>
+                      <th className={tableHeadCellClass}>Requérant</th>
+                      <th className={tableHeadCellClass}>Date de naissance</th>
+                      <th className={tableHeadCellClass}>Adresse complète</th>
+                      <th className={tableHeadCellClass}>Modalité</th>
+                      <th className={tableHeadCellClass}>Préférence horaire</th>
+                      <th className={tableHeadCellClass}>Contact</th>
+                      <th className={tableHeadCellClass}>Motif</th>
+                      <th className={tableHeadCellClass}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className={tableBodyClass}>
+                    {clients.length === 0 ? (
+                      <tr>
+                        <td colSpan={12} className="px-4 py-8">
+                          <EmptyState title="Aucun client en liste d’attente pour le moment." />
+                        </td>
+                      </tr>
+                    ) : (
+                      clients.map((client) => {
+                        const isAlreadyAssigned = client.status === 'assigned'
+
+                        return (
+                        <tr
+                          key={client.id}
+                          className={`${tableRowClass} ${
+                            isAlreadyAssigned ? 'bg-[#f7f2eb] opacity-80' : ''
+                          }`}
+                        >
+                          <td className={tableCellClass}>
+                            <Badge tone="warning">
+                              {priorityLabels[client.priority_level ?? ''] ??
+                                formatText(client.priority_level)}
+                            </Badge>
+                          </td>
+                          <td className={tableCellClass}>
+                            <div className="space-y-1">
+                            <Badge tone={statusTones[client.status ?? ''] ?? 'muted'}>
+                              {statusLabels[client.status ?? ''] ??
+                                formatText(client.status)}
+                            </Badge>
+                            {isAlreadyAssigned && (
+                              <p className="text-xs font-medium text-[#8a6f5d]">
+                                Assignation faite
+                              </p>
+                            )}
+                            </div>
+                          </td>
+                          <td className={tableCellClass}>
+                            {formatText(client.service_requested)}
+                          </td>
+                          <td className={tableCellClass}>
+                            {formatText(client.client_name)}
+                          </td>
+                          <td className={tableCellClass}>{formatRequester(client)}</td>
+                          <td className={tableCellClass}>
+                            {formatBirthDateWithAge(client.birth_date)}
+                          </td>
+                          <td className={tableCellClass}>{formatText(client.city)}</td>
+                          <td className={tableCellClass}>
+                            {formatModalities(client.meeting_modality)}
+                          </td>
+                          <td className={tableCellClass}>
+                            {formatText(client.availability)}
+                          </td>
+                          <td className={tableCellClass}>{renderContactInfo(client)}</td>
+                          <td className="max-w-xs whitespace-pre-wrap break-words px-4 py-3 align-top text-[#6c5a4d]">
+                            {formatText(client.consultation_reason)}
+                            {renderInternalNotes(client)}
+                          </td>
+                          <td className={tableCellClass}>
+                            <div className="flex flex-col gap-2 sm:flex-row">
+                              <button
+                                type="button"
+                                className={buttonClass('primary')}
+                                disabled={isAlreadyAssigned}
+                                onClick={() => startAssigning(client)}
+                              >
+                                {isAlreadyAssigned ? 'Déjà assigné' : 'Assigner'}
+                              </button>
+                              <button
+                                type="button"
+                                className={buttonClass('secondary')}
+                                onClick={() => startEditing(client)}
+                              >
+                                Modifier
+                              </button>
+                              {canUseSuperAdminActions && (
+                                <button
+                                  type="button"
+                                  className={buttonClass('danger')}
+                                  disabled={permanentlyDeletingClientId === client.id}
+                                  onClick={() => handlePermanentDeleteClient(client)}
+                                >
+                                  {permanentlyDeletingClientId === client.id
+                                    ? 'Suppression...'
+                                    : 'Supprimer définitivement'}
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                        )
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>)}
+            </div>
+          )}
+        </div>
+      </main>
+    </>
+  )
+}

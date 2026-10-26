@@ -25,8 +25,8 @@ for(const [name,status]of [['anonymous',401],['bad_token',401],['missing_profile
  if(!['coordinator','direction','rpc_denied','rpc_failure'].includes(name))assert.equal(calls.length,0,'Pas de RPC avant autorisation')
 }
 scenario='coordinator';calls=[]
-for(const view of ['dashboard','waiting-list','preferences'])assert.equal((await route.GET(new NextRequest('https://fixture.example.invalid/api/clinical-overview?view='+view,{headers:{Authorization:'Bearer fixture'}}))).status,200)
-assert.deepEqual(calls.map(c=>c.args.requested_view),['dashboard','waiting-list','preferences'])
+for(const view of ['dashboard','waiting-list','preferences','direction-dashboard','direction-waiting-list'])assert.equal((await route.GET(new NextRequest('https://fixture.example.invalid/api/clinical-overview?view='+view,{headers:{Authorization:'Bearer fixture'}}))).status,200)
+assert.deepEqual(calls.map(c=>c.name),['read_clinical_overview','read_clinical_overview','read_clinical_overview','read_clinical_direction_pages','read_clinical_direction_pages'])
 for(const view of ['', 'profiles','../direction','preferences;update'])assert.equal((await route.GET(new NextRequest('https://fixture.example.invalid/api/clinical-overview?view='+encodeURIComponent(view),{headers:{Authorization:'Bearer fixture'}}))).status,400)
-assert.equal(calls.length,3)
+assert.equal(calls.length,5)
 console.log('API lecture seule : sessions, adhésion, révocation, rôle direction, projections et absence de mutation vérifiés.')

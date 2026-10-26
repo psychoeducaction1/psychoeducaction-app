@@ -3,6 +3,24 @@
 Ève conserve son rôle professionnel et son accès existant de coordination.
 Le nouveau périmètre permet uniquement de consulter les données de coordination :
 
+Depuis l'adaptation du 26 octobre, le tableau de bord et la liste d'attente de la
+direction et d'Ève utilisent les mêmes composants `DirectionDashboard` et
+`DirectionWaitingList`. Les routes coordination fixent `readOnly=true`; les
+routes direction conservent leur contrôle de rôle et leurs actions habituelles.
+Ève voit les mêmes six compteurs, sections, filtres, colonnes, coordonnées,
+requérants, notes et historique. Aucun formulaire ni bouton métier n'est rendu,
+les handlers d'écriture sont bloqués et les noms professionnels sont du texte.
+Les liens courriel restent du texte dans cette consultation. Recherche, filtres,
+pagination et développement du motif restent utilisables sans écriture.
+
+`read_clinical_direction_pages` fournit ces deux vues complètes après contrôle
+d'identité, de rôle/UUID et d'accès actif en base; aucun droit d'écriture ou accès
+à une fiche professionnelle n'est attribué. L'API GET existante accepte les vues
+`direction-dashboard` et `direction-waiting-list` et reste privée sans cache.
+La page de préférences commune reste inchangée. Les contrats limités décrits
+ci-dessous restent disponibles pour compatibilité, mais les routes coordination
+du dashboard et de la liste n'affichent plus les anciennes vues simplifiées.
+
 - `/coordination-clinique/tableau-de-bord` : demandes des professionnels actifs,
   commentaires de demande, capacités, services pris/à confirmer/non pris et
   compteurs de liste d'attente. Les noms ne sont pas des liens.
@@ -53,6 +71,10 @@ ont été conservés. Aucune donnée de dossier modifiée ni notification réell
   annulations/refus exclus de l'occupation, démarches actives masquées et retour visible.
 - Types et lint ciblé réussis. 252 tests réussis dans le dépôt de travail.
 - Les 243 tests de la copie isolée, sans les autres changements locaux, réussissent.
+- Adaptation partagée : 253 tests dans le dépôt, 244 dans la copie isolée.
+  Rendu des vrais composants testé : champs/historique et sections identiques,
+  actions direction conservées, formulaires, mailto et liens fiches absents pour Ève.
+  La vraie migration SQL vérifie les deux nouvelles projections et les refus tiers/révoqué.
 - Build Webpack complet de la copie isolée réussi (sortie 0), après une première
   interruption d'avertissement Next.js. Les trois pages et l'API sont présentes.
 - Vérification visuelle réussie avec un compte de coordination fictif : menu,
@@ -75,3 +97,11 @@ droit de mutation sur les tables n'a été ajouté.
 
 La publication des trois pages et de l'API suit par le commit ciblé sur main;
 le statut Vercel et les routes publiques sont vérifiés séparément après le push.
+
+L'adaptation aux pages direction partagées a été autorisée explicitement et sa
+fonction `read_clinical_direction_pages` activée dans une transaction unique :
+les deux vues complètes ont été vérifiées avec les claims des 28 comptes réels,
+avec autorisations conformes, fonction STABLE et refus anonyme. Aucun nouveau
+droit de mutation ajouté. Le build isolé complet réussit après relance de l'arrêt
+initial d'avertissement Next.js. Les tests visuels fictifs confirment les mêmes
+six compteurs, filtres et historique, sans lien fiche ni commande métier pour Ève.
