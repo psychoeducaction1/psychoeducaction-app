@@ -187,7 +187,14 @@ export function AppNav() {
           ]
         : []
 
-  if (coordinationAuthorized) navLinks.push({ href: '/coordination-clinique', label: 'Coordination clinique', icon: ListTodo }, { href: '/coordination-clinique/calendrier', label: 'Disponibilités coordination', icon: CalendarDays })
+  if (coordinationAuthorized) {
+    navLinks.push({ href: '/coordination-clinique', label: 'Coordination clinique', icon: ListTodo }, { href: '/coordination-clinique/calendrier', label: 'Disponibilités coordination', icon: CalendarDays })
+    if (displayRole !== 'direction') navLinks.push(
+      { href: '/coordination-clinique/tableau-de-bord', label: 'Tableau de bord clinique', icon: LayoutDashboard },
+      { href: '/coordination-clinique/liste-attente', label: 'Liste d’attente', icon: ListChecks },
+    )
+  }
+  if (displayRole === 'direction' || coordinationAuthorized) navLinks.push({ href: '/preferences-professionnels', label: 'Préférences des professionnels', icon: SlidersHorizontal })
 
   const brandHref =
     displayRole === 'professionnel'
@@ -204,7 +211,7 @@ export function AppNav() {
     navLinks.map((link) => {
       const Icon = link.icon
       const isActive =
-        link.href.startsWith('/coordination-clinique')
+        link.href.startsWith('/coordination-clinique') || link.href === '/preferences-professionnels'
           ? pathname === link.href
           : link.href === '/prise-de-notes'
           ? pathname === '/prise-de-notes'
@@ -240,14 +247,14 @@ export function AppNav() {
         <Link
           key={link.href}
           href={link.href}
-          className={`inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium transition-all duration-200 ${
+          className={`inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium transition-all duration-200 lg:whitespace-normal ${
             isActive
               ? 'bg-[#efe1d2] text-[#6d3f1f]'
               : 'text-[#6c5a4d] hover:bg-[#f5ebe0] hover:text-[#3b2d24]'
           }`}
         >
           <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-          {link.label}
+          <span className="min-w-0">{link.label}</span>
         </Link>
       )
     })
