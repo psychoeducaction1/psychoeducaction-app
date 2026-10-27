@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   CalendarDays,
@@ -13,6 +12,7 @@ import {
   Plus,
 } from 'lucide-react'
 import { AppNav } from '@/components/AppNav'
+import { ClinicalCoordinationAvailabilityCalendar } from '@/components/ClinicalCoordinationAvailabilityCalendar'
 import { Badge, EmptyState, PageHeader } from '@/components/ui/index'
 import { buttonClass } from '@/components/Ui'
 import { loadClinicalCoordinationAccess } from '@/lib/clinicalCoordinationClient'
@@ -96,6 +96,7 @@ export default function ClinicalCoordinationPage() {
   const [notes, setNotes] = useState<TaskNote[]>([])
   const [files, setFiles] = useState<TaskFile[]>([])
   const [view, setView] = useState<'active' | 'history'>('active')
+  const [activeTab, setActiveTab] = useState<'coordination' | 'calendrier'>('coordination')
   const [showTaskForm, setShowTaskForm] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -174,12 +175,14 @@ export default function ClinicalCoordinationPage() {
   }, [loadData])
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      if (new URLSearchParams(window.location.search).get('preview') === 'eve') {
-        setReadOnlyPreview(true)
-      }
-    }, 0)
-    return () => window.clearTimeout(timer)
+    const syncLocation = () => {
+      const params = new URLSearchParams(window.location.search)
+      setReadOnlyPreview(params.get('preview') === 'eve')
+      setActiveTab(params.get('onglet') === 'calendrier' ? 'calendrier' : 'coordination')
+    }
+    const timer = window.setTimeout(syncLocation, 0)
+    window.addEventListener('popstate', syncLocation)
+    return () => { window.clearTimeout(timer); window.removeEventListener('popstate', syncLocation) }
   }, [])
 
   const displayedTasks = useMemo(
@@ -194,11 +197,19 @@ export default function ClinicalCoordinationPage() {
   const updatePreview = (enabled: boolean) => {
     setReadOnlyPreview(enabled)
     setShowTaskForm(false)
-    window.history.replaceState(
-      null,
-      '',
-      enabled ? '/coordination-clinique?preview=eve' : '/coordination-clinique'
-    )
+    updateLocation(activeTab, enabled)
+  }
+
+  const updateLocation = (tab: 'coordination' | 'calendrier', preview: boolean) => {
+    const params = new URLSearchParams()
+    if (tab === 'calendrier') params.set('onglet', 'calendrier')
+    if (preview) params.set('preview', 'eve')
+    window.history.replaceState(null, '', `/coordination-clinique${params.size ? `?${params}` : ''}`)
+  }
+
+  const selectTab = (tab: 'coordination' | 'calendrier') => {
+    setActiveTab(tab)
+    updateLocation(tab, readOnlyPreview)
   }
 
   const createTask = async () => {
@@ -346,18 +357,9 @@ export default function ClinicalCoordinationPage() {
           <PageHeader
             eyebrow="Coordination clinique"
             title={isDirection && !readOnlyPreview ? 'Coordination clinique' : 'Mon espace de coordination clinique'}
-            description="Tâches en cours, livrables et historique du travail réalisé."
+            description={activeTab === 'calendrier' ? 'Disponibilités hebdomadaires prévues pour joindre Ève, coordinatrice clinique, au besoin.' : 'Tâches en cours, livrables et historique du travail réalisé.'}
             actions={(
               <>
-                {!readOnlyPreview && (
-                  <>
-                    <Link href="/coordination-clinique/calendrier" className={buttonClass('secondary')}>
-                      <CalendarDays className="h-4 w-4" />
-                      Calendrier de coordination
-                    </Link>
-
-                  </>
-                )}
                 {isDirection && <button
                   type="button"
                   onClick={() => updatePreview(!readOnlyPreview)}
@@ -370,6 +372,11 @@ export default function ClinicalCoordinationPage() {
             )}
           />
 
+          <div role="tablist" aria-label="Espace de coordination clinique" className="flex flex-wrap gap-2">
+            <button id="coordination-tab" type="button" role="tab" aria-selected={activeTab === 'coordination'} aria-controls="coordination-panel" onClick={() => selectTab('coordination')} className={buttonClass(activeTab === 'coordination' ? 'primary' : 'secondary')}>Coordination</button>
+            <button id="calendrier-tab" type="button" role="tab" aria-selected={activeTab === 'calendrier'} aria-controls="calendrier-panel" onClick={() => selectTab('calendrier')} className={buttonClass(activeTab === 'calendrier' ? 'primary' : 'secondary')}><CalendarDays className="h-4 w-4" />Calendrier</button>
+          </div>
+
           {readOnlyPreview && (
             <div className="rounded-xl border border-[#d9b591] bg-[#fbf1e7] px-4 py-3 text-sm text-[#6d3f1f]">
               Vue sécurisée en lecture seule. Aucune action ne sera enregistrée au nom d’Ève.
@@ -381,8 +388,10 @@ export default function ClinicalCoordinationPage() {
 
           {!loading && !staff && <p>L’espace de coordination clinique n’est pas encore disponible. Contactez la direction.</p>}
 
-          {staff && (
-            <>
+          {staff && activeTab === 'calendrier' && <section id="calendrier-panel" role="tabpanel" aria-labelledby="calendrier-tab"><ClinicalCoordinationAvailabilityCalendar staffId={staff.id} canEdit={!readOnlyPreview} /></section>}
+
+          {staff && activeTab === 'coordination' && (
+            <section id="coordination-panel" role="tabpanel" aria-labelledby="coordination-tab">
               <section className="border-y border-[#eadfd2] py-5">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex flex-wrap gap-2">
@@ -451,7 +460,7 @@ export default function ClinicalCoordinationPage() {
                 </section>
               )}
 
-            </>
+            </section>
           )}
         </div>
       </main>

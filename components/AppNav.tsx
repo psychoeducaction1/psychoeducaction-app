@@ -128,7 +128,10 @@ export function AppNav() {
             label: 'Tâches administratives',
             icon: ListTodo,
           },
-          { href: '/direction/professionnels', label: 'Professionnels', icon: Users },
+          { href: '/preferences-professionnels', label: 'Préférences des professionnels', icon: SlidersHorizontal },
+          ...(budgetAuthorized
+            ? [{ href: '/direction/professionnels', label: 'Professionnels', icon: Users }]
+            : []),
           ...(budgetAuthorized
             ? [{ href: '/direction/satisfaction', label: 'Satisfaction', icon: Star }]
             : []),
@@ -154,7 +157,7 @@ export function AppNav() {
         ]
       : displayRole === 'professionnel'
         ? [
-            { href: '/professionnel', label: 'Tableau de bord', icon: LayoutDashboard },
+            { href: coordinationAuthorized ? '/coordination-clinique/tableau-de-bord' : '/professionnel', label: coordinationAuthorized ? 'Tableau de bord clinique' : 'Tableau de bord', icon: LayoutDashboard },
             { href: '/professionnel/clients', label: 'Mes assignations', icon: UserCheck },
             { href: '/professionnel/demande', label: 'Ma demande', icon: ClipboardList },
             { href: '/professionnel/historique', label: 'Historique', icon: History },
@@ -184,21 +187,22 @@ export function AppNav() {
                   },
                 ]
               : []),
+            ...(coordinationAuthorized
+              ? [{ href: '/preferences-professionnels', label: 'Préférences des professionnels', icon: SlidersHorizontal }]
+              : []),
           ]
         : []
 
   if (coordinationAuthorized) {
-    navLinks.push({ href: '/coordination-clinique', label: 'Coordination clinique', icon: ListTodo }, { href: '/coordination-clinique/calendrier', label: 'Disponibilités coordination', icon: CalendarDays })
+    navLinks.push({ href: '/coordination-clinique', label: 'Coordination clinique', icon: ListTodo })
     if (displayRole !== 'direction') navLinks.push(
-      { href: '/coordination-clinique/tableau-de-bord', label: 'Tableau de bord clinique', icon: LayoutDashboard },
       { href: '/coordination-clinique/liste-attente', label: 'Liste d’attente', icon: ListChecks },
     )
   }
-  if (displayRole === 'direction' || coordinationAuthorized) navLinks.push({ href: '/preferences-professionnels', label: 'Préférences des professionnels', icon: SlidersHorizontal })
 
   const brandHref =
     displayRole === 'professionnel'
-      ? '/professionnel'
+      ? coordinationAuthorized ? '/coordination-clinique/tableau-de-bord' : '/professionnel'
       : '/direction'
   const currentSpaceLabel =
     displayRole === 'direction'

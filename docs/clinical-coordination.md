@@ -7,6 +7,21 @@ autorisation explicite. Aucun nouveau compte ni notification réelle de test.
 
 ## Fonctions reprises
 
+Navigation regroupée le 26 octobre : une seule entrée « Coordination clinique »
+ouvre les onglets Coordination et Calendrier sur la même page. Le paramètre
+`onglet=calendrier` permet un lien direct; l'ancien chemin `/calendrier` redirige
+vers cet onglet et conserve `preview=eve`. Le changement d'onglet conserve aussi
+le mode d'aperçu en lecture seule. Aucun droit ni contrat de données modifié.
+Pour Ève, « Tableau de bord clinique » remplace l'entrée du tableau de bord
+professionnel dans le menu et devient la cible du logo. Les autres professionnels
+gardent leur menu habituel. Une seule entrée « Liste d'attente » est conservée.
+Dans le menu direction, « Préférences des professionnels » suit immédiatement
+« Tâches administratives ». L'entrée de gestion « Professionnels » reste visible
+uniquement au super administrateur configuré; les adjointes voient les préférences.
+Pour la coordinatrice, l'entrée des préférences précède « Coordination clinique »,
+après les tâches administratives si celles-ci lui sont déjà autorisées. Ce rangement
+du menu ne modifie pas les autorisations serveur des pages existantes.
+
 - `/coordination-clinique` : création de tâches par la direction et la coordinatrice,
   priorités, échéances, suivi à faire/en cours/terminé, annulation par la direction,
   commentaires, pièces jointes privées et historique.
