@@ -77,7 +77,7 @@ export default function RectifyPayrollInvoicePage() {
       <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr>{['Description', 'Quantité', 'Unité', 'Prix unitaire ($)', 'Annulation', 'Total', ''].map(label => <th key={label} className="p-2">{label}</th>)}</tr></thead>
         <tbody>{edit.lines.map((line, i) => <tr key={i}>
           <td className="min-w-48 p-2"><input aria-label={`Description ${i + 1}`} className={input} value={line.label} maxLength={200} onChange={e => update(i, { label: e.target.value })} /></td>
-          <td className="p-2"><input aria-label={`Quantité ${i + 1}`} type="number" min="0.000001" step="any" className={input} value={line.quantity} onChange={e => update(i, { quantity: Number(e.target.value) })} /></td>
+          <td className="p-2"><input aria-label={`Quantité ${i + 1}`} type="number" min="0.01" step="0.01" className={input} value={decimalProduct(line.quantity, 1)} onChange={e => update(i, { quantity: Number(e.target.value) })} /></td>
           <td className="p-2"><select aria-label={`Unité ${i + 1}`} className={input} value={line.unit} onChange={e => update(i, { unit: e.target.value as 'h' | 'élément' })}><option value="élément">rencontre / unité</option><option value="h">heure</option></select></td>
           <td className="p-2"><input aria-label={`Prix unitaire ${i + 1}`} type="number" min="0" step="any" className={input} value={line.unitPay} onChange={e => update(i, { unitPay: Number(e.target.value) })} /></td>
           <td className="p-2"><input aria-label={`Annulation ${i + 1}`} type="checkbox" checked={Boolean(line.cancellation)} onChange={e => update(i, { cancellation: e.target.checked, unit: 'élément' })} /></td>
@@ -86,6 +86,7 @@ export default function RectifyPayrollInvoicePage() {
         </tr>)}</tbody></table></div>
       <button type="button" className={buttonClass('secondary')} onClick={() => setEdit({ ...edit, lines: [...edit.lines, { label: 'Rencontre', quantity: 1, unitPay: 0, unit: 'élément' }] })}>Ajouter une ligne</button>
       <label className="block max-w-xs">Déplacement ($)<input type="number" min="0" step="0.01" className={input} value={edit.travelFeesTotal} onChange={e => setEdit({ ...edit, travelFeesTotal: Number(e.target.value) })} /></label>
+      <p className="text-xs">Quantités affichées arrondies à deux décimales; totaux calculés avant cet arrondi.</p>
       <p className="text-xl font-semibold">Total : {total === null ? 'Vérifiez les quantités et les montants' : money(total)}</p>
       <label className="block">Motif de la correction<textarea className={input} minLength={10} maxLength={500} value={reason} onChange={e => setReason(e.target.value)} /></label>
       <div className="flex flex-wrap gap-3"><button type="button" disabled={busy || total === null || reason.trim().length < 10} className={buttonClass('primary')} onClick={() => void save()}>{busy ? 'Traitement…' : 'Enregistrer et remplacer la facture'}</button>

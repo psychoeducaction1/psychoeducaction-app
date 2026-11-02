@@ -55,10 +55,10 @@ for(const name of ['anonymous','disabled','not_payroll','invalid_rows','zero_dur
   if(name==='zero_duration')body.rows[1][0]='2026-10-19\n09:00 - 09:00'
   if(name==='import')Object.assign(body,{action:'import',legacyNumber:'PEA-AG-021',originalName:'original.pdf',originalSigned:true,originalBase64:Buffer.from('%PDF-1.7\nORIGINAL FICTIF').toString('base64')})
   const response=await route.POST(new NextRequest('https://fixture.example.invalid/api/direction/payroll-invoices',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer fixture'},body:JSON.stringify(body)}))
-  const expected=name==='anonymous'?401:['disabled','not_payroll'].includes(name)?403:['invalid_rows','import'].includes(name)?400:name==='migration_missing'?503:200
+  const expected=name==='anonymous'?401:['disabled','not_payroll'].includes(name)?403:['invalid_rows','import'].includes(name)?400:name==='zero_duration'?422:name==='migration_missing'?503:200
   assert.equal(response.status,expected,name)
   assert.equal(response.headers.get('cache-control'),'private, no-store')
-  if(['anonymous','disabled','not_payroll','invalid_rows','import'].includes(name))assert.equal(adminCalls,0,name)
+  if(['anonymous','disabled','not_payroll','invalid_rows','import','zero_duration'].includes(name))assert.equal(adminCalls,0,name)
   if(expected===200&&name!=='import'){
     assert.equal(rpcCalls,1)
     assert.equal(rpcArgs.p_snapshot.invoice.grandTotal,66)

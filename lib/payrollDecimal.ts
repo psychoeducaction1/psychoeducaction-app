@@ -38,7 +38,7 @@ export function decimalSum(values: number[], places = 2): number {
 
 export function formatPayrollQuantity(value: number, unit = ''): string {
   if (!Number.isFinite(value) || value < 0) throw new Error('Quantité invalide.')
-  // Les durées sources ont une précision à la minute. Aucun arrondi à l'entier.
-  const formatted = new Intl.NumberFormat('fr-CA', { maximumFractionDigits: 6 }).format(value)
-  return `${value > 0 && formatted === '0' ? '< 0,000001' : formatted}${unit ? ` ${unit}` : ''}`
+  // Quantités affichées à deux décimales; la précision du calcul est conservée.
+  const formatted = new Intl.NumberFormat('fr-CA', { maximumFractionDigits: 2 }).format(decimalProduct(value, 1))
+  return `${value > 0 && formatted === '0' ? '< 0,01' : formatted}${unit ? ` ${unit}` : ''}`
 }

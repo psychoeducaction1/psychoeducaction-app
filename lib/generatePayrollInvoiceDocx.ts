@@ -44,7 +44,7 @@ export type PayrollInvoiceData = {
   grandTotal: number
 }
 
-/** Projection destinée au fournisseur : aucun tarif client, pourcentage ou libellé libre. */
+/** Projection fournisseur : tarif client dans le libellé demandé; aucun pourcentage ni libellé source libre. */
 export function toPayrollInvoiceData(result: ProfessionalPayrollResult): PayrollInvoiceData {
   if (result.invoiceIssues?.length || result.lineItems.some(item => item.totalHours <= 0)) {
     throw new Error('Facture bloquée : confirmez les quantités et les règles des activités signalées avant émission.')
@@ -62,14 +62,14 @@ export function toPayrollInvoiceData(result: ProfessionalPayrollResult): Payroll
       label: item.kind === 'rapport_evaluation' || (!item.kind && item.label.startsWith("Rapport d'évaluation"))
         ? "Rapport d'évaluation psychoéducative"
         : item.kind === 'entretien_telephonique' || (!item.kind && item.label === 'Entretien téléphonique')
-          ? 'Entretien téléphonique' : 'Rencontre',
+          ? 'Entretien téléphonique' : `Rencontre (${new Intl.NumberFormat('fr-CA', { maximumFractionDigits: 2 }).format(item.amount)} $)`,
       quantity: item.totalHours,
       unitPay: item.totalHours > 0 ? item.totalPay / item.totalHours : 0,
       totalPay: item.totalPay,
       unit: item.unit ?? (item.kind === 'entretien_telephonique' ? 'élément' : 'h'),
     })),
     cancellationLineItems: result.cancellationLineItems.map((item) => ({
-      label: 'Honoraires d’annulation', count: item.count,
+      label: 'Annulation', count: item.count,
       unitPay: item.count > 0 ? item.totalPay / item.count : 0, totalPay: item.totalPay,
     })),
     travelFeesTotal: result.travelFeesTotal,
@@ -759,6 +759,7 @@ export function generatePayrollInvoiceDocumentFromData(
           emptyLine(),
           buildPartyTable(invoice),
           ...buildRateSection(invoice),
+          paragraph([run('Quantités affichées arrondies à deux décimales; totaux calculés avant cet arrondi.', { size: 14, color: COLOR_MUTED })]),
           ...(extrasTable
             ? [
                 paragraph([run('Frais additionnels', { bold: true, color: COLOR_MUTED })], {

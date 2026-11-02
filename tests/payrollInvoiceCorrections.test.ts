@@ -24,12 +24,12 @@ async function textOf(document: ReturnType<typeof generatePayrollInvoiceDocument
 
 test('présentation : rencontres regroupées par montant réclamé, quantités sans heures ni lignes Excel', async () => {
   const amounts = [120,135,110,145,130]
-  const rows = [header,...amounts.flatMap(amount => [row(amount,'09:00 - 09:30'),row(amount,'10:00 - 11:00')])]
+  const rows = [header,...amounts.flatMap(amount => [row(amount/2,'09:00 - 09:30'),row(amount,'10:00 - 11:00')])]
   const result = calculatePayroll(rows,[pro],period).professionalResults[0]
   assert.equal(result.lineItems.length,5)
-  assert.deepEqual(result.lineItems.map(i=>[i.amount,i.totalHours]),amounts.map(a=>[a,2]))
+  assert.deepEqual(result.lineItems.map(i=>[i.amount,i.totalHours]),amounts.map(a=>[a,1.5]))
   const invoice = toPayrollInvoiceData(result)
-  assert.deepEqual(invoice.lineItems.map(i=>i.quantity),[2,2,2,2,2])
+  assert.deepEqual(invoice.lineItems.map(i=>i.quantity),[1.5,1.5,1.5,1.5,1.5])
   assert.deepEqual(invoice.lineItems.map(i=>i.unitPay),[84,94.5,77,101.5,91])
   const text = await textOf(generatePayrollInvoiceDocument(result,period,null))
   assert.doesNotMatch(text,/lignes? \d|\b[12] h\b|élément/)
@@ -48,30 +48,30 @@ test('Rim : la référence 110/h est distincte du coefficient 110/180 et le tota
   assert.doesNotMatch(text,/0,61|DOSSIER-FICTIF/)
 })
 
-test('durées absentes : trois rencontres explicites rémunérées sur les montants réclamés', () => {
+test('durées absentes : montants conservés et émission bloquée jusqu’à rectification des horaires', () => {
   const rows = [header,row(60,'17:30 - 17:30'),row(67.5,'12:45 - 12:45'),row(67.5,'17:00 - 17:00'),
     ...Array.from({ length:7 },()=>row(135))]
   const result=calculatePayroll(rows,[pro],period).professionalResults[0]
-  const zero=result.lineItems.filter(i=>i.amount===60 || i.amount===67.5)
+  const zero=result.lineItems.filter(i=>i.totalHours===0)
   assert.equal(decimalSum(zero.map(i=>i.totalPay)),136.5)
   assert.deepEqual(zero.flatMap(i=>i.sourceRows!),[2,3,4])
-  assert.equal(result.invoiceIssues?.length,0)
-  assert.equal(decimalSum(zero.map(i=>i.totalHours)),3)
+  assert.equal(result.invoiceIssues?.length,3)
+  assert.equal(decimalSum(zero.map(i=>i.totalHours)),0)
   assert.equal(result.meetingCount,10)
-  assert.doesNotThrow(()=>toPayrollInvoiceData(result))
+  assert.throws(()=>toPayrollInvoiceData(result),/bloquée/)
 })
 
 test('une minute ou une fraction positive ne devient jamais zéro; absence et téléphone ont leurs propres unités', () => {
   const result=calculatePayroll([header,row(1.35,'09:00 – 09:01'),row(60,'','Absence'),row(33.75,'09:00 - 09:15','Entretien téléphonique')],[pro],period).professionalResults[0]
   const data=toPayrollInvoiceData(result)
-  assert.equal(data.lineItems[0].quantity,1)
-  assert.equal(formatPayrollQuantity(1/60,'h'),'0,016667 h')
+  assert.equal(data.lineItems[0].quantity,1/60)
+  assert.equal(formatPayrollQuantity(1/60,'h'),'0,02 h')
   assert.notEqual(formatPayrollQuantity(0.00000001),'0')
   assert.equal(data.lineItems[1].quantity,1)
   assert.equal(data.lineItems[1].unit,'élément')
   assert.equal(data.cancellationLineItems[0].count,1)
   for (const time of ['99:00 - 99:30','10:00 - 09:00','','09:00 - 09:00']) {
-    assert.equal(calculatePayroll([header,row(60,time)],[pro],period).professionalResults[0].invoiceIssues?.length,0)
+    assert.ok(calculatePayroll([header,row(60,time)],[pro],period).professionalResults[0].invoiceIssues?.length)
   }
 })
 

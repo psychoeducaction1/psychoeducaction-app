@@ -1,5 +1,7 @@
 'use client'
 
+import { correctActivityTimes, type ActivityTimeCorrection } from '@/lib/payrollActivityCorrection'
+
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { readSpreadsheetRows } from '@/lib/spreadsheetImport'
@@ -81,7 +83,6 @@ function displayedInvoiceResult(result: ProfessionalPayrollResult, record?: Payr
   return { ...result, professional: { ...result.professional, ...invoice.professional }, invoiceIssues: [],
     lineItems: invoice.lineItems.map(i => ({ label: i.label, totalHours: i.quantity, totalPay: i.totalPay, unit: i.unit, amount: 0, rate: 0, isFlatRate: false })),
     cancellationLineItems: invoice.cancellationLineItems.map(i => ({ label: i.label, count: i.count, totalPay: i.totalPay, clientAmount: 0, rate: 0 })),
-    meetingCount: invoice.lineItems.filter(i => i.unit !== 'h' && !i.label.startsWith('Rapport')).reduce((n, i) => n + i.quantity, 0),
     cancellationCount: invoice.cancellationCount, cancellationFeesTotal: invoice.cancellationFeesTotal,
     travelFeesTotal: invoice.travelFeesTotal, travelKilometersTotal: invoice.travelKilometersTotal, grandTotal: invoice.grandTotal,
   }
@@ -113,6 +114,8 @@ export default function DirectionPaiePage() {
     } catch (error) { setConfigMessage(error instanceof Error ? error.message : 'Configuration impossible.') }
   }
 
+  const [timeCorrections, setTimeCorrections] = useState<(ActivityTimeCorrection & { date: string })[]>([])
+  const [timeCorrectionError, setTimeCorrectionError] = useState('')
   const [loading, setLoading] = useState(true)
   const [authorized, setAuthorized] = useState(false)
   const [error, setError] = useState('')
@@ -160,6 +163,7 @@ export default function DirectionPaiePage() {
     fileReadController.current?.abort()
     calculationSequence.current += 1
     setResult(null)
+    setTimeCorrections([])
     sourceRows.current = []
     setCalculating(false)
     setWeeklyContextConfirmed(false)
@@ -363,8 +367,26 @@ export default function DirectionPaiePage() {
     link.href = url; link.click(); URL.revokeObjectURL(url)
   }
 
+  const openTimeCorrection = (professional: ProfessionalPayrollResult) => {
+    const calculated = result?.professionalResults.find(p => p.professional.id === professional.professional.id) ?? professional
+    const rows = calculated.lineItems.filter(i => i.totalHours <= 0).flatMap(i => i.sourceRows ?? [])
+    setTimeCorrectionError('')
+    setTimeCorrections(rows.map(sourceRow => ({ sourceRow, startTime: '', endTime: '', date: String(sourceRows.current[sourceRow - 1]?.[0] ?? '').split('\n')[0] })))
+    return rows.length > 0
+  }
+  const applyTimeCorrections = () => {
+    try {
+      if (!result?.period) throw new Error('Recalculez la période.')
+      const rows = correctActivityTimes(sourceRows.current, timeCorrections)
+      const recalculated = calculatePayroll(rows, professionals, result.period)
+      sourceRows.current = rows; setResult(recalculated); setTimeCorrections([])
+      setInvoiceMessage('Horaires corrigés dans ce calcul. Pour une facture déjà enregistrée, appliquez le recalcul avec le bouton prévu. Le fichier Excel original reste inchangé.')
+    } catch (error) { setTimeCorrectionError(error instanceof Error ? error.message : 'Correction impossible.') }
+  }
+
   const openEditor = async (professionalResult: ProfessionalPayrollResult) => {
     setInvoiceMessage('')
+    if (openTimeCorrection(professionalResult)) return
     try {
       let record = invoiceRecords[professionalResult.professional.id] ?? (await prepareInvoice(professionalResult)).record
       if (!record.snapshot) record = (await prepareInvoice(professionalResult, 'revise')).record
@@ -641,6 +663,18 @@ export default function DirectionPaiePage() {
             </button>
           </section>
 
+          {timeCorrections.length > 0 && <section role="dialog" aria-label="Corriger les horaires" className="space-y-4 rounded-2xl border border-[#dfd0bf] bg-white p-5">
+            <h2 className="text-lg font-semibold">Corriger les horaires manquants</h2>
+            <p>Indiquez les heures réelles. Les quantités et les tarifs seront recalculés à partir du montant réclamé, sans modifier ce montant.</p>
+            {timeCorrections.map((correction, index) => <div key={correction.sourceRow} className="flex flex-wrap items-center gap-3">
+              <span>Activité du {correction.date}</span>
+              <label>Début<input aria-label={'Début activité ' + (index + 1)} type="time" className={inputClass} value={correction.startTime} onChange={e => setTimeCorrections(current => current.map((c,i) => i === index ? {...c,startTime:e.target.value} : c))} /></label>
+              <label>Fin<input aria-label={'Fin activité ' + (index + 1)} type="time" className={inputClass} value={correction.endTime} onChange={e => setTimeCorrections(current => current.map((c,i) => i === index ? {...c,endTime:e.target.value} : c))} /></label>
+            </div>)}
+            {timeCorrectionError && <p role="alert">{timeCorrectionError}</p>}
+            <button type="button" className={buttonClass('primary')} onClick={applyTimeCorrections}>Appliquer les horaires et recalculer</button>
+            <button type="button" className={buttonClass('secondary')} onClick={() => setTimeCorrections([])}>Annuler</button>
+          </section>}
           {result && (
             <section className="space-y-4">
               {result.warnings.length > 0 && (
@@ -714,8 +748,10 @@ export default function DirectionPaiePage() {
                               className={inputClass}
                             />
                           </label></details>
+                          {result.professionalResults.find(p => p.professional.id === professionalResult.professional.id)?.lineItems.some(i => i.totalHours <= 0) && <button type="button" className={buttonClass('secondary')} onClick={() => openTimeCorrection(professionalResult)}>Corriger les horaires</button>}
                           <button type="button" className={buttonClass('secondary')} disabled={Boolean(downloadingId)}
                             onClick={() => void openEditor(professionalResult)}>Rectifier la facture</button>
+                          {invoiceRecords[professionalResult.professional.id] && <button type="button" className={buttonClass('secondary')} onClick={() => void handleDownload(professionalResult, 'revise')}>Appliquer le recalcul à la facture</button>}
                           {invoiceRecords[professionalResult.professional.id] && <span className="text-xs">{invoiceRecords[professionalResult.professional.id].number}</span>}
                           <Badge tone="success">
                             {professionalResult.invoiceIssues?.some(i => i.includes('catégorie')) ? 'Calcul incomplet' : formatCurrency(professionalResult.grandTotal)}
@@ -794,6 +830,7 @@ export default function DirectionPaiePage() {
                             )}
                           </tbody>
                         </table>
+                        <p className="mt-2 text-xs text-[#8a6f5d]">Quantités affichées arrondies à deux décimales; totaux calculés avant cet arrondi.</p>
                       </div>
                     </div>
                   ))}

@@ -3,7 +3,13 @@
 Règles demandées le 2 novembre 2026; remplace le parcours de conservation décrit
 dans `payroll-invoice-corrections.md` pour les corrections futures.
 
-- Une rencontre = une unité, y compris une rencontre courte ou sans durée saisie.
+- Quantité facturée = durée début/fin divisée par 60 minutes. Le nombre de rendez-vous
+  du seuil hebdomadaire reste entier et distinct. Une durée absente/nulle/invalide
+  bloque l’émission : utiliser « Corriger les horaires » puis recalculer. Le fichier
+  importé reste inchangé; les lignes corrigées sont recalculées aussi côté serveur.
+  Le tarif horaire client est déduit du montant et de la durée, avec récupération
+  de l’arrondi au cent. Les libellés « Rencontre (135 $) » regroupent les mêmes tarifs
+  et règles de rémunération; les annulations sont simplement « Annulation ».
   Le pourcentage est appliqué au montant réclamé, sans proratisation supplémentaire.
   Les tarifs horaires spécifiques conservent leur règle et exigent une durée réelle.
 - « Annulation » dans description ou détail prime sur « Rencontre » et sur les
@@ -44,3 +50,7 @@ d'envoi simulé, `scripts/test-payroll-current.mjs` avec `PGLITE_MODULE_PATH` lo
 Le test SQL vérifie remplacement, suppression des signatures, collisions, retries,
 corrections concurrentes et droits. PGlite sérialise une connexion; ce contrôle ne
 simule pas plusieurs connexions PostgreSQL physiques.
+
+Quantités affichées à deux décimales maximum, demi arrondi vers le haut dès le
+troisième chiffre (1,584 → 1,58; 1,585 → 1,59). Durées et quantités exactes restent
+conservées dans les calculs et snapshots; aucun montant dû arrondi sur la quantité affichée.

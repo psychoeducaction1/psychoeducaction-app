@@ -1,3 +1,4 @@
+import { activityHourlyRate } from '@/lib/payrollActivityCorrection'
 import {
   calculateProfessionalCompensation,
   hasCompensationRule,
@@ -518,8 +519,8 @@ export function calculatePayroll(
 
       const weekCount = meetingsByWeek.get(meeting.weekStart)?.length ?? 0
       const countAsItem = isTelephoneInterview(meeting.description, meeting.detail)
-      const quantity = getActivityQuantity(meeting.durationHours, countAsItem || meeting.classification === 'rencontre' || meeting.durationHours <= 0)
-      const unitClientAmount = getActivityUnitClientAmount(meeting.amount, quantity)
+      const quantity = getActivityQuantity(meeting.durationHours, countAsItem)
+      const unitClientAmount = meeting.classification === 'rencontre' && !countAsItem ? activityHourlyRate(meeting.amount, meeting.durationHours) : getActivityUnitClientAmount(meeting.amount, quantity)
       const calculated = calculateProfessionalCompensation({
         professional,
         lineType: meeting.classification,
@@ -529,7 +530,7 @@ export function calculatePayroll(
       })
       const rate = calculated.professionalRate
       const pay = calculated.professionalPay
-      const missingDuration = meeting.durationHours <= 0 && calculated.isFlatRate
+      const missingDuration = meeting.durationHours <= 0 && (!countAsItem || calculated.isFlatRate)
       if (missingDuration) {
         const issue = `Ligne ${meeting.sourceRow} (${meeting.date}) : durée absente, nulle ou invalide. Confirmez l’horaire ou la nature réelle de l’activité (annulation, forfait ou entretien). Aucun ajustement de quantité ou de montant automatique.`
         invoiceIssues.push(issue)
@@ -542,7 +543,7 @@ export function calculatePayroll(
           ? "Rapport d'évaluation psychoéducative"
           : countAsItem
             ? 'Entretien téléphonique'
-            : 'Rencontre'
+            : missingDuration ? 'Rencontre (tarif à rectifier)' : `Rencontre (${new Intl.NumberFormat('fr-CA', { maximumFractionDigits: 2 }).format(unitClientAmount)} $)`
       const key = `${kind}|${unitClientAmount}|${rate}|${calculated.isFlatRate}|${missingDuration}`
       const existing = lineItemsMap.get(key)
 
@@ -561,7 +562,7 @@ export function calculatePayroll(
         isFlatRate: calculated.isFlatRate,
         totalHours: quantity,
         totalPay: pay,
-        unit: countAsItem || meeting.classification === 'rencontre' || meeting.durationHours <= 0 ? 'élément' : 'h',
+        unit: countAsItem || meeting.classification === 'rencontre' ? 'élément' : 'h',
         sourceRows: [meeting.sourceRow],
       })
     })
@@ -589,7 +590,7 @@ export function calculatePayroll(
       }
 
       cancellationLineItemsMap.set(key, {
-        label: 'Honoraires d’annulation',
+        label: 'Annulation',
         clientAmount: cancellation.amount,
         rate: calculated.professionalRate,
         count: 1,

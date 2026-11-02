@@ -26,7 +26,7 @@ function resultForInvoice() {
 test('les labels et la projection fournisseur excluent les prix clients et les pourcentages sans modifier les honoraires', () => {
   const result = resultForInvoice()
   for (const item of [...result.lineItems, ...result.cancellationLineItems]) {
-    assert.doesNotMatch(item.label, /137[.,]91|68[.,]93|275[.,]82|%|montant facturé/)
+    assert.doesNotMatch(item.label, /68[.,]93|275[.,]82|%|montant facturé/)
   }
   const expectedTotal = 82.75 + 41.36 + 20.68 + 220.66
   assert.ok(Math.abs(result.grandTotal - expectedTotal) < 0.000001)
@@ -52,12 +52,12 @@ test('le vrai DOCX ne contient que les honoraires, les quantités et les donnée
   const xmlEntries = await Promise.all(Object.values(zip.files).filter(file => !file.dir && /\.(?:xml|rels)$/.test(file.name))
     .map(file => file.async('string')))
   const allXml = xmlEntries.join('\n')
-  assert.doesNotMatch(allXml, /BASE-CLIENT|137[.,]91|68[.,]93|275[.,]82|PATIENT-FICTIF|60 %|70 %|80 %|montant facturé/)
+  assert.doesNotMatch(allXml, /BASE-CLIENT|68[.,]93|275[.,]82|PATIENT-FICTIF|60 %|70 %|80 %|montant facturé/)
   const text = (await zip.file('word/document.xml')!.async('string')).replace(/<[^>]+>/g, ' ').replace(/&apos;/g, "'")
   assert.match(text, /Honoraires professionnels/)
   assert.match(text, /Entretien téléphonique/)
   assert.match(text, /Rapport d'évaluation psychoéducative/)
-  assert.match(text, /Honoraires d’annulation/)
+  assert.match(text, /Annulation/)
   assert.match(text, /Professionnel Fictif/)
   const formattedTotal = new Intl.NumberFormat('fr-CA', { style: 'currency', currency: 'CAD' }).format(result.grandTotal)
   assert.ok(text.includes(formattedTotal))
@@ -81,7 +81,7 @@ test('le forfait garde séparés les heures de rencontre et les éléments de t�
   const invoice = toPayrollInvoiceData(result)
   assert.equal(invoice.lineItems.length, 2)
   assert.deepEqual(invoice.lineItems.map(item => [item.label, item.quantity, item.totalPay]), [
-    ['Rencontre', 1, 110], ['Entretien téléphonique', 1, 27.5],
+    ['Rencontre (180 $)', 1, 110], ['Entretien téléphonique', 1, 27.5],
   ])
   assert.equal(invoice.grandTotal, 137.5)
 })
