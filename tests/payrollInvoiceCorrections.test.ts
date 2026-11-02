@@ -22,6 +22,19 @@ async function textOf(document: ReturnType<typeof generatePayrollInvoiceDocument
   return (await zip.file('word/document.xml')!.async('string')).replace(/<[^>]+>/g,' ').replace(/&apos;/g,"'")
 }
 
+test('présentation : rencontres regroupées par montant réclamé, quantités sans heures ni lignes Excel', async () => {
+  const amounts = [120,135,110,145,130]
+  const rows = [header,...amounts.flatMap(amount => [row(amount,'09:00 - 09:30'),row(amount,'10:00 - 11:00')])]
+  const result = calculatePayroll(rows,[pro],period).professionalResults[0]
+  assert.equal(result.lineItems.length,5)
+  assert.deepEqual(result.lineItems.map(i=>[i.amount,i.totalHours]),amounts.map(a=>[a,2]))
+  const invoice = toPayrollInvoiceData(result)
+  assert.deepEqual(invoice.lineItems.map(i=>i.quantity),[2,2,2,2,2])
+  assert.deepEqual(invoice.lineItems.map(i=>i.unitPay),[84,94.5,77,101.5,91])
+  const text = await textOf(generatePayrollInvoiceDocument(result,period,null))
+  assert.doesNotMatch(text,/lignes? \d|\b[12] h\b|élément/)
+})
+
 test('Rim : la référence 110/h est distincte du coefficient 110/180 et le total reste 1540', async () => {
   const rim = { ...pro, fullName: 'Rim El Bassit', email: 'fixture@example.invalid', payrollCategory: null }
   const compensation = calculateProfessionalCompensation({ professional: rim, lineType: 'rencontre', clientAmount: 180, durationHours: 1, weeklyMeetingCount: 0 })

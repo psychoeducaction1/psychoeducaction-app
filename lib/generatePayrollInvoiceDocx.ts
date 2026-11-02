@@ -406,7 +406,7 @@ function buildRateTable(result: PayrollInvoiceData): Table {
     return new TableRow({
       children: [
         bodyCell(item.label, TABLE_COLUMN_WIDTHS[0], { bold: true }),
-        bodyCell(formatPayrollQuantity(item.quantity, item.unit), TABLE_COLUMN_WIDTHS[1], {
+        bodyCell(formatPayrollQuantity(item.quantity, item.unit === 'élément' ? '' : item.unit), TABLE_COLUMN_WIDTHS[1], {
           alignment: AlignmentType.CENTER,
         }),
         bodyCell(new Intl.NumberFormat('fr-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 6 }).format(item.unitPay), TABLE_COLUMN_WIDTHS[2], {

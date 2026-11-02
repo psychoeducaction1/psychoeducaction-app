@@ -751,7 +751,7 @@ export default function DirectionPaiePage() {
                           <thead>
                             <tr className="text-xs uppercase text-[#8a6f5d]">
                               <th className="py-1 pr-2">Description</th>
-                              <th className="py-1 pr-2">Heures / quantité</th>
+                              <th className="py-1 pr-2">Quantité</th>
                               <th className="py-1 pr-2">Prix unitaire (CAD)</th>
                               <th className="py-1 pr-2">Total</th>
                             </tr>
@@ -760,7 +760,7 @@ export default function DirectionPaiePage() {
                             {professionalResult.lineItems.map((item, index) => (
                               <tr key={index} className="border-t border-[#eadfd2]">
                                 <td className="py-1 pr-2">{item.label}</td>
-                                <td className="py-1 pr-2">{item.totalHours > 0 ? formatPayrollQuantity(item.totalHours, item.unit) : 'À confirmer'}{item.sourceRows?.length ? ` — lignes ${item.sourceRows.join(', ')}` : ''}</td>
+                                <td className="py-1 pr-2">{item.totalHours > 0 ? formatPayrollQuantity(item.totalHours, item.unit === 'élément' ? '' : item.unit) : 'À confirmer'}</td>
                                 <td className="py-1 pr-2">{item.totalHours > 0 ? new Intl.NumberFormat('fr-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 6 }).format(item.totalPay / item.totalHours) : 'À confirmer'}</td>
                                 <td className="py-1 pr-2">{formatCurrency(item.totalPay)}</td>
                               </tr>
