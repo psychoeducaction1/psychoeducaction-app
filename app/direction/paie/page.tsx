@@ -75,16 +75,16 @@ function buildPayrollEmailMessage(
   ].join('\n')
 }
 
-async function blobToBase64(blob: Blob): Promise<string> {
-  const bytes = new Uint8Array(await blob.arrayBuffer())
-  const chunkSize = 0x8000
-  let binary = ''
-
-  for (let index = 0; index < bytes.length; index += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize))
+function displayedInvoiceResult(result: ProfessionalPayrollResult, record?: PayrollInvoiceRecord): ProfessionalPayrollResult {
+  const invoice = record?.snapshot?.invoice
+  if (!invoice) return result
+  return { ...result, professional: { ...result.professional, ...invoice.professional }, invoiceIssues: [],
+    lineItems: invoice.lineItems.map(i => ({ label: i.label, totalHours: i.quantity, totalPay: i.totalPay, unit: i.unit, amount: 0, rate: 0, isFlatRate: false })),
+    cancellationLineItems: invoice.cancellationLineItems.map(i => ({ label: i.label, count: i.count, totalPay: i.totalPay, clientAmount: 0, rate: 0 })),
+    meetingCount: invoice.lineItems.filter(i => i.unit !== 'h' && !i.label.startsWith('Rapport')).reduce((n, i) => n + i.quantity, 0),
+    cancellationCount: invoice.cancellationCount, cancellationFeesTotal: invoice.cancellationFeesTotal,
+    travelFeesTotal: invoice.travelFeesTotal, travelKilometersTotal: invoice.travelKilometersTotal, grandTotal: invoice.grandTotal,
   }
-
-  return window.btoa(binary)
 }
 
 export default function DirectionPaiePage() {
@@ -94,6 +94,24 @@ export default function DirectionPaiePage() {
   const fileReadController = useRef<AbortController | null>(null)
   const sourceRows = useRef<unknown[][]>([])
   useEffect(() => () => { fileReadController.current?.abort(); calculationSequence.current++ }, [])
+
+  const [sequences, setSequences] = useState<Record<string, string>>({})
+  const [sequenceDrafts, setSequenceDrafts] = useState<Record<string, string>>({})
+  useEffect(() => { void (async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return
+    const response = await fetch('/api/direction/payroll-invoices/sequence', { headers: { Authorization: 'Bearer ' + session.access_token } })
+    if (response.ok) { const data = await response.json(); setSequences(Object.fromEntries(data.sequences.map((s: { professional_id: string; prefix: string; last_number: number }) => [s.professional_id, s.prefix + '-' + String(s.last_number).padStart(3, '0')]))) }
+  })().catch(() => {}) }, [])
+  const saveSequence = async (id: string) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('Session expirée.')
+      const response = await fetch('/api/direction/payroll-invoices/sequence', { method: 'POST', headers: { Authorization: 'Bearer ' + session.access_token, 'Content-Type': 'application/json' }, body: JSON.stringify({ professionalId: id, lastReference: sequenceDrafts[id] }) })
+      const data = await response.json(); if (!response.ok) throw new Error(data.error)
+      setSequences(current => ({ ...current, [id]: sequenceDrafts[id] })); setConfigMessage('Séquence confirmée.')
+    } catch (error) { setConfigMessage(error instanceof Error ? error.message : 'Configuration impossible.') }
+  }
 
   const [loading, setLoading] = useState(true)
   const [authorized, setAuthorized] = useState(false)
@@ -311,21 +329,17 @@ export default function DirectionPaiePage() {
     }
   }
 
-  const prepareInvoice = async (professionalResult: ProfessionalPayrollResult, action = 'prepare', original?: File) => {
+  const prepareInvoice = async (professionalResult: ProfessionalPayrollResult, action = 'prepare') => {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session?.access_token) throw new Error('Session expirée.')
+    if (action === 'prepare' && invoiceRecords[professionalResult.professional.id]) return { record: invoiceRecords[professionalResult.professional.id], token: session.access_token }
     if (!professionalResult.period) throw new Error('Recalculez la paie.')
     const body: Record<string, unknown> = { professionalId: professionalResult.professional.id,
       period: { ...professionalResult.period, dueDate: periodDue }, action,
       rows: action === 'import' ? undefined : sourceRows.current, weeklyContextConfirmed }
-    if (action === 'import' && original) {
-      body.originalBase64 = await blobToBase64(original)
-      body.originalName = original.name
-      body.originalSigned = null // Signature non vérifiée; original conservé, jamais transféré.
-      body.legacyNumber = invoiceNumbersByProfessionalId[professionalResult.professional.id]?.trim()
-    }
+    body.legacyNumber = invoiceNumbersByProfessionalId[professionalResult.professional.id]?.trim() || undefined
     if (action === 'revise') {
-      const reason = window.prompt('Motif du rectificatif (10 caractères minimum). L’original sera conservé et une nouvelle approbation sera requise.')
+      const reason = window.prompt('Motif du rectificatif (10 caractères minimum). La facture courante sera remplacée, sans reprise de signature.')
       if (!reason) throw new Error('Rectificatif annulé.')
       body.reason = reason
       body.expectedVersion = Number(window.prompt('Version actuelle à corriger', String(invoiceRecords[professionalResult.professional.id]?.version ?? 1)))
@@ -349,20 +363,16 @@ export default function DirectionPaiePage() {
     link.href = url; link.click(); URL.revokeObjectURL(url)
   }
 
-  const showHistory = async (record: PayrollInvoiceRecord) => {
+  const openEditor = async (professionalResult: ProfessionalPayrollResult) => {
+    setInvoiceMessage('')
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) throw new Error('Session expirée.')
-      const response = await fetch(`/api/direction/payroll-invoices?id=${record.id}`, { headers: { Authorization: `Bearer ${session.access_token}` } })
-      const payload = await response.json()
-      if (!response.ok) throw new Error(payload.error ?? 'Historique indisponible.')
-      const versions = payload.versions as { version: number; reason: string | null; original_signed: boolean }[]
-      const chosen = window.prompt(`Versions conservées de ${record.number}\n${versions.map(v => `v${v.version} : ${v.reason ?? 'original'}${v.original_signed ? ' — signature conservée sur cet original seulement' : ''}`).join('\n')}\nVersion à télécharger :`, String(record.version))
-      if (chosen) await downloadVersion(record, session.access_token, Number(chosen))
-    } catch (error) { setInvoiceMessage(error instanceof Error ? error.message : 'Historique indisponible.') }
+      let record = invoiceRecords[professionalResult.professional.id] ?? (await prepareInvoice(professionalResult)).record
+      if (!record.snapshot) record = (await prepareInvoice(professionalResult, 'revise')).record
+      router.push('/direction/paie/rectifier?id=' + record.id)
+    } catch (error) { setInvoiceMessage(error instanceof Error ? error.message : 'Ouverture impossible.') }
   }
 
-  const handleDownload = async (professionalResult: ProfessionalPayrollResult, action = 'prepare', original?: File) => {
+  const handleDownload = async (professionalResult: ProfessionalPayrollResult, action = 'prepare') => {
     setInvoiceMessage('')
 
     if (!professionalResult.period || (professionalResult.requiresWeeklyReview && !weeklyContextConfirmed)) {
@@ -372,7 +382,7 @@ export default function DirectionPaiePage() {
     setDownloadingId(professionalResult.professional.id)
 
     try {
-      const { record, token } = await prepareInvoice(professionalResult, action, original)
+      const { record, token } = await prepareInvoice(professionalResult, action)
       await downloadVersion(record, token)
       setInvoiceMessage(`${record.number} — version ${record.version} conservée sous l’identifiant ${record.id}.`)
     } catch (caughtError) {
@@ -509,6 +519,11 @@ export default function DirectionPaiePage() {
                 >
                   <div className="text-sm font-medium text-[#332820]">
                     {professional.fullName}
+                    <div className="mt-2 text-xs font-normal">{sequences[professional.id] ? 'Dernier numéro de la séquence : ' + sequences[professional.id] : <>
+                      <label>Dernière référence envoyée<input className={inputClass} placeholder="PEA-ABC-009" value={sequenceDrafts[professional.id] ?? ''} onChange={e => setSequenceDrafts(current => ({ ...current, [professional.id]: e.target.value }))} /></label>
+                      <p>Première facture : utiliser un préfixe unique et terminer par 000.</p>
+                      <button type="button" className="underline" onClick={() => void saveSequence(professional.id)}>Confirmer la séquence</button>
+                    </>}</div>
                     {savingProfessionalId === professional.id && (
                       <span className="ml-2 text-xs font-normal text-[#8a5633]">
                         Sauvegarde...
@@ -656,7 +671,7 @@ export default function DirectionPaiePage() {
                 <EmptyState title="Aucun professionnel calculable dans ce fichier." />
               ) : (
                 <div className="space-y-3">
-                  {result.professionalResults.map((professionalResult) => (
+                  {result.professionalResults.map(calculated => displayedInvoiceResult(calculated, invoiceRecords[calculated.professional.id])).map((professionalResult) => (
                     <div
                       key={professionalResult.professional.id}
                       className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-4"
@@ -681,8 +696,8 @@ export default function DirectionPaiePage() {
                           </p>
                         </div>
                         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                          <label className="flex items-center gap-2 text-xs font-medium text-[#5d4a3d]">
-                            Référence historique
+                          <details className="text-xs"><summary>Ancienne facture non enregistrée</summary><label className="flex items-center gap-2 text-xs font-medium text-[#5d4a3d]">
+                            Référence déjà émise (anciennes périodes seulement)
                             <input
                               value={
                                 invoiceNumbersByProfessionalId[
@@ -698,21 +713,12 @@ export default function DirectionPaiePage() {
                               placeholder="PEA-AG-021"
                               className={inputClass}
                             />
-                          </label>
-                          <label className={buttonClass('secondary')}>
-                            Archiver l’original Word/PDF
-                            <input type="file" accept=".docx,.pdf" className="hidden" disabled={Boolean(downloadingId)}
-                              onChange={event => { const file = event.target.files?.[0]; if (file) void handleDownload(professionalResult, 'import', file); event.target.value = '' }} />
-                          </label>
-                          <button type="button" className={buttonClass('secondary')} disabled={Boolean(downloadingId) || Boolean(professionalResult.invoiceIssues?.length)}
-                            onClick={() => void handleDownload(professionalResult, 'revise')}>Préparer un rectificatif</button>
-                          {invoiceRecords[professionalResult.professional.id] && (
-                            <button type="button" className={buttonClass('secondary')} onClick={() => void showHistory(invoiceRecords[professionalResult.professional.id])}>
-                              Historique : {invoiceRecords[professionalResult.professional.id].number} — v{invoiceRecords[professionalResult.professional.id].version}
-                            </button>
-                          )}
+                          </label></details>
+                          <button type="button" className={buttonClass('secondary')} disabled={Boolean(downloadingId)}
+                            onClick={() => void openEditor(professionalResult)}>Rectifier la facture</button>
+                          {invoiceRecords[professionalResult.professional.id] && <span className="text-xs">{invoiceRecords[professionalResult.professional.id].number}</span>}
                           <Badge tone="success">
-                            {formatCurrency(professionalResult.grandTotal)}
+                            {professionalResult.invoiceIssues?.some(i => i.includes('catégorie')) ? 'Calcul incomplet' : formatCurrency(professionalResult.grandTotal)}
                           </Badge>
                           <button
                             type="button"
@@ -737,6 +743,7 @@ export default function DirectionPaiePage() {
                         </div>
                       </div>
 
+                      {invoiceRecords[professionalResult.professional.id]?.snapshot && <p className="mt-2 text-xs text-[#8a6f5d]">Facture enregistrée : les postes ci-dessous correspondent au document téléchargeable. Utilisez « Rectifier la facture » pour les modifier.</p>}
                       {professionalResult.invoiceIssues?.map(issue => <p key={issue} className="mt-2 text-sm text-red-700">{issue}</p>)}
 
                       <div className={`${inputClass} mt-3 overflow-x-auto bg-white`}>
@@ -771,9 +778,9 @@ export default function DirectionPaiePage() {
                               </tr>
                             )}
                             {professionalResult.cancellationCount > 0 && (
-                              professionalResult.cancellationLineItems.map((item) => (
+                              professionalResult.cancellationLineItems.map((item, index) => (
                                 <tr
-                                  key={`${item.clientAmount}-${item.rate}`}
+                                  key={index}
                                   className="border-t border-[#eadfd2]"
                                 >
                                   <td className="py-1 pr-2">{item.label}</td>

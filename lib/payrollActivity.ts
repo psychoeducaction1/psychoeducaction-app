@@ -40,7 +40,7 @@ export function classifyPayrollActivity(
   const normalizedDescription = normalizeActivityText(description)
   const normalizedDetail = normalizeActivityText(detail)
 
-  if (normalizedDescription === 'absence') return 'absence'
+  if (`${normalizedDescription} ${normalizedDetail}`.includes('annulation') || normalizedDescription === 'absence') return 'absence'
   if (isPsychoeducationalEvaluationReport(description, detail)) {
     return 'rapport_evaluation'
   }

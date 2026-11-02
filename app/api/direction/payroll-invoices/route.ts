@@ -9,6 +9,7 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
 import { JsonBodyError, readBoundedJsonObject } from '@/lib/boundedJsonBody'
 import { calculatePayroll, isPayrollDate, PAYROLL_CATEGORY_OPTIONS, type PayrollCategory } from '@/lib/payrollCalculator'
 import { generatePayrollInvoiceDocumentFromData, toPayrollInvoiceData, type InvoicePeriod } from '@/lib/generatePayrollInvoiceDocx'
+import { applyInvoiceEdit } from '@/lib/payrollInvoiceEditor'
 import { payrollInvoiceSnapshot, validateInvoiceRevision, type PayrollInvoiceRecord } from '@/lib/payrollInvoiceRegistry'
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
       return json({ error: 'Période ou échéance invalide.' }, 400)
     }
     const action = body.action ?? 'prepare'
-    if (!['prepare', 'revise', 'import'].includes(String(action))) return json({ error: 'Action invalide.' }, 400)
+    if (!['prepare', 'revise'].includes(String(action))) return json({ error: 'Action invalide.' }, 400)
     const revision = action === 'revise' ? validateInvoiceRevision(body.reason, body.expectedVersion) : null
     // Profil relu sous les droits de l'utilisateur; aucun profil/total du navigateur accepté.
     const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
@@ -47,19 +48,15 @@ export async function POST(request: NextRequest) {
     if (profileError) return json({ error: 'Lecture des profils impossible.' }, 500)
     if (!profiles?.some(p => p.id === professionalId)) return json({ error: 'Professionnel introuvable.' }, 404)
     let snapshot = null
-    let original: { base64: string; sha: string; name: string } | null = null
-    if (action === 'import') {
-      if (typeof body.originalBase64 !== 'string' || typeof body.originalName !== 'string' || typeof body.legacyNumber !== 'string' ||
-        !/^PEA-[\p{L}\d-]{1,80}$/u.test(body.legacyNumber) || !/^[^\\/\r\n]{1,180}\.(docx|pdf)$/i.test(body.originalName) || (body.originalSigned !== null && typeof body.originalSigned !== 'boolean')) {
-        return json({ error: 'Original Word/PDF, référence historique et état de signature requis.' }, 400)
-      }
-      const bytes = Buffer.from(body.originalBase64, 'base64')
-      const isPdf = bytes.subarray(0, 5).toString() === '%PDF-'
-      const isZip = bytes.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]))
-      if (bytes.length > 10 * 1024 * 1024 || bytes.length < 10 || !(/\.pdf$/i.test(body.originalName) ? isPdf : isZip)) {
-        return json({ error: 'Format ou taille de l’original invalide.' }, 400)
-      }
-      original = { base64: bytes.toString('base64'), sha: createHash('sha256').update(bytes).digest('hex'), name: body.originalName }
+    if (body.edit !== undefined) {
+      if (action !== 'revise' || !revision) return json({ error: 'Une rectification nécessite une facture existante.' }, 400)
+      const admin = getSupabaseAdmin()
+      const { data: invoice } = await admin.from('payroll_invoices').select('id').eq('professional_id', professionalId).eq('period_start', period.startDate).eq('period_end', period.endDate).maybeSingle()
+      if (!invoice) return json({ error: 'Facture introuvable.' }, 404)
+      const { data: current } = await admin.from('payroll_invoice_versions').select('snapshot').eq('invoice_id', invoice.id).order('version', { ascending: false }).limit(1).maybeSingle()
+      if (!current?.snapshot) return json({ error: 'Facture modifiée depuis son ouverture : rechargez la page.' }, 409)
+      const saved = current.snapshot as import('@/lib/payrollInvoiceRegistry').PayrollInvoiceSnapshot
+      snapshot = payrollInvoiceSnapshot(saved.period, applyInvoiceEdit(saved.invoice, body.edit), saved.sourceSha256)
     } else {
       if (!Array.isArray(body.rows) || body.rows.length > 50000 || !body.rows.every(row => Array.isArray(row) && row.length <= 40 && row.every(cell => cell === null || typeof cell === 'string' || typeof cell === 'number'))) {
         return json({ error: 'Export d’activités invalide.' }, 400)
@@ -81,9 +78,9 @@ export async function POST(request: NextRequest) {
     const { data, error } = await admin.rpc('prepare_payroll_invoice', {
       p_professional_id: professionalId, p_start: period.startDate, p_end: period.endDate, p_actor: auth.actor!.user.id,
       p_snapshot: snapshot, p_action: action, p_expected_version: revision?.expectedVersion ?? null,
-      p_reason: revision?.reason ?? null, p_legacy_number: action === 'import' ? body.legacyNumber : null,
-      p_original_base64: original?.base64 ?? null, p_original_sha256: original?.sha ?? null,
-      p_original_name: original?.name ?? null, p_original_signed: action === 'import' ? body.originalSigned : false,
+      p_reason: revision?.reason ?? null, p_legacy_number: typeof body.legacyNumber === 'string' ? body.legacyNumber : null,
+      p_original_base64: null, p_original_sha256: null,
+      p_original_name: null, p_original_signed: false,
     })
     if (error) {
       const conflict = /CONFLICT|HISTORICAL/.test(error.message)
@@ -126,6 +123,13 @@ export async function GET(request: NextRequest) {
   }
   if (!uuid.test(id)) return json({ error: 'Identifiant invalide.' }, 400)
   const admin = getSupabaseAdmin()
+  if (request.nextUrl.searchParams.get('current') === '1') {
+    const { data: invoice, error: invoiceError } = await admin.from('payroll_invoices').select('id, number, professional_id, period_start, period_end').eq('id', id).maybeSingle()
+    const { data: current, error: currentError } = await admin.from('payroll_invoice_versions').select('version, reason, snapshot').eq('invoice_id', id).order('version', { ascending: false }).limit(1).maybeSingle()
+    if (invoiceError || currentError) return json({ error: 'Lecture impossible.' }, 503)
+    if (!invoice || !current?.snapshot) return json({ error: 'Facture sans données modifiables : recalculez sa période depuis l’export.' }, 404)
+    return json({ record: { ...invoice, ...current } })
+  }
   if (!request.nextUrl.searchParams.has('version')) {
     const { data, error } = await admin.from('payroll_invoice_versions').select('version, reason, original_signed, document_name, document_sha256, created_at')
       .eq('invoice_id', id).order('version', { ascending: false })

@@ -5,6 +5,7 @@ import { Packer } from 'docx'
 import JSZip from 'jszip'
 import { calculatePayroll, type ProfessionalPayrollInfo } from '../lib/payrollCalculator.ts'
 import { calculateProfessionalCompensation } from '../lib/professionalCompensation.ts'
+import { calculateBudget } from '../lib/budgetCalculator.ts'
 import { decimalProduct, decimalSum, formatPayrollQuantity } from '../lib/payrollDecimal.ts'
 import { generatePayrollInvoiceDocument, generatePayrollInvoiceDocumentFromData, toPayrollInvoiceData, buildPayrollInvoiceShortNumber } from '../lib/generatePayrollInvoiceDocx.ts'
 import { payrollInvoiceSnapshot, validateInvoiceRevision } from '../lib/payrollInvoiceRegistry.ts'
@@ -34,40 +35,42 @@ test('Rim : la référence 110/h est distincte du coefficient 110/180 et le tota
   assert.doesNotMatch(text,/0,61|DOSSIER-FICTIF/)
 })
 
-test('quantités nulles rémunérées : conserver 42 + 94,50 au calcul, provenance visible et émission bloquée', () => {
+test('durées absentes : trois rencontres explicites rémunérées sur les montants réclamés', () => {
   const rows = [header,row(60,'17:30 - 17:30'),row(67.5,'12:45 - 12:45'),row(67.5,'17:00 - 17:00'),
     ...Array.from({ length:7 },()=>row(135))]
   const result=calculatePayroll(rows,[pro],period).professionalResults[0]
-  const zero=result.lineItems.filter(i=>i.totalHours===0)
+  const zero=result.lineItems.filter(i=>i.amount===60 || i.amount===67.5)
   assert.equal(decimalSum(zero.map(i=>i.totalPay)),136.5)
   assert.deepEqual(zero.flatMap(i=>i.sourceRows!),[2,3,4])
-  assert.equal(result.invoiceIssues?.length,3)
-  assert.throws(()=>toPayrollInvoiceData(result),/bloquée/)
-  assert.throws(()=>generatePayrollInvoiceDocument(result,period,null),/bloquée/)
+  assert.equal(result.invoiceIssues?.length,0)
+  assert.equal(decimalSum(zero.map(i=>i.totalHours)),3)
+  assert.equal(result.meetingCount,10)
+  assert.doesNotThrow(()=>toPayrollInvoiceData(result))
 })
 
 test('une minute ou une fraction positive ne devient jamais zéro; absence et téléphone ont leurs propres unités', () => {
   const result=calculatePayroll([header,row(1.35,'09:00 – 09:01'),row(60,'','Absence'),row(33.75,'09:00 - 09:15','Entretien téléphonique')],[pro],period).professionalResults[0]
   const data=toPayrollInvoiceData(result)
-  assert.equal(data.lineItems[0].quantity,1/60)
+  assert.equal(data.lineItems[0].quantity,1)
   assert.equal(formatPayrollQuantity(1/60,'h'),'0,016667 h')
   assert.notEqual(formatPayrollQuantity(0.00000001),'0')
   assert.equal(data.lineItems[1].quantity,1)
   assert.equal(data.lineItems[1].unit,'élément')
   assert.equal(data.cancellationLineItems[0].count,1)
   for (const time of ['99:00 - 99:30','10:00 - 09:00','','09:00 - 09:00']) {
-    assert.ok(calculatePayroll([header,row(60,time)],[pro],period).professionalResults[0].invoiceIssues?.length)
+    assert.equal(calculatePayroll([header,row(60,time)],[pro],period).professionalResults[0].invoiceIssues?.length,0)
   }
 })
 
-test('une rencontre mentionnant une annulation exige confirmation sans changer automatiquement montant ou seuil',()=>{
+test('une mention annulation exclut la rencontre du seuil et partage le montant réclamé',()=>{
   const ambiguous=row(135)
   ambiguous[5]='Frais d’annulation applicables sans préavis'
   const result=calculatePayroll([header,ambiguous,...Array.from({length:9},()=>row(135))],[pro],period).professionalResults[0]
-  assert.equal(result.meetingCount,10)
-  assert.equal(result.grandTotal,945)
-  assert.match(result.invoiceIssues![0],/annulation/)
-  assert.throws(()=>toPayrollInvoiceData(result),/bloquée/)
+  assert.equal(result.meetingCount,9)
+  assert.equal(result.grandTotal,810)
+  assert.equal(result.cancellationCount,1)
+  assert.equal(result.cancellationFeesTotal,81)
+  assert.doesNotThrow(()=>toPayrollInvoiceData(result))
 })
 
 test('titre par profil : correction de titre seule, sans catégorie par défaut ni modification des montants',async()=>{
@@ -111,4 +114,24 @@ test('snapshot immuable et rectificatif sans signature antérieure; référence 
 test('les vraies routes de factures contrôlent les droits et ignorent les montants et pièces jointes falsifiés',()=>{
   const result=spawnSync(process.execPath,['--import','./tests/register-aliases.mjs','--experimental-strip-types','tests/helpers/payrollInvoiceRoutes.mjs'],{encoding:'utf8',windowsHide:true,timeout:30000})
   assert.equal(result.status,0,`${result.stdout}\n${result.stderr}`)
+})
+
+
+test('annulation dans description ou détail : même classement et montant dans paie et budget',()=>{
+  for(const [description,detail] of [['Rencontre - annulation sans préavis',''],['Rencontre','Frais d’annulation'],['Rapport','Annulation']]){
+    const activity=row(67.5,'09:00 - 09:00',description); activity[5]=detail
+    const data=[header,activity,...Array.from({length:9},()=>row(135))]
+    const payroll=calculatePayroll(data,[pro],period).professionalResults[0]
+    const budget=calculateBudget(data,[pro],period)
+    assert.equal(payroll.meetingCount,9);assert.equal(payroll.cancellationCount,1)
+    assert.equal(payroll.cancellationFeesTotal,40.5);assert.equal(budget.totals.meetingCount,9)
+    assert.equal(budget.totals.professionalPay,payroll.grandTotal)
+  }
+})
+
+test('catégorie absente bloque une facture incomplète, tarif horaire sans durée reste à confirmer',()=>{
+  const missing=calculatePayroll([header,row(135)],[{...pro,payrollCategory:null}],period).professionalResults[0]
+  assert.match(missing.invoiceIssues![0],/catégorie/);assert.throws(()=>toPayrollInvoiceData(missing),/bloquée/)
+  const hourly=calculatePayroll([header,row(180,'09:00 - 09:00')],[{...pro,payrollCategory:'psychotherapeute'}],period).professionalResults[0]
+  assert.match(hourly.invoiceIssues![0],/durée/)
 })

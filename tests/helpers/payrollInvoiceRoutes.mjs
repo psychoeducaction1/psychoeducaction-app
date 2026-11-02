@@ -55,10 +55,10 @@ for(const name of ['anonymous','disabled','not_payroll','invalid_rows','zero_dur
   if(name==='zero_duration')body.rows[1][0]='2026-10-19\n09:00 - 09:00'
   if(name==='import')Object.assign(body,{action:'import',legacyNumber:'PEA-AG-021',originalName:'original.pdf',originalSigned:true,originalBase64:Buffer.from('%PDF-1.7\nORIGINAL FICTIF').toString('base64')})
   const response=await route.POST(new NextRequest('https://fixture.example.invalid/api/direction/payroll-invoices',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer fixture'},body:JSON.stringify(body)}))
-  const expected=name==='anonymous'?401:['disabled','not_payroll'].includes(name)?403:name==='invalid_rows'?400:name==='zero_duration'?422:name==='migration_missing'?503:200
+  const expected=name==='anonymous'?401:['disabled','not_payroll'].includes(name)?403:['invalid_rows','import'].includes(name)?400:name==='migration_missing'?503:200
   assert.equal(response.status,expected,name)
   assert.equal(response.headers.get('cache-control'),'private, no-store')
-  if(['anonymous','disabled','not_payroll','invalid_rows','zero_duration'].includes(name))assert.equal(adminCalls,0,name)
+  if(['anonymous','disabled','not_payroll','invalid_rows','import'].includes(name))assert.equal(adminCalls,0,name)
   if(expected===200&&name!=='import'){
     assert.equal(rpcCalls,1)
     assert.equal(rpcArgs.p_snapshot.invoice.grandTotal,66)
@@ -67,8 +67,13 @@ for(const name of ['anonymous','disabled','not_payroll','invalid_rows','zero_dur
     assert.match(rpcArgs.p_snapshot.sourceSha256,/^[a-f0-9]{64}$/)
     assert.ok(sealed.document_base64)
   }
-  if(name==='import'){assert.equal(rpcArgs.p_snapshot,null);assert.equal(rpcArgs.p_original_signed,true);assert.equal(sealed,null)}
+  if(name==='import')assert.equal(rpcCalls,0)
 }
+scenario='ok'
+const manual={professionalId,period,action:'revise',expectedVersion:1,reason:'Correction manuelle fictive',edit:{lines:[{label:'Rencontre',quantity:2,unit:'élément',unitPay:90}],travelFeesTotal:0},grandTotal:1}
+const manualResponse=await route.POST(new NextRequest('https://fixture.example.invalid/api/direction/payroll-invoices',{method:'POST',headers:{Authorization:'Bearer fixture','Content-Type':'application/json'},body:JSON.stringify(manual)}))
+assert.equal(manualResponse.status,200);assert.equal(rpcArgs.p_snapshot.invoice.grandTotal,180);assert.equal(rpcArgs.p_snapshot.invoice.professional.fullName,professional.fullName)
+for(const denied of ['anonymous','disabled','not_payroll']){scenario=denied;adminCalls=0;const res=await route.POST(new NextRequest('https://fixture.example.invalid/api/direction/payroll-invoices',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(manual)}));assert.equal(res.status,denied==='anonymous'?401:403);assert.equal(adminCalls,0)}
 scenario='ok'
 const downloaded=await route.GET(new NextRequest(`https://fixture.example.invalid/api/direction/payroll-invoices?id=${invoiceId}&version=1`))
 assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()),bytes,'Régénération télécharge les octets archivés sans rerendre')

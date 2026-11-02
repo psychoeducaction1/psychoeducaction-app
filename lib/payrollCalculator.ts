@@ -506,7 +506,7 @@ export function calculatePayroll(
       })
 
     const lineItemsMap = new Map<string, InvoiceLineItem>()
-    const invoiceIssues: string[] = []
+    const invoiceIssues: string[] = !hasStandardCompensationRule && hasStandardRows ? ['Calcul incomplet : catégorie de paie manquante.'] : []
 
     rencontres.forEach((meeting) => {
       if (
@@ -518,7 +518,7 @@ export function calculatePayroll(
 
       const weekCount = meetingsByWeek.get(meeting.weekStart)?.length ?? 0
       const countAsItem = isTelephoneInterview(meeting.description, meeting.detail)
-      const quantity = getActivityQuantity(meeting.durationHours, countAsItem)
+      const quantity = getActivityQuantity(meeting.durationHours, countAsItem || meeting.classification === 'rencontre' || meeting.durationHours <= 0)
       const unitClientAmount = getActivityUnitClientAmount(meeting.amount, quantity)
       const calculated = calculateProfessionalCompensation({
         professional,
@@ -529,14 +529,9 @@ export function calculatePayroll(
       })
       const rate = calculated.professionalRate
       const pay = calculated.professionalPay
-      const missingDuration = meeting.durationHours <= 0 && (!countAsItem || calculated.isFlatRate)
+      const missingDuration = meeting.durationHours <= 0 && calculated.isFlatRate
       if (missingDuration) {
         const issue = `Ligne ${meeting.sourceRow} (${meeting.date}) : durée absente, nulle ou invalide. Confirmez l’horaire ou la nature réelle de l’activité (annulation, forfait ou entretien). Aucun ajustement de quantité ou de montant automatique.`
-        invoiceIssues.push(issue)
-        warnings.push({ type: 'invalid_duration', message: `${professional.fullName} — ${issue}` })
-      }
-      if (meeting.classification === 'rencontre' && normalizeSearchText(meeting.detail).includes('annulation')) {
-        const issue = `Ligne ${meeting.sourceRow} (${meeting.date}) : activité classée « Rencontre » avec une mention d’annulation. Confirmez la nature et le statut de cette activité avant émission; le montant et le seuil hebdomadaire ne sont pas modifiés automatiquement.`
         invoiceIssues.push(issue)
         warnings.push({ type: 'invalid_duration', message: `${professional.fullName} — ${issue}` })
       }
@@ -566,7 +561,7 @@ export function calculatePayroll(
         isFlatRate: calculated.isFlatRate,
         totalHours: quantity,
         totalPay: pay,
-        unit: countAsItem ? 'élément' : 'h',
+        unit: countAsItem || meeting.classification === 'rencontre' || meeting.durationHours <= 0 ? 'élément' : 'h',
         sourceRows: [meeting.sourceRow],
       })
     })
