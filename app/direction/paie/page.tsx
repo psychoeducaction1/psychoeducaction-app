@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { readSpreadsheetRows } from '@/lib/spreadsheetImport'
 import { AppNav } from '@/components/AppNav'
+import { PayrollInvoiceEditor } from '@/components/PayrollInvoiceEditor'
 import { Badge, buttonClass, EmptyState, PageHeader } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
 import { isPayrollAuthorized } from '@/lib/payrollAccess'
@@ -116,6 +117,12 @@ export default function DirectionPaiePage() {
 
   const [timeCorrections, setTimeCorrections] = useState<(ActivityTimeCorrection & { date: string })[]>([])
   const [timeCorrectionError, setTimeCorrectionError] = useState('')
+  const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null)
+  const editorDialogRef = useRef<HTMLDialogElement | null>(null)
+  useEffect(() => {
+    const dialog = editorDialogRef.current
+    if (editingInvoiceId && dialog && !dialog.open) dialog.showModal()
+  }, [editingInvoiceId])
   const [loading, setLoading] = useState(true)
   const [authorized, setAuthorized] = useState(false)
   const [error, setError] = useState('')
@@ -159,12 +166,12 @@ export default function DirectionPaiePage() {
     return () => { canceled = true }
   }, [result])
 
-  const invalidateCalculation = () => {
+  const invalidateCalculation = (resetSource = false) => {
     fileReadController.current?.abort()
     calculationSequence.current += 1
     setResult(null)
     setTimeCorrections([])
-    sourceRows.current = []
+    if (resetSource) sourceRows.current = []
     setCalculating(false)
     setWeeklyContextConfirmed(false)
     setInvoiceMessage('')
@@ -293,7 +300,7 @@ export default function DirectionPaiePage() {
 
     const file = fileInputRef.current?.files?.[0]
 
-    if (!file) {
+    if (!file && sourceRows.current.length === 0) {
       setCalculationError('Veuillez sélectionner un fichier Excel.')
       return
     }
@@ -318,7 +325,7 @@ export default function DirectionPaiePage() {
     fileReadController.current = controller
 
     try {
-      const rows = await readSpreadsheetRows(file, { raw: false }, controller.signal)
+      const rows = sourceRows.current.length > 0 ? sourceRows.current : await readSpreadsheetRows(file!, { raw: false }, controller.signal)
 
       const calculation = calculatePayroll(rows, professionals, selectedPeriod)
       if (sequence === calculationSequence.current) { sourceRows.current = rows; setResult(calculation) }
@@ -390,7 +397,7 @@ export default function DirectionPaiePage() {
     try {
       let record = invoiceRecords[professionalResult.professional.id] ?? (await prepareInvoice(professionalResult)).record
       if (!record.snapshot) record = (await prepareInvoice(professionalResult, 'revise')).record
-      router.push('/direction/paie/rectifier?id=' + record.id)
+      setEditingInvoiceId(record.id)
     } catch (error) { setInvoiceMessage(error instanceof Error ? error.message : 'Ouverture impossible.') }
   }
 
@@ -643,12 +650,13 @@ export default function DirectionPaiePage() {
                 ref={fileInputRef}
                 type="file"
                 accept=".xlsx,.xls"
-                onChange={(event) => { setFileName(event.target.files?.[0]?.name ?? ''); invalidateCalculation() }}
-                className={`${inputClass} mt-2`}
+                onChange={(event) => { setFileName(event.target.files?.[0]?.name ?? ''); invalidateCalculation(true) }}
+                className={fileName ? 'sr-only' : `${inputClass} mt-2`}
               />
             </label>
+            {fileName && <button type="button" className={buttonClass('secondary') + ' mt-2'} onClick={() => fileInputRef.current?.click()}>Remplacer le fichier Excel</button>}
             {fileName && (
-              <p className="mt-2 text-xs text-[#8a6f5d]">Fichier sélectionné : {fileName}</p>
+              <p className="mt-2 text-xs text-[#8a6f5d]">{result ? 'Fichier importé' : 'Fichier sélectionné'} : {fileName}</p>
             )}
 
             {calculationError && <p className="mt-3 text-sm text-red-700">{calculationError}</p>}
@@ -840,6 +848,12 @@ export default function DirectionPaiePage() {
           )}
         </div>
       </main>
+      {editingInvoiceId && <dialog ref={editorDialogRef} aria-label="Rectifier la facture" className="fixed inset-0 z-[100] m-0 h-full max-h-none w-full max-w-none overflow-y-auto border-0 bg-[#faf6f0] p-0" onCancel={() => setEditingInvoiceId(null)}>
+        <PayrollInvoiceEditor invoiceId={editingInvoiceId} onClose={() => setEditingInvoiceId(null)} onSaved={record => {
+          setInvoiceRecords(current => ({ ...current, [record.professional_id]: record }))
+          setInvoiceMessage('Facture corrigée. Les autres résultats et le fichier importé sont conservés.')
+        }} />
+      </dialog>}
     </>
   )
 }

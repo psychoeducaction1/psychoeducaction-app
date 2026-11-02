@@ -54,3 +54,14 @@ simule pas plusieurs connexions PostgreSQL physiques.
 Quantités affichées à deux décimales maximum, demi arrondi vers le haut dès le
 troisième chiffre (1,584 → 1,58; 1,585 → 1,59). Durées et quantités exactes restent
 conservées dans les calculs et snapshots; aucun montant dû arrondi sur la quantité affichée.
+
+La rectification depuis la paie ouvre désormais un dialogue sur la même page.
+L’import, la période, les corrections d’horaires, les références saisies et les
+résultats des autres professionnels restent en mémoire pendant cette opération.
+Après sauvegarde, seul le snapshot de la facture concernée est actualisé.
+« Calculer » réutilise les lignes importées; choisir un nouveau fichier invalide
+ce cache. Aucun stockage persistant des activités dans le navigateur n’est ajouté.
+Une actualisation complète ou la fermeture de la page exige toujours un nouvel import.
+Contrôle visuel : deux professionnels, correction 81 → 90 pour le premier, second
+à 72 inchangé, période/fichier/référence conservés, recalcul sans réimport, puis
+remplacement volontaire du fichier sans réutilisation de l’ancien contenu.
