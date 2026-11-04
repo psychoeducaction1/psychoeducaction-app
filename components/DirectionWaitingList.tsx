@@ -141,7 +141,7 @@ const statusLabels: Record<string, string> = {
   waiting: 'En attente',
   assignment_in_progress: 'Assignation en cours',
   assigned: 'Assigné',
-  active: 'Actif',
+  active: 'Service pris',
   closed: 'Fermé',
   blacklisted: 'Liste noire',
 }
