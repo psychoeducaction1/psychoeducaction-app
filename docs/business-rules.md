@@ -31,8 +31,10 @@ Ne pas recopier d'identites, de courriels prives ou de donnees de dossiers ici.
   l'assignation liee si necessaire, recalculer et conserver les traces historiques.
 - Les demarches terminees (`assigned`, `classified`, `returned`) ne masquent plus
   le dossier source dans la liste des clients. Seules les demarches encore actives le masquent.
-- Historique clients inclut les statuts `assigned`, `active`, `closed`, `blacklisted`;
-  les assignes apparaissent une seule fois, dans Historique clients. Motif et notes sont conserves.
+- Historique clients affiche une seule ligne par fiche, y compris pendant une démarche
+  active (statut « Assignation en cours »). Motif et notes sont conserves.
+- L’historique des assignations regroupe les démarches sous la fiche client. Ouvrir
+  la ligne affiche toutes les démarches liées, y compris celle en cours.
 - Texto: saisie manuelle de l'envoi, pas d'envoi Twilio. Les contacts complementaires
   sont disponibles apres un statut sans reponse. Une relance a 48 heures cree une tache
   interne, pas un second texto/courriel client automatique.

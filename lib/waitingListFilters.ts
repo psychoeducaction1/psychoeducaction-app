@@ -25,14 +25,13 @@ export function getActiveAssignmentProcessClientIds(
 export function getWaitingListClientSections<
   T extends { id: string; status: string | null }
 >(clients: readonly T[], activeAssignmentProcessClientIds: ReadonlySet<string>) {
-  const visibleClients = clients.filter(
-    (client) => !activeAssignmentProcessClientIds.has(client.id)
-  )
-
   return {
-    waiting: visibleClients.filter((client) => client.status === 'waiting'),
-    history: visibleClients.filter((client) =>
-      ['assigned', 'active', 'closed', 'blacklisted'].includes(client.status ?? '')
+    waiting: clients.filter(
+      (client) => client.status === 'waiting' && !activeAssignmentProcessClientIds.has(client.id)
+    ),
+    history: clients.filter((client) =>
+      activeAssignmentProcessClientIds.has(client.id) ||
+      ['assignment_in_progress', 'assigned', 'active', 'closed', 'blacklisted'].includes(client.status ?? '')
     ),
   }
 }

@@ -27,7 +27,7 @@ test('les dossiers assignés et classés restent consultables après une démarc
   assert.equal(sections.history[0].internal_notes, 'Notes fictives conservées')
 })
 
-test('une démarche active ou rouverte reste hors des listes même avec une ancienne démarche terminée', () => {
+test('une démarche active ou rouverte affiche une seule fiche dans l’historique clients', () => {
   const client = { id: 'reopened-fixture', status: 'assignment_in_progress' }
   const activeIds = getActiveAssignmentProcessClientIds([
     { waiting_list_client_id: client.id, status: 'assigned' },
@@ -37,7 +37,7 @@ test('une démarche active ou rouverte reste hors des listes même avec une anci
 
   assert.equal(activeIds.has(client.id), true)
   assert.deepEqual(getWaitingListClientSections([client], activeIds), {
-    waiting: [], history: [],
+    waiting: [], history: [client],
   })
   // Une ancienne fiche encore marquée waiting ne doit pas pouvoir être assignée deux fois.
   assert.deepEqual(

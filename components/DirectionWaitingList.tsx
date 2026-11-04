@@ -2174,7 +2174,10 @@ export function DirectionWaitingList({ readOnly = false }: { readOnly?: boolean 
     if (serviceFilter !== 'all' && client.service_requested !== serviceFilter) {
       return false
     }
-    if (statusFilter !== 'all' && client.status !== statusFilter) {
+    const displayStatus = activeAssignmentProcessClientIds.has(client.id)
+      ? 'assignment_in_progress'
+      : client.status
+    if (statusFilter !== 'all' && displayStatus !== statusFilter) {
       return false
     }
     if (minimumAge !== null || maximumAge !== null) {
@@ -2399,7 +2402,10 @@ export function DirectionWaitingList({ readOnly = false }: { readOnly?: boolean 
             </tr>
           ) : (
             sectionClients.map((client) => {
-              const isAlreadyAssigned = client.status === 'assigned'
+              const displayStatus = activeAssignmentProcessClientIds.has(client.id)
+                ? 'assignment_in_progress'
+                : client.status
+              const isAlreadyAssigned = displayStatus === 'assigned'
 
               return (
                 <tr
@@ -2462,9 +2468,9 @@ export function DirectionWaitingList({ readOnly = false }: { readOnly?: boolean 
                   </td>
                   <td className="px-3 py-2 align-top text-[#6c5a4d]">
                     <div className="space-y-1">
-                      <Badge tone={statusTones[client.status ?? ''] ?? 'muted'}>
-                        {statusLabels[client.status ?? ''] ??
-                          formatText(client.status)}
+                      <Badge tone={statusTones[displayStatus ?? ''] ?? 'muted'}>
+                        {statusLabels[displayStatus ?? ''] ??
+                          formatText(displayStatus)}
                       </Badge>
                       {isAlreadyAssigned && (
                         <p className="text-xs font-medium text-[#8a6f5d]">
@@ -2537,7 +2543,7 @@ export function DirectionWaitingList({ readOnly = false }: { readOnly?: boolean 
                             : 'Supprimer définitivement'}
                         </button>
                       )}
-                      {!allowAssignment && client.status !== 'waiting' && (
+                      {!allowAssignment && displayStatus !== 'waiting' && displayStatus !== 'assignment_in_progress' && (
                         <button
                           type="button"
                           className={`${buttonClass('secondary')} !min-h-8 !w-full justify-center whitespace-normal px-2 py-1 text-xs`}

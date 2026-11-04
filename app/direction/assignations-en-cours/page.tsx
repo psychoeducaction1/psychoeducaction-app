@@ -946,6 +946,16 @@ export default function AssignmentProcessesPage() {
     setMessage('Client retourné dans la liste d’attente.')
   }
 
+  const historyGroups = new Map<string, AssignmentProcess[]>()
+  if (view === 'history') {
+    for (const process of filteredProcesses) {
+      historyGroups.set(process.waiting_list_client_id, [])
+    }
+    for (const process of processes) {
+      historyGroups.get(process.waiting_list_client_id)?.push(process)
+    }
+  }
+
   return (
     <>
       <AppNav />
@@ -1013,7 +1023,9 @@ export default function AssignmentProcessesPage() {
             <EmptyState title={view === 'active' ? 'Aucune démarche active.' : 'Aucun dossier dans l’historique.'} />
           ) : (
             <section className="space-y-4">
-              {filteredProcesses.map((process) => {
+              {(view === 'history' ? [...historyGroups.values()] : filteredProcesses.map((process) => [process])).map((group) => {
+                const clientId = group[0].waiting_list_client_id
+                const cards = group.map((process) => {
                 const client = clientsById.get(process.waiting_list_client_id)
                 const processEvents = events.filter((event) => event.assignment_process_id === process.id)
                 const emails = client ? normalizeList([client.contact_email, ...(client.contact_emails ?? [])]) : []
@@ -1283,6 +1295,21 @@ export default function AssignmentProcessesPage() {
                       </div>
                     </details>
                   </article>
+                )
+                })
+                if (view === 'active') return cards
+
+                const client = clientsById.get(clientId)
+                return (
+                  <details key={clientId} className="rounded-2xl border border-[#eadfd2] bg-[#fffdf9]">
+                    <summary className="cursor-pointer rounded-2xl px-5 py-4 text-[#332820]">
+                      <span className="font-semibold">{client?.client_name || 'Dossier client'}</span>
+                      <span className="ml-3 text-sm text-[#6c5a4d]">
+                        {group.length} {group.length === 1 ? 'démarche' : 'démarches'}
+                      </span>
+                    </summary>
+                    <div className="space-y-4 border-t border-[#eadfd2] p-4">{cards}</div>
+                  </details>
                 )
               })}
             </section>
