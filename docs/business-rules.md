@@ -135,6 +135,9 @@ Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workfl
   EMPLACEMENT, PAYE, MONTANT RECLAME, MANDAT. Lignes `non facturable` exclues.
 - Montant reclame = total facture. Rencontre a pourcentage: montant * taux,
   sans seconde multiplication par la duree.
+- Les plages marquées « Dispo », « Dispos » ou « Disponibilité(s) » au début
+  de la description ou du détail sont exclues de la paie et du budget, même
+  exportées comme « Rencontre » avec un montant. Elles ne comptent pas au seuil.
 - Quantite de facture = duree d'une rencontre, nombre d'elements d'un entretien
   telephonique. Prix unitaire derive du total / quantite.
 - `rapport` ou `redaction` dans description/detail: 80 % pro / 20 % clinique,

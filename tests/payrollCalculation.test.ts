@@ -19,6 +19,39 @@ function amountEqual(actual: number, expected: number) {
   assert.ok(Math.abs(actual - expected) < 0.000001, `${actual} differs from ${expected}`)
 }
 
+test('les disponibilités ne génèrent ni revenus ni honoraires ni seuil de rencontres', () => {
+  const meetings = Array.from({ length: 9 }, () => activity(135, '09:00 - 10:00'))
+  const baseline = [header, ...meetings]
+  const rows = [header, ...meetings,
+    activity(135, '10:00 - 11:00', 'Rencontre', 'Dispo'),
+    activity(135, '', 'Disponibilité'),
+    activity(135, '10:00 - 11:00', 'Rencontre', 'Disponibilités - Montréal'),
+    activity(135, '10:00 - 11:00', 'Dispos'),
+  ]
+  assert.deepEqual(calculatePayroll(rows, [professional]), calculatePayroll(baseline, [professional]))
+  assert.deepEqual(calculateBudget(rows, [professional]), calculateBudget(baseline, [professional]))
+  assert.equal(calculatePayroll([header, ...rows.slice(10)], [professional]).professionalResults.length, 0)
+  assert.equal(calculateBudget([header, ...rows.slice(10)], [professional]).totals.grossRevenue, 0)
+})
+
+test('la rédaction facturable reste rémunérée et toute activité non facturable est exclue', () => {
+  const billable = activity(67.5, '09:00 - 09:30', 'Rédaction')
+  const excluded = ['Rencontre', 'Rencontre clinique', 'Rédaction', 'Rapport'].map((description) => {
+    const row = activity(135, '10:00 - 11:00', description)
+    row[7] = 'Non facturable'
+    return row
+  })
+  const baseline = [header, billable]
+  const rows = [...baseline, ...excluded]
+  const payroll = calculatePayroll(rows, [professional])
+  const budget = calculateBudget(rows, [professional])
+  assert.deepEqual(payroll, calculatePayroll(baseline, [professional]))
+  assert.deepEqual(budget, calculateBudget(baseline, [professional]))
+  assert.equal(payroll.professionalResults[0].grandTotal, 54)
+  assert.equal(budget.totals.professionalPay, 54)
+  assert.equal(budget.totals.clinicRevenue, 13.5)
+})
+
 test('le calculateur complet paie une rencontre de 1,5 h une seule fois', () => {
   const result = calculatePayroll([header, activity(202.5, '09:00 - 10:30')], [professional])
   assert.deepEqual(result.warnings, [])

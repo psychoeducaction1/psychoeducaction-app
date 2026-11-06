@@ -445,6 +445,7 @@ export function calculateBudget(
     const description = typeof row[4] === 'string' ? row[4] : ''
     const detail = typeof row[5] === 'string' ? row[5] : ''
     const classification = classifyPayrollActivity(description, detail)
+    if (classification === 'disponibilite') return
     const parsedDate = parseDateCell(row[0])
     const date = parsedDate?.date ?? null
 

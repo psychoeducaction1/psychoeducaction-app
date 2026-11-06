@@ -390,7 +390,7 @@ export function calculatePayroll(
     const detail = typeof row[5] === 'string' ? row[5] : ''
     const classification = classifyPayrollActivity(description, detail)
 
-    if (classification === 'dossier') return
+    if (classification === 'dossier' || classification === 'disponibilite') return
 
     const parsedDate = parseDateCell(row[0])
     const outsidePeriod = Boolean(period && parsedDate && (

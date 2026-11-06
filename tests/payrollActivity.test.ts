@@ -7,6 +7,14 @@ import {
   isTelephoneInterview,
 } from '../lib/payrollActivity.ts'
 
+test('les libellés de disponibilité sont exclus avant la reconnaissance des rencontres', () => {
+  for (const label of ['Dispo', 'Dispos', 'Disponibilité', 'DISPONIBILITÉS', 'Rencontre (dispo)']) {
+    assert.equal(classifyPayrollActivity(label, ''), 'disponibilite')
+    assert.equal(classifyPayrollActivity('Rencontre', label), 'disponibilite')
+  }
+  assert.equal(classifyPayrollActivity('Rencontre', 'Prochaine disponibilité à confirmer'), 'rencontre')
+})
+
 test('reconnaît un rapport d’évaluation psychoéducative', () => {
   assert.equal(
     classifyPayrollActivity('Rapport', "Rapport d'évaluation psychoéducative"),

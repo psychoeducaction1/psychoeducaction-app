@@ -4,6 +4,7 @@ export type PayrollActivityClassification =
   | 'absence'
   | 'deplacement'
   | 'dossier'
+  | 'disponibilite'
   | 'inconnu'
 
 function normalizeActivityText(value: string): string {
@@ -39,6 +40,12 @@ export function classifyPayrollActivity(
 ): PayrollActivityClassification {
   const normalizedDescription = normalizeActivityText(description)
   const normalizedDetail = normalizeActivityText(detail)
+
+  // Une plage réservée à des disponibilités peut être exportée comme « Rencontre ».
+  const availabilityLabel = /^(?:rencontre )?(?:dispos?|disponibilites?)(?: |$)/
+  if (availabilityLabel.test(normalizedDescription) || availabilityLabel.test(normalizedDetail)) {
+    return 'disponibilite'
+  }
 
   if (`${normalizedDescription} ${normalizedDetail}`.includes('annulation') || normalizedDescription === 'absence') return 'absence'
   if (isPsychoeducationalEvaluationReport(description, detail)) {
