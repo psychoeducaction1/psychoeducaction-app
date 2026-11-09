@@ -49,6 +49,7 @@ type StaffRow = {
   email: string | null
   hourly_rate: number | string
   monthly_salary: number | string | null
+  monthly_salary_history?: AdministrativeStaff['monthly_salary_history']
   vacation_days_per_year: number | string
   default_schedule: unknown
 }
@@ -116,6 +117,7 @@ function normalizeStaff(row: StaffRow): AdministrativeStaff {
       row.monthly_salary === null || row.monthly_salary === undefined
         ? null
         : Number(row.monthly_salary),
+    monthly_salary_history: row.monthly_salary_history,
     vacation_days_per_year: Number(row.vacation_days_per_year ?? 0),
     default_schedule: normalizeSchedule(row.default_schedule),
   }
@@ -226,7 +228,7 @@ export default function DirectionAdministrativePayrollPage() {
     const { data: staffData, error: staffError } = await supabase
       .from('administrative_staff')
       .select(
-        'id, profile_id, full_name, email, hourly_rate, monthly_salary, vacation_days_per_year, default_schedule'
+        'id, profile_id, full_name, email, hourly_rate, monthly_salary, monthly_salary_history, vacation_days_per_year, default_schedule'
       )
       .eq('is_active', true)
       .order('full_name')

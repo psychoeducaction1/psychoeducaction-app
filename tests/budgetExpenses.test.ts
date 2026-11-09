@@ -3,6 +3,7 @@ import test from 'node:test'
 import { calculateBudgetExpenses, isFixedExpenseApplicable } from '../lib/budgetExpenses.ts'
 import {
   buildDefaultTimeEntry, buildPayrollRow, calculateHoursBetween, calculatePayableHours,
+  getAdministrativeHourlyRate, getDatesInRange, getMonthDateRange, roundMoney,
   type AdministrativeStaff,
 } from '../lib/administrativePayroll.ts'
 
@@ -14,6 +15,24 @@ const staff: AdministrativeStaff = {
     { weekday: 6, startTime: '12:00', endTime: '12:00' },
   ],
 }
+
+test('un changement de salaire s’applique à partir du mois indiqué', () => {
+  const changed = { ...staff, monthly_salary_history: { '2026-12': 3520, '2027-02': 3600 } }
+  const monthTotal = (person: AdministrativeStaff, month: string) => {
+    const { startDate, endDate } = getMonthDateRange(month)
+    const rate = getAdministrativeHourlyRate(person, month)
+    return roundMoney(getDatesInRange(startDate, endDate).reduce((sum, dateValue) => {
+      const entry = buildDefaultTimeEntry({ staff: person, dateValue, holidayName: null })
+      return sum + buildPayrollRow({ staff: person, entry, holidayName: null, hourlyRateOverride: rate }).amount
+    }, 0))
+  }
+
+  assert.equal(monthTotal(changed, '2026-11'), monthTotal(staff, '2026-11'))
+  assert.equal(monthTotal(changed, '2026-12'), 3520)
+  assert.equal(monthTotal(staff, '2026-12'), 3200)
+  assert.equal(monthTotal(changed, '2027-01'), 3520)
+  assert.equal(monthTotal(changed, '2027-02'), 3600)
+})
 
 test('les frais fixes sont mensuels et les bornes de debut et de fin sont incluses', () => {
   const expense = { id: 'expense-test', name: 'Loyer fictif', category: null,

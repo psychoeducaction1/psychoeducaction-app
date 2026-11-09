@@ -162,6 +162,8 @@ Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workfl
   Verification visuelle des quantites/totaux requise.
 
 ## Paie des adjointes, acces et satisfaction
+- Un changement de salaire sur une fiche de paie s'applique à partir du mois
+  indiqué (AAAA-MM). Le taux mensuel utilise le même horaire de référence.
 - Prise de notes, etape pilote: seulement le super administrateur avec profil direction
   et le compte professionnel pilote de Hicham Boukili, identifie par UUID Auth dans
   `clinicalNotesAccess`. Les autres professionnels et adjointes sont refuses, y compris

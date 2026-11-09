@@ -20,6 +20,7 @@ export type AdministrativeStaff = {
   email: string | null
   hourly_rate: number
   monthly_salary: number | null
+  monthly_salary_history?: Record<string, number>
   vacation_days_per_year: number
   default_schedule: AdministrativeScheduleDay[] | null
 }
@@ -121,6 +122,13 @@ export function getScheduleForDate(
 // Le salaire de référence correspond à l'horaire initial. Une prolongation datée
 // ajoute des heures payées sans diminuer le taux ni recalculer les anciens jours.
 export function getAdministrativeHourlyRate(staff: AdministrativeStaff, monthKey: string): number {
+  const effectiveSalary = Object.entries(staff.monthly_salary_history ?? {})
+    .filter(([month, amount]) =>
+      /^\d{4}-(0[1-9]|1[0-2])$/.test(month) && month <= monthKey &&
+      typeof amount === 'number' && Number.isFinite(amount) && amount > 0
+    )
+    .sort(([a], [b]) => b.localeCompare(a))[0]?.[1]
+  const monthlySalary = effectiveSalary ?? Number(staff.monthly_salary)
   const referenceStaff = {
     ...staff,
     default_schedule: staff.default_schedule?.filter((day) => !day.effectiveFrom) ?? null,
@@ -128,8 +136,8 @@ export function getAdministrativeHourlyRate(staff: AdministrativeStaff, monthKey
   const { startDate, endDate } = getMonthDateRange(monthKey)
   const referenceHours = getDatesInRange(startDate, endDate)
     .reduce((sum, date) => sum + getPlannedHours(referenceStaff, date), 0)
-  return Number(staff.monthly_salary) > 0 && referenceHours > 0
-    ? Number(staff.monthly_salary) / referenceHours
+  return monthlySalary > 0 && referenceHours > 0
+    ? monthlySalary / referenceHours
     : Number(staff.hourly_rate ?? 0)
 }
 
