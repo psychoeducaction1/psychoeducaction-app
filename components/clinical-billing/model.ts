@@ -1,11 +1,12 @@
+import { clinicalUiText } from '@/lib/clinical-workspace/presentationText'
 import { ClinicalApiError } from '@/lib/clinical-workspace/api'
 import type { DurableBillingFilter, DurableBillingWorkspace, DurableInvoice } from '@/lib/clinical-finance/durableTypes'
 
 export const money = (cents: number) => new Intl.NumberFormat('fr-CA', { style: 'currency', currency: 'CAD' }).format(cents / 100)
 export const moneyInput = (cents: number) => (cents / 100).toFixed(2)
 export const dateLabel = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Intl.DateTimeFormat('fr-CA', { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(value + 'T12:00:00Z')) : new Intl.DateTimeFormat('fr-CA', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Toronto' }).format(new Date(value))
-export const invoiceStatusLabels = { all: 'Toutes', draft: 'Ouvertes', issued: 'Fermées', unpaid: 'À payer', partial: 'Partiellement payées', paid: 'Payées' }
-export const paymentLabels = { card_demo: 'Carte enregistrée manuellement — simulation', cash_demo: 'Comptant — simulation', transfer_demo: 'Virement Interac — simulation', deposit_demo: 'Dépôt — simulation' }
+export const invoiceStatusLabels = { all: 'Toutes', draft: 'Ouvertes', issued: 'Fermées', unpaid: 'À payer', partial: 'Partiellement payées', paid: 'Payées', voided: 'Annulées' }
+export const paymentLabels = { card_demo: clinicalUiText('Carte enregistrée manuellement — simulation','Carte enregistrée manuellement'), cash_demo: clinicalUiText('Comptant — simulation','Comptant'), transfer_demo: clinicalUiText('Virement Interac — simulation','Virement Interac'), deposit_demo: clinicalUiText('Dépôt — simulation','Dépôt') }
 export const documentLabels = { invoice: 'Facture', receipt: 'Reçu de paiement', credit: 'Document d’avoir', refund: 'Reçu de remboursement' }
 export const reasonLabels = { billing_correction: 'Correction de facturation', service_adjustment: 'Ajustement de service' }
 export function invoiceCalendarQuery(invoice: Pick<DurableInvoice,'clientId'|'professionalId'|'appointmentId'|'serviceDate'>): Record<string,string> {

@@ -14,9 +14,13 @@ export async function handleUnifiedCalendarRequest(request: Request, segments: s
   transport: UnifiedWorkspaceTransport): Promise<Response> {
   try {
     if (new URL(request.url).search) return invalid()
+    if (request.method === 'GET' && segments.length === 2 && segments[0] === 'removal-preview') {
+      if (!CALENDAR_UUID.test(segments[1])) return invalid()
+      return reply(await transport.rpc('clinical_unified_encounter_removal_preview', { p_context: auth.context, p_appointment_id: segments[1] }, auth.token))
+    }
     if (request.method === 'GET' && segments.length === 2) {
       if (!isCalendarPeriod(segments[0], segments[1])) return invalid()
-      const value = await transport.rpc('clinical_unified_calendar_query', {
+      const value = await transport.rpc('clinical_unified_calendar_query_870', {
         p_context: auth.context, p_from_date: segments[0], p_to_date: segments[1],
       }, auth.token)
       if (!object(value) || Object.keys(value).length !== 1 || !isDurableCalendarWorkspace(value.workspace, auth.context, undefined,

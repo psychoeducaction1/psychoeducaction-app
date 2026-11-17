@@ -318,3 +318,8 @@ Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workfl
 - Certains anciens tests lisent le code/SQL: contrat verifie, pas execution prouvee.
 - Le scenario SQL local est sequentiel. Concurrence multi-session, RLS avec JWT distincts
   et parcours navigateur demandent des verifications separees.
+
+## Corrections de rencontres et paiements (870, prepare, activation en attente)
+- Retirer une rencontre propre retire ses notes meme signees des vues normales; les originaux restent proteges.
+- Annuler la facture liee sans credit automatique; preparer un brouillon pour les autres rencontres sans envoi.
+- Ajout, retrait et retablissement des paiements reserves a Direction/administration; aucun mouvement bancaire automatique.

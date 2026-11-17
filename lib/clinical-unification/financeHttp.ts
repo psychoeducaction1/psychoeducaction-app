@@ -78,7 +78,7 @@ export async function handleUnifiedFinanceHttp(originalRequest: Request, segment
     }
     if (segments.length === 0 && request.method === 'GET') {
       const { filters, invoiceId } = parseUnifiedBillingFilters(request.url)
-      const data = await rpc('clinical_unified_billing_data')
+      const data = await rpc('clinical_unified_billing_data_870')
       const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Toronto', year: 'numeric', month: '2-digit', day: '2-digit' }).format((deps.now ?? (() => new Date()))())
       return reply(projectUnifiedBilling(data, identity.actor, filters, invoiceId, day))
     }
@@ -142,6 +142,11 @@ export async function handleUnifiedFinanceHttp(originalRequest: Request, segment
     const code = object(cause) && typeof cause.code === 'string' ? cause.code : cause instanceof Error ? cause.message : 'FINANCE_UNAVAILABLE'
     const status = code === '42501' ? 403 : ['40001','22023'].includes(code) ? 409 : code === 'INVALID_INPUT' ? 400
       : ['0A000','FILTER_NOT_CONNECTED'].includes(code) ? 501 : code === 'INVALID_RESPONSE' ? 502 : 503
+    const message = object(cause) && typeof cause.message === 'string' ? cause.message : ''
+    if (message.includes('PAYMENT_ADMIN_REQUIRED')) return reply({ code: 'PAYMENT_ADMIN_REQUIRED', error: 'Seuls la Direction et les administrateurs peuvent modifier les paiements.' },403)
+    if (message.includes('REPLACEMENT_PAYMENT_REVIEW_REQUIRED')) return reply({ code: 'PAYMENT_REVIEW_REQUIRED', error: 'Retirez ou réaffectez d’abord les paiements de la facture annulée.' },409)
+    if (message.includes('INVOICE_VOIDED')) return reply({ code: 'INVOICE_VOIDED', error: 'Cette facture est annulée.' },409)
+    if (message.includes('PAYMENT_CORRECTION_BALANCE_INVALID')) return reply({ code: 'PAYMENT_BALANCE_INVALID', error: 'Vérifiez le montant et les remboursements avant de modifier ce paiement.' },409)
     return reply({ code, error: status === 501 ? 'Cette opération financière reste à raccorder; aucune modification n’a été faite.'
       : status === 409 ? 'Les données ou l’état ont changé. Actualisez avant de reprendre.'
       : status === 400 ? 'La demande financière est invalide.' : 'La facturation est temporairement indisponible.' }, status)

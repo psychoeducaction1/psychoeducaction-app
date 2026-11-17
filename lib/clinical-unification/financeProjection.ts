@@ -38,6 +38,7 @@ export function projectUnifiedBilling(data: unknown, actor: FixtureActor, filter
   if (!Array.isArray(history) || !Array.isArray(eligible)) throw new Error('INVALID_RESPONSE')
   const source = data.invoices as DurableInvoice[]
   const rows = source.filter(i => {
+    if (filters.status === 'voided' ? !i.voidedAt : Boolean(i.voidedAt)) return false
     const meta = filterMetadata ? metadata(filterMetadata[i.id]) : null
     const date = meta?.invoiceDate ?? invoiceDay.format(new Date(i.issuedAt ?? i.createdAt))
     return (!filters.clientId || i.clientId === filters.clientId)
@@ -48,14 +49,14 @@ export function projectUnifiedBilling(data: unknown, actor: FixtureActor, filter
     && (!filters.clientNumber || has(meta?.caseNumber ?? '', filters.clientNumber))
     && (filters.recurring === 'all' || meta?.recurring === (filters.recurring === 'yes'))
     && (!filters.dateFrom || date >= filters.dateFrom) && (!filters.dateTo || date <= filters.dateTo)
-    && (filters.status === 'all' || filters.status === 'draft' || filters.status === 'issued'
-      ? filters.status === 'all' || i.status === filters.status
+    && (filters.status === 'all' || filters.status === 'voided' || filters.status === 'draft' || filters.status === 'issued'
+      ? filters.status === 'all' || filters.status === 'voided' || i.status === filters.status
       : filters.status === 'unpaid' ? i.dueCents > 0 : i.paymentStatus === filters.status)
   })
   const selected = invoiceId ? rows.find(i => i.id === invoiceId) : undefined
   const methodMap: Record<string, DurableBillingLedger['method']> = { cash: 'cash_demo', transfer: 'transfer_demo', card_external: 'card_demo', other: 'deposit_demo', cheque: 'deposit_demo' }
   const result: DurableBillingWorkspace = { mode: 'isolated_unified', fictional: false, context: 'administration', actor,
-    kind: 'administrative', canCreditRefund: true, currentDate: day, taxWarning: '',
+    kind: 'administrative', canManagePayments: 'canManagePayments' in data && data.canManagePayments === true, canCreditRefund: true, currentDate: day, taxWarning: '',
     allocationRule: 'Les montants et les payeurs proviennent de la version du mandat liée à chaque prestation.',
     automaticPreparation: ('automaticPreparation' in data ? data.automaticPreparation
       : { mode: 'user_action', lastRunAt: null, preparedCount: 0 }) as DurableBillingWorkspace['automaticPreparation'], filters,
