@@ -195,7 +195,7 @@ export default function DirectionPaiePage() {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('role, email')
+        .select('role, email, administrative_access')
         .eq('id', user.id)
         .limit(1)
         .maybeSingle()

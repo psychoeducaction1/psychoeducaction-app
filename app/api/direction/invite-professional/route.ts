@@ -1,6 +1,8 @@
+import { hasDirectionAccess } from '@/lib/administrativeAccess'
 import { isProfessionalCivility } from '@/lib/professionalCivility'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { hasPlatformAccess } from '@/lib/platformAccess'
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
 
 type InviteProfessionalBody = {
@@ -105,7 +107,7 @@ export async function POST(request: NextRequest) {
 
   const { data: currentProfile, error: profileError } = await supabaseServer
     .from('profiles')
-    .select('role')
+    .select('role, platform_access_enabled, administrative_access')
     .eq('id', currentUser.id)
     .limit(1)
     .maybeSingle()
@@ -114,7 +116,7 @@ export async function POST(request: NextRequest) {
     return jsonResponse({ error: profileError.message }, 500)
   }
 
-  if (currentProfile?.role !== 'direction') {
+  if (!hasPlatformAccess(currentProfile) || !hasDirectionAccess(currentProfile)) {
     return jsonResponse({ error: 'Accès réservé à la direction.' }, 403)
   }
 

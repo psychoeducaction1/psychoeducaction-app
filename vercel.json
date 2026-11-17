@@ -8,5 +8,6 @@
       "path": "/api/cron/ad-spend-sync",
       "schedule": "30 11 * * *"
     }
-  ]
+  ],
+  "buildCommand": "npm run build -- --webpack"
 }

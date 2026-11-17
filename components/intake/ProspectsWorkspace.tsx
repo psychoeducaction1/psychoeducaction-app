@@ -6,6 +6,7 @@ import { ChevronRight, Search, UserCheck } from 'lucide-react'
 import { AppNav } from '@/components/AppNav'
 import { Badge, buttonClass, EmptyState, PageHeader, SectionCard } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
+import { visibleRefresh } from '@/lib/visibleRefresh'
 import { IntakeCalendar } from '@/components/intake/IntakeCalendar'
 import { ProspectAppointments } from '@/components/intake/ProspectAppointments'
 import { ProspectDialog } from '@/components/intake/ProspectDialog'
@@ -123,8 +124,15 @@ export function ProspectsWorkspace({ initialTab, initialProspectId, hasExplicitT
 
   useEffect(() => {
     if (selectedId) return
-    const timer = window.setInterval(() => { void loadProspects(true) }, 60_000)
-    return () => window.clearInterval(timer)
+    const refresh = visibleRefresh(() => loadProspects(true), () => document.visibilityState === 'visible')
+    const tick = () => { void refresh.tick() }
+    const timer = window.setInterval(tick, 60_000)
+    document.addEventListener('visibilitychange', tick)
+    return () => {
+      refresh.stop()
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', tick)
+    }
   }, [selectedId, loadProspects])
 
   const selected = prospects.find((prospect) => prospect.id === selectedId) ?? null

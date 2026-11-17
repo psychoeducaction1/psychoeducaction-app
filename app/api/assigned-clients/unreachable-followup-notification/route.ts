@@ -1,5 +1,7 @@
+import { hasDirectionAccess } from '@/lib/administrativeAccess'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { hasPlatformAccess } from '@/lib/platformAccess'
 
 const unreachableFollowupClosureReason =
   'Aucune réponse après les tentatives de contact'
@@ -21,6 +23,7 @@ type AssignedClientRow = {
 }
 
 type ProfileRow = {
+  platform_access_enabled?: boolean | null
   role: string | null
   full_name: string | null
   email: string | null
@@ -197,7 +200,7 @@ export async function POST(request: NextRequest) {
   const { data: currentProfileData, error: currentProfileError } =
     await supabaseServer
       .from('profiles')
-      .select('role, full_name, email')
+      .select('role, full_name, email, platform_access_enabled, administrative_access')
       .eq('id', user.id)
       .limit(1)
       .maybeSingle()
@@ -207,6 +210,9 @@ export async function POST(request: NextRequest) {
   }
 
   const currentProfile = currentProfileData as ProfileRow | null
+  if (!hasPlatformAccess(currentProfile)) {
+    return jsonResponse({ error: 'Votre accès à la plateforme est désactivé ou indisponible.' }, 403)
+  }
 
   let body: NotificationBody
 
@@ -242,7 +248,7 @@ export async function POST(request: NextRequest) {
     return jsonResponse({ error: 'Assignation introuvable.' }, 404)
   }
 
-  const isDirection = currentProfile?.role === 'direction'
+  const isDirection = hasDirectionAccess(currentProfile)
   const isAssignedProfessional = assignedClient.professional_id === user.id
 
   if (!isDirection && !isAssignedProfessional) {

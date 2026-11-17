@@ -50,7 +50,7 @@ export const clientGroupOptions: PreferenceOption[] = [
 
 export const serviceTypeOptions: PreferenceOption[] = [
   { value: 'psychoeducation', label: 'Psychoéducation' },
-  { value: 'psychosocial_intervention', label: 'Intervention psychosociale' },
+  { value: 'psychosocial_intervention', label: 'Intervention psychoéducative' },
   { value: 'psychotherapy', label: 'Psychothérapie' },
   { value: 'psychological_assessment', label: 'Évaluation psychologique' },
 ]
@@ -127,6 +127,13 @@ export function getOptionLabels(
 ): string[] {
   const labels = new Map(options.map((option) => [option.value, option.label]))
   return (values ?? []).map((value) => labels.get(value) ?? value)
+}
+
+export function serviceDisplayLabel(value: string): string {
+  if (value === 'Intervention psychosociale' || value === 'psychosocial_intervention') {
+    return 'Intervention psychoéducative'
+  }
+  return serviceTypeOptions.find((option) => option.value === value)?.label ?? value
 }
 
 export function formatAgeRanges(ranges: ProfessionalAgeRange[] | null | undefined): string {

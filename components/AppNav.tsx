@@ -1,14 +1,15 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import {
   ChartNoAxesCombined,
   CalendarDays,
   ClipboardList,
   FilePenLine,
+  FileUp,
   ChartPie,
   DollarSign,
   History,
@@ -28,10 +29,12 @@ import {
   isAdministrativePayrollAuthorized,
   isPayrollAuthorized,
 } from '@/lib/payrollAccess'
+import { hasDirectionAccess } from '@/lib/administrativeAccess'
 import { isSuperAdmin } from '@/lib/superAdmin'
 import { isAdministrativeTaskAuthorized } from '@/lib/administrativeTaskAccess'
 import { loadClinicalCoordinationAccess } from '@/lib/clinicalCoordinationClient'
 import { canAccessClinicalNotes } from '@/lib/clinicalNotesAccess'
+import { isUnifiedClinicalClient, signOutUnifiedSession } from '@/lib/clinical-unification/authClient'
 
 type UserRole = 'direction' | 'professionnel' | null
 type NavLink = {
@@ -41,9 +44,15 @@ type NavLink = {
 }
 
 export function AppNav() {
+  return <Suspense fallback={null}><LegacyAppNav /></Suspense>
+}
+
+function LegacyAppNav() {
   const pathname = usePathname()
+  const query = useSearchParams()
   const router = useRouter()
   const [coordinationAuthorized, setCoordinationAuthorized] = useState(false)
+  const [directionAuthorized, setDirectionAuthorized] = useState(false)
   const [role, setRole] = useState<UserRole>(null)
   const [profileName, setProfileName] = useState('')
   const [payrollAuthorized, setPayrollAuthorized] = useState(false)
@@ -51,6 +60,7 @@ export function AppNav() {
     useState(false)
   const [budgetAuthorized, setBudgetAuthorized] = useState(false)
   const [clinicalNotesAuthorized, setClinicalNotesAuthorized] = useState(false)
+  const [clinicalWorkspaceAuthorized, setClinicalWorkspaceAuthorized] = useState(false)
   const [administrativeTasksAuthorized, setAdministrativeTasksAuthorized] =
     useState(false)
 
@@ -66,7 +76,7 @@ export function AppNav() {
 
       const { data } = await supabase
         .from('profiles')
-        .select('role, full_name, email')
+        .select('role, full_name, email, administrative_access')
         .eq('id', user.id)
         .limit(1)
         .maybeSingle()
@@ -79,6 +89,7 @@ export function AppNav() {
           ? data.role
           : null
       setRole(resolvedRole)
+      setDirectionAuthorized(hasDirectionAccess(data))
       setProfileName(data?.full_name?.trim() || data?.email?.trim() || '')
       setPayrollAuthorized(isPayrollAuthorized({ email: user.email }, data))
       setAdministrativePayrollAuthorized(
@@ -86,6 +97,10 @@ export function AppNav() {
       )
       setBudgetAuthorized(isSuperAdmin({ email: user.email }, data))
       setClinicalNotesAuthorized(canAccessClinicalNotes(user, data))
+      if (process.env.NEXT_PUBLIC_PEA_CLINICAL_REAL === 'true') {
+        const { data: clinicalAccess, error: clinicalAccessError } = await supabase.rpc('clinical_my_access_summary')
+        if (!cancelled) setClinicalWorkspaceAuthorized(!clinicalAccessError && clinicalAccess?.enabled === true)
+      }
       setAdministrativeTasksAuthorized(
         isAdministrativeTaskAuthorized({ email: user.email }, data)
       )
@@ -102,12 +117,19 @@ export function AppNav() {
   }, [])
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut()
-    router.push('/login')
+    try {
+      if (isUnifiedClinicalClient()) await signOutUnifiedSession()
+      else await supabase.auth.signOut()
+      router.push('/login')
+    } catch {
+      window.alert('La déconnexion complète n’a pas pu être confirmée. Réessayez lorsque la connexion sera rétablie.')
+    }
   }
 
-  const displayRole = role
+  const displayRole = directionAuthorized && (role === 'direction' || pathname?.startsWith('/direction') || pathname?.startsWith('/administration') || pathname === '/preferences-professionnels') ? 'direction' : role
   const displayProfileName = profileName
+  const clinicalReal = process.env.NEXT_PUBLIC_PEA_CLINICAL_REAL === 'true' && clinicalWorkspaceAuthorized
+  const importEnabled = process.env.NEXT_PUBLIC_PEA_CLINICAL_IMPORT_ENABLED === 'true'
 
   const navLinks: NavLink[] =
     displayRole === 'direction'
@@ -135,7 +157,7 @@ export function AppNav() {
           ...(budgetAuthorized
             ? [{ href: '/direction/satisfaction', label: 'Satisfaction', icon: Star }]
             : []),
-          ...(clinicalNotesAuthorized
+          ...(clinicalNotesAuthorized && !clinicalReal
             ? [{ href: '/prise-de-notes', label: 'Prise de notes', icon: FilePenLine }]
             : []),
           ...(payrollAuthorized
@@ -154,14 +176,24 @@ export function AppNav() {
             ? [{ href: '/direction/budget', label: 'Budget', icon: ChartPie }]
             : []),
           { href: '/direction/journal-audit', label: "Journal d'audit", icon: History },
+          ...(clinicalReal ? [
+            { href: '/administration/clients', label: 'Dossiers clients', icon: Users },
+            { href: '/administration/agenda', label: 'Calendriers des professionnels', icon: CalendarDays },
+            { href: '/administration/bureaux', label: 'Disponibilité des bureaux', icon: CalendarDays },
+            { href: '/administration/facturation', label: 'Facturation et paiements', icon: DollarSign },
+            { href: '/administration/honoraires', label: 'Honoraires des professionnels', icon: DollarSign },
+            ...(importEnabled || process.env.NEXT_PUBLIC_PEA_MIGRATION_PREVIEW === 'true' ? [{ href: '/administration/migration-donnees', label: 'Migration des données', icon: FileUp }] : []),
+            { href: '/administration/parametres-clinique', label: 'Paramètres de la clinique', icon: SlidersHorizontal },
+          ] : []),
         ]
       : displayRole === 'professionnel'
         ? [
             { href: coordinationAuthorized ? '/coordination-clinique/tableau-de-bord' : '/professionnel', label: coordinationAuthorized ? 'Tableau de bord clinique' : 'Tableau de bord', icon: LayoutDashboard },
+            ...(isUnifiedClinicalClient() ? [{ href: '/clinique/mon-profil?tab=requests', label: 'Demande et disponibilités', icon: ClipboardList }] : [
             { href: '/professionnel/clients', label: 'Mes assignations', icon: UserCheck },
             { href: '/professionnel/demande', label: 'Ma demande', icon: ClipboardList },
-            { href: '/professionnel/historique', label: 'Historique', icon: History },
-            ...(clinicalNotesAuthorized
+            { href: '/professionnel/historique', label: 'Historique', icon: History }]),
+            ...(clinicalNotesAuthorized && !clinicalReal
               ? [{ href: '/prise-de-notes', label: 'Prise de notes', icon: FilePenLine }]
               : []),
             {
@@ -190,6 +222,13 @@ export function AppNav() {
             ...(coordinationAuthorized
               ? [{ href: '/preferences-professionnels', label: 'Préférences des professionnels', icon: SlidersHorizontal }]
               : []),
+            ...(clinicalReal ? [
+              { href: '/clinique/mon-profil', label: 'Mon profil', icon: Users },
+              { href: '/clinique/clients', label: 'Mes clients', icon: Users },
+              { href: '/clinique/agenda', label: 'Mon calendrier', icon: CalendarDays },
+              { href: '/clinique/honoraires', label: 'Mes honoraires', icon: DollarSign },
+              ...(importEnabled ? [{ href: '/clinique/import-dossiers', label: 'Importer mes dossiers', icon: FileUp }] : []),
+            ] : []),
           ]
         : []
 
@@ -212,9 +251,12 @@ export function AppNav() {
         : ''
 
   const renderLinks = () =>
-    navLinks.map((link) => {
+    [...(directionAuthorized && role === 'professionnel' ? [{ href: displayRole === 'direction' ? (clinicalReal ? '/clinique/mon-profil' : '/professionnel') : (clinicalReal ? '/administration' : '/direction'), label: displayRole === 'direction' ? 'Mon espace professionnel' : 'Direction et administration', icon: Users }] : []), ...navLinks].map((link) => {
       const Icon = link.icon
-      const isActive =
+      const isClinicalLink = link.href.startsWith('/administration/') || link.href.startsWith('/clinique/')
+      const isActive = isClinicalLink
+        ? link.href.includes('?') ? pathname === link.href.split('?')[0] && query.get('tab') === new URLSearchParams(link.href.split('?')[1]).get('tab') : (pathname === link.href || pathname?.startsWith(`${link.href}/`)) && !(link.href === '/clinique/mon-profil' && query.get('tab') === 'requests')
+        :
         link.href.startsWith('/coordination-clinique') || link.href === '/preferences-professionnels'
           ? pathname === link.href
           : link.href === '/prise-de-notes'

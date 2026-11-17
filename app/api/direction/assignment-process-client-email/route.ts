@@ -1,6 +1,8 @@
+import { hasDirectionAccess } from '@/lib/administrativeAccess'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendResendEmail } from '@/lib/resendEmail'
+import { hasPlatformAccess } from '@/lib/platformAccess'
 
 type RequestBody = { assignmentProcessId?: unknown }
 
@@ -41,17 +43,17 @@ export async function POST(request: NextRequest) {
     global: { headers: { Authorization: `Bearer ${token}` } },
     auth: { autoRefreshToken: false, persistSession: false },
   })
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return response({ error: 'Utilisateur introuvable.' }, 401)
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) return response({ error: 'Utilisateur introuvable.' }, 401)
 
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
-    .select('role, full_name, email')
+    .select('role, full_name, email, platform_access_enabled, administrative_access')
     .eq('id', user.id)
     .limit(1)
     .maybeSingle()
   if (profileError) return response({ error: profileError.message }, 500)
-  if (profile?.role !== 'direction') {
+  if (!hasPlatformAccess(profile) || !hasDirectionAccess(profile)) {
     return response({ error: 'Accès réservé à la direction.' }, 403)
   }
 

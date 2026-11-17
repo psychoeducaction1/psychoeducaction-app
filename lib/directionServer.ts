@@ -1,3 +1,4 @@
+import { hasDirectionAccess } from '@/lib/administrativeAccess'
 import 'server-only'
 
 import { NextRequest } from 'next/server'
@@ -67,7 +68,7 @@ export async function getDirectionContext(
 
   const { data: profile, error: profileError } = await supabaseServer
     .from('profiles')
-    .select('role, full_name, email, platform_access_enabled')
+    .select('role, full_name, email, platform_access_enabled, administrative_access')
     .eq('id', user.id)
     .limit(1)
     .maybeSingle()
@@ -80,7 +81,7 @@ export async function getDirectionContext(
     return { error: { message: 'Votre accès à la plateforme est désactivé.', status: 403 } }
   }
 
-  if (profile?.role !== 'direction') {
+  if (!hasDirectionAccess(profile)) {
     return { error: { message: 'Accès réservé à la direction.', status: 403 } }
   }
 

@@ -10,6 +10,7 @@ export type ClientAssignmentEmailTemplateInput = {
   professionalTitle?: string | null
   professionalPhone?: string | null
   professionalLicenseNumber?: string | null
+  appointment?: { date: string; time: string; modality: 'telehealth' | 'home' | 'montreal' | 'longueuil' } | null
 }
 
 export type AssignmentEmailTemplate = {
@@ -128,11 +129,26 @@ export function buildClientAssignmentEmailTemplate({
   professionalTitle,
   professionalPhone,
   professionalLicenseNumber,
+  appointment,
 }: ClientAssignmentEmailTemplateInput): AssignmentEmailTemplate {
+  const appointmentPlace = appointment && {
+    telehealth: 'Visioconférence', home: 'À domicile', montreal: 'Au bureau de Montréal', longueuil: 'Au bureau de Longueuil',
+  }[appointment.modality]
+  const appointmentLines = appointment ? [
+    'Votre premier rendez-vous est confirmé :',
+    `Date : ${appointment.date}`,
+    `Heure : ${appointment.time} (heure du Québec)`,
+    `Modalité : ${appointmentPlace}`,
+    ...(appointment.modality === 'telehealth' ? [
+      '', 'Le lien de visioconférence vous sera communiqué avant la rencontre. Vérifiez aussi vos courriels indésirables. Si vous ne recevez pas le lien, communiquez avec la clinique.',
+    ] : appointment.modality === 'montreal' || appointment.modality === 'longueuil' ? [
+      '', "Pour la rencontre au bureau, présentez-vous à l’heure exacte du rendez-vous. Si vous arrivez en avance, patientez dans votre voiture ou à l’extérieur jusqu’à l’heure prévue.",
+    ] : []),
+  ] : null
   if (cleanText(professionalEmail).toLowerCase() === RIM_EL_BASSIT_EMAIL) {
     return {
       to: '',
-      subject: 'Assignation de votre dossier - Clinique PsychoÉducAction',
+      subject: appointment ? 'Votre assignation et votre premier rendez-vous - Clinique PsychoÉducAction' : 'Assignation de votre dossier - Clinique PsychoÉducAction',
       cc: [RIM_EL_BASSIT_SUPERVISOR_CC],
       message: [
         'Bonjour,',
@@ -143,14 +159,16 @@ export function buildClientAssignmentEmailTemplate({
         '',
         'Rim El Bassit offrira les services sous la supervision clinique de Nancy Al Kayal, psychologue et psychothérapeute.',
         '',
-        "Rim communiquera avec vous par courriel ou par téléphone dans les prochains jours afin de convenir d'une première rencontre.",
-        '',
-        'Pour les rencontres en visioconférence, le lien de connexion vous sera envoyé par le professionnel le jour même de votre rendez-vous.',
-        'Pensez à vérifier vos courriels indésirables, car le message contenant le lien pourrait s’y retrouver.',
-        '',
-        "Pour les rencontres en présentiel à nos bureaux, merci de vous présenter à l'heure exacte de votre rendez-vous.",
-        "Le professionnel vous ouvrira la porte à l'heure prévue.",
-        "Si vous arrivez en avance, nous vous invitons à patienter dans votre voiture ou à l'extérieur du bâtiment jusqu'à l'heure de votre rendez-vous.",
+        ...(appointmentLines ?? [
+          'Rim communiquera avec vous par courriel ou par téléphone dans les prochains jours afin de convenir d’une première rencontre.',
+          '',
+          'Pour les rencontres en visioconférence, le lien de connexion vous sera envoyé par le professionnel le jour même de votre rendez-vous.',
+          'Pensez à vérifier vos courriels indésirables, car le message contenant le lien pourrait s’y retrouver.',
+          '',
+          "Pour les rencontres en présentiel à nos bureaux, merci de vous présenter à l'heure exacte de votre rendez-vous.",
+          "Le professionnel vous ouvrira la porte à l'heure prévue.",
+          "Si vous arrivez en avance, nous vous invitons à patienter dans votre voiture ou à l'extérieur du bâtiment jusqu'à l'heure de votre rendez-vous.",
+        ]),
         '',
         'Merci!',
         '',
@@ -173,7 +191,7 @@ export function buildClientAssignmentEmailTemplate({
 
   return {
     to: '',
-    subject: 'Assignation de votre dossier - Clinique PsychoÉducAction',
+    subject: appointment ? 'Votre assignation et votre premier rendez-vous - Clinique PsychoÉducAction' : 'Assignation de votre dossier - Clinique PsychoÉducAction',
     message: [
       'Bonjour,',
       '',
@@ -181,14 +199,16 @@ export function buildClientAssignmentEmailTemplate({
       '',
       `Nous avons le plaisir de vous informer que votre dossier à la Clinique PsychoÉducAction a été assigné à ${professionalNameWithTitle}.`,
       '',
-      `${normalizedProfessionalName} communiquera avec vous par courriel ou par téléphone dans les prochains jours afin de convenir d'une première rencontre.`,
-      '',
-      'Pour les rencontres en visioconférence, le lien de connexion vous sera envoyé par le professionnel le jour même de votre rendez-vous.',
-      'Pensez à vérifier vos courriels indésirables, car le message contenant le lien pourrait s’y retrouver.',
-      '',
-      "Pour les rencontres en présentiel à nos bureaux, merci de vous présenter à l'heure exacte de votre rendez-vous.",
-      "Le professionnel vous ouvrira la porte à l'heure prévue.",
-      "Si vous arrivez en avance, nous vous invitons à patienter dans votre voiture ou à l'extérieur du bâtiment jusqu'à l'heure de votre rendez-vous.",
+      ...(appointmentLines ?? [
+        `${normalizedProfessionalName} communiquera avec vous par courriel ou par téléphone dans les prochains jours afin de convenir d’une première rencontre.`,
+        '',
+        'Pour les rencontres en visioconférence, le lien de connexion vous sera envoyé par le professionnel le jour même de votre rendez-vous.',
+        'Pensez à vérifier vos courriels indésirables, car le message contenant le lien pourrait s’y retrouver.',
+        '',
+        "Pour les rencontres en présentiel à nos bureaux, merci de vous présenter à l'heure exacte de votre rendez-vous.",
+        "Le professionnel vous ouvrira la porte à l'heure prévue.",
+        "Si vous arrivez en avance, nous vous invitons à patienter dans votre voiture ou à l'extérieur du bâtiment jusqu'à l'heure de votre rendez-vous.",
+      ]),
       '',
       'Merci!',
       '',

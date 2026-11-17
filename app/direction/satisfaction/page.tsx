@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import * as XLSX from 'xlsx'
+import { readSpreadsheetRows } from '@/lib/spreadsheetImport'
 import { AppNav } from '@/components/AppNav'
 import {
   AlertBanner,
@@ -109,6 +109,8 @@ function formatDateTimeFr(value: string | null | undefined): string {
 export default function DirectionSatisfactionPage() {
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const fileReadController = useRef<AbortController | null>(null)
+  useEffect(() => () => fileReadController.current?.abort(), [])
 
   const [loading, setLoading] = useState(true)
   const [authorized, setAuthorized] = useState(false)
@@ -198,7 +200,7 @@ export default function DirectionSatisfactionPage() {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('role')
+        .select('role, administrative_access')
         .eq('id', user.id)
         .limit(1)
         .maybeSingle()
@@ -235,6 +237,9 @@ export default function DirectionSatisfactionPage() {
   const eligiblePagination = getSatisfactionPage(filteredEligibles, eligiblePage)
 
   const handleFileChange = async (file: File | null) => {
+    fileReadController.current?.abort()
+    const controller = new AbortController()
+    fileReadController.current = controller
     setFileError('')
     setAnalyzeError('')
     setEligibles([])
@@ -249,14 +254,8 @@ export default function DirectionSatisfactionPage() {
     if (!file) return
 
     try {
-      const buffer = await file.arrayBuffer()
-      const workbook = XLSX.read(buffer, { type: 'array', cellDates: true })
-      const sheet = workbook.Sheets[workbook.SheetNames[0]]
-      const rows = XLSX.utils.sheet_to_json(sheet, {
-        header: 1,
-        defval: null,
-        raw: true,
-      }) as unknown[][]
+      const rows = await readSpreadsheetRows(file, { raw: true, cellDates: true }, controller.signal)
+      if (controller.signal.aborted) return
 
       const parsed = extractSatisfactionRows(rows)
 
@@ -274,6 +273,7 @@ export default function DirectionSatisfactionPage() {
       setPeriodStart(period?.start ?? '')
       setPeriodEnd(period?.end ?? '')
     } catch (caughtError) {
+      if (controller.signal.aborted) return
       setFileError(
         caughtError instanceof Error
           ? caughtError.message

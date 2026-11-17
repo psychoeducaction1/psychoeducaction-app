@@ -140,7 +140,7 @@ export async function POST(request: NextRequest) {
   const { data: professionalProfile, error: professionalProfileError } =
     await supabaseAdmin
       .from('profiles')
-      .select('full_name, email, role, platform_access_enabled')
+      .select('full_name, email, role, platform_access_enabled, administrative_access')
       .eq('id', assignedClient.professional_id)
       .limit(1)
       .maybeSingle()

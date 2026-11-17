@@ -156,7 +156,7 @@ export async function POST(request: NextRequest) {
     await supabaseAdmin
       .from('profiles')
       .select(
-        'full_name, email, professional_title, professional_phone, professional_license_number, role'
+        'full_name, email, professional_title, professional_phone, professional_license_number, role, administrative_access'
       )
       .eq('id', assignedClient.professional_id)
       .limit(1)

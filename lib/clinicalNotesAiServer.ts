@@ -1,10 +1,20 @@
 import 'server-only'
 import { CLINICAL_AUDIO_MAX_BYTES, CLINICAL_NOTE_FIELDS, CLINICAL_TRANSCRIPT_MAX_CHARS, detectClinicalAudio, parseClinicalNoteDraft } from '@/lib/clinicalNotesAi'
 import { DEFAULT_CLINICAL_NOTE_TYPE, getClinicalNoteTemplate } from '@/lib/clinicalNoteTemplates'
+import { isLocalClinicalRuntime, readOpenAiPilotConfig } from '@/lib/clinical-local/runtime'
 import type { ClinicalNoteType } from '@/lib/clinicalNoteTemplates'
 
+import { stagingNoteAiKey } from '@/lib/clinical-staging/noteAi'
+import { clinicalOpenAiFailureMessage } from '@/lib/clinicalOpenAiErrors'
+
+function clinicalAiKey() {
+  if (process.env.PEA_CLINICAL_RUNTIME === 'staging-db') return stagingNoteAiKey()
+  if (isLocalClinicalRuntime()) return readOpenAiPilotConfig()?.apiKey ?? ''
+  return process.env.CLINICAL_NOTES_AI_ENABLED === 'true' ? process.env.OPENAI_API_KEY?.trim() ?? '' : ''
+}
+
 export function isClinicalNotesAiEnabled() {
-  return process.env.CLINICAL_NOTES_AI_ENABLED === 'true' && Boolean(process.env.OPENAI_API_KEY?.trim())
+  return Boolean(clinicalAiKey())
 }
 
 export class ClinicalNotesAiError extends Error {
@@ -39,16 +49,22 @@ async function callOpenAi(path: string, body: FormData | string, signal?: AbortS
     signal?.throwIfAborted()
     const response = await fetch(`https://api.openai.com/v1/${path}`, {
       method: 'POST', headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY?.trim()}`,
+        Authorization: `Bearer ${clinicalAiKey()}`,
         ...(typeof body === 'string' ? { 'Content-Type': 'application/json' } : {}),
-      }, body, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(45_000)]) : AbortSignal.timeout(45_000), cache: 'no-store',
+      }, body, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(path === 'responses' ? 180_000 : 45_000)]) : AbortSignal.timeout(path === 'responses' ? 180_000 : 45_000), cache: 'no-store',
     })
-    // Ne pas renvoyer ni journaliser le contenu d'une erreur du fournisseur.
+    // Ne jamais renvoyer ni journaliser le contenu brut d'une erreur du fournisseur.
     if (!response.ok) {
-      await response.body?.cancel()
-      throw new ClinicalNotesAiError(response.status === 429
-        ? 'Crédits ou limite API atteints. Vérifiez le compte avant de réessayer.'
-        : 'Le service IA n’a pas pu terminer cet essai.', response.status === 429 ? 429 : 502)
+      let code: unknown
+      if (response.status === 429) {
+        try {
+          const errorBody = await response.json() as { error?: { code?: unknown } }
+          code = errorBody?.error?.code
+        } catch { /* Le fournisseur peut retourner du texte ou une réponse vide. */ }
+      } else {
+        await response.body?.cancel()
+      }
+      throw new ClinicalNotesAiError(clinicalOpenAiFailureMessage(response.status, code), response.status === 429 ? 429 : 502)
     }
     return await response.json()
   } catch (error) {

@@ -5,7 +5,7 @@ export const MAX_SPREADSHEET_CELLS = 500_000
 export const MAX_SPREADSHEET_TEXT_LENGTH = 5_000
 export const SPREADSHEET_TIMEOUT_MS = 15_000
 
-export type SpreadsheetReadOptions = { raw: boolean; cellDates?: boolean }
+export type SpreadsheetReadOptions = { raw: boolean; cellDates?: boolean; sheetName?: string }
 
 export function validateSpreadsheetFile(file: { name: string; size: number }) {
   if (!/\.(xlsx|xls)$/i.test(file.name)) throw new Error('Choisissez un fichier Excel .xlsx ou .xls.')

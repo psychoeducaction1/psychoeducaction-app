@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import * as XLSX from 'xlsx'
+import { readSpreadsheetRows } from '@/lib/spreadsheetImport'
 import { AppNav } from '@/components/AppNav'
 import {
   Badge,
@@ -126,6 +126,8 @@ function formatDate(value: string | null): string {
 export default function DirectionBudgetPage() {
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const fileReadController = useRef<AbortController | null>(null)
+  useEffect(() => () => fileReadController.current?.abort(), [])
 
   const [loading, setLoading] = useState(true)
   const [authorized, setAuthorized] = useState(false)
@@ -288,7 +290,7 @@ export default function DirectionBudgetPage() {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('role, email')
+        .select('role, email, administrative_access')
         .eq('id', user.id)
         .limit(1)
         .maybeSingle()
@@ -565,6 +567,9 @@ export default function DirectionBudgetPage() {
   }
 
   const handleCalculate = async () => {
+    fileReadController.current?.abort()
+    const controller = new AbortController()
+    fileReadController.current = controller
     setCalculationError('')
     setSaveMessage('')
     setSaveError('')
@@ -582,14 +587,8 @@ export default function DirectionBudgetPage() {
     setCalculating(true)
 
     try {
-      const buffer = await file.arrayBuffer()
-      const workbook = XLSX.read(buffer, { type: 'array' })
-      const sheet = workbook.Sheets[workbook.SheetNames[0]]
-      const rows = XLSX.utils.sheet_to_json(sheet, {
-        header: 1,
-        defval: null,
-        raw: false,
-      }) as unknown[][]
+      const rows = await readSpreadsheetRows(file, { raw: false }, controller.signal)
+      if (controller.signal.aborted) return
 
       const budgetResult = calculateBudget(rows, professionals)
 
@@ -607,13 +606,14 @@ export default function DirectionBudgetPage() {
       setPeriodEnd(budgetResult.detectedPeriod.endDate)
       setResult(budgetResult)
     } catch (caughtError) {
+      if (controller.signal.aborted) return
       setCalculationError(
         caughtError instanceof Error
           ? caughtError.message
           : 'Erreur inconnue pendant la lecture du fichier.'
       )
     } finally {
-      setCalculating(false)
+      if (!controller.signal.aborted) setCalculating(false)
     }
   }
 
@@ -1366,6 +1366,8 @@ export default function DirectionBudgetPage() {
                   type="file"
                   accept=".xlsx,.xls"
                   onChange={(event) => {
+                    fileReadController.current?.abort()
+                    setCalculating(false)
                     setFileName(event.target.files?.[0]?.name ?? '')
                     setPeriodStart('')
                     setPeriodEnd('')

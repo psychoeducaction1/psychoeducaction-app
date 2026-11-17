@@ -1,3 +1,4 @@
+import { hasDirectionAccess } from '@/lib/administrativeAccess'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import {
@@ -6,6 +7,7 @@ import {
   type AdministrativeTaskAssignee,
 } from '@/lib/administrativeTaskAccess'
 import { sendResendEmail } from '@/lib/resendEmail'
+import { hasPlatformAccess } from '@/lib/platformAccess'
 
 function json(body: object, status: number) {
   return NextResponse.json(body, { status })
@@ -29,15 +31,16 @@ export async function POST(request: NextRequest) {
     global: { headers: { Authorization: `Bearer ${token}` } },
     auth: { autoRefreshToken: false, persistSession: false },
   })
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return json({ error: 'Utilisateur introuvable.' }, 401)
-  const { data: profile } = await supabase
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) return json({ error: 'Utilisateur introuvable.' }, 401)
+  const { data: profile, error: profileError } = await supabase
     .from('profiles')
-    .select('role, full_name, email')
+    .select('role, full_name, email, platform_access_enabled, administrative_access')
     .eq('id', user.id)
     .limit(1)
     .maybeSingle()
-  if (profile?.role !== 'direction') {
+  if (profileError) return json({ error: 'Impossible de vérifier les droits.' }, 500)
+  if (!hasPlatformAccess(profile) || !hasDirectionAccess(profile)) {
     return json({ error: 'Accès réservé à la direction.' }, 403)
   }
 

@@ -1,3 +1,4 @@
+import { hasDirectionAccess } from '@/lib/administrativeAccess'
 import { normalizeEmail } from '@/lib/superAdmin'
 
 export const ADMINISTRATIVE_TASK_NOTIFICATION_EMAIL =
@@ -22,7 +23,7 @@ export function isAdministrativeTaskAuthorized(
   user: { email?: string | null } | null | undefined,
   profile?: { role?: string | null } | null
 ) {
-  if (profile?.role === 'direction') return true
+  if (hasDirectionAccess(profile)) return true
 
   const email = normalizeEmail(user?.email)
   return (

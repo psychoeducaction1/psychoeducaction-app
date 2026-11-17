@@ -3,7 +3,8 @@ import type { ClinicalNoteType } from '@/lib/clinicalNoteTemplates'
 export type ClinicalSectionConfig = { id: string; title: string; guidance: string; columns?: readonly string[] }
 const section = (id: string, title: string, guidance = ''): ClinicalSectionConfig => ({ id, title, guidance })
 const persons = section('personnes', 'Personnes présentes', 'Présence effectivement documentée. Ne pas confondre personne mentionnée et présente.')
-const objective = section('objectif', 'Objectif de la rencontre')
+const objectiveGuidance = 'Préciser le but de cette séance à partir des renseignements confirmés et de la transcription, avec les essais ou questions annoncés à examiner. Conserver les précisions apportées après l’introduction et distinguer tout changement de but explicite. Ne pas inventer d’objectif ni annoncer un résultat atteint.'
+const objective = section('objectif', 'Objectif de la rencontre', objectiveGuidance)
 const reports = section('informations', 'Informations rapportées', 'Attribuer les propos au client, parent ou tiers. Ne pas transformer leurs qualificatifs en diagnostic.')
 const actions = section('interventions', 'Interventions posées et réactions', 'Relier le problème abordé, l’action réellement posée, son objectif si explicite et la réaction si connue. Une question simple reste une question, sans technique spécialisée inventée.')
 const observations = section('observations', 'Impressions et observations', 'Distinguer observation directe documentée, impression du professionnel et propos rapportés.')
@@ -19,7 +20,7 @@ export const CLINICAL_NOTE_BLUEPRINTS: Record<ClinicalNoteType, readonly Clinica
     section('fonctionnelle', 'Analyse fonctionnelle préliminaire', 'Reprendre uniquement l’analyse formulée, sans causalité déduite.'),
     section('protection', 'Facteurs de protection documentés'), section('vulnerabilite', 'Facteurs de vulnérabilité documentés'),
     section('normative', 'Évaluation normative', 'Nom exact de l’instrument, score et interprétation seulement s’ils sont fournis et valides; ne calculer aucun score ni norme.'), next],
-  evaluation_3: [persons, section('objectif', 'Objectif de la rencontre', 'Reprendre brièvement l’objectif explicitement annoncé, par exemple une synthèse des informations recueillies. Ne pas le déduire du seul type de note.'),
+  evaluation_3: [persons, objective,
     section('outils', 'Outils, résultats et limites', 'Aucun instrument, score, norme ni interprétation inventés.'),
     section('synthese', 'Synthèse des informations', 'Synthèse concise des points de vue attribués. Distinguer le contexte antérieur de la rencontre actuelle, sans inventer de convergence. Conserver le caractère inexpliqué ou non résolu d’une divergence si le professionnel l’a explicitement déclaré. Ne pas répéter les exemples réservés au PAD/PEX.'),
     section('pad', 'Potentiel adaptatif (PAD)', 'Une formulation intégrée par capacité: fusionner le résumé actuel et son exemple antérieur, avec leurs références, plutôt que les raconter successivement. Si un seul ensemble de capacités est documenté, une phrase suffit. Attribuer à la source et à la période; aucune inférence normative.'),

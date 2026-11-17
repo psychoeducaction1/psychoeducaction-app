@@ -1,5 +1,8 @@
 'use client'
 
+import { hasDirectionAccess } from '@/lib/administrativeAccess'
+
+
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppNav } from '@/components/AppNav'
@@ -56,7 +59,7 @@ export default function DirectionMessagesPage() {
 
       const { data: currentProfile, error: profileError } = await supabase
         .from('profiles')
-        .select('role, full_name, email')
+        .select('role, full_name, email, administrative_access')
         .eq('id', user.id)
         .limit(1)
         .maybeSingle()
@@ -67,7 +70,7 @@ export default function DirectionMessagesPage() {
         return
       }
 
-      if (currentProfile?.role !== 'direction') {
+      if (!hasDirectionAccess(currentProfile)) {
         router.push('/')
         return
       }

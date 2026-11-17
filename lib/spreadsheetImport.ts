@@ -8,6 +8,7 @@ export async function readSpreadsheetRows(
   options: SpreadsheetReadOptions,
   signal?: AbortSignal,
   dependencies: ImportDependencies = {},
+  sheetsOnly = false,
 ): Promise<unknown[][]> {
   validateSpreadsheetFile(file)
   signal?.throwIfAborted()
@@ -34,6 +35,10 @@ export async function readSpreadsheetRows(
       if (data?.ok === true && Array.isArray(data.rows) && data.rows.every(Array.isArray)) finish(undefined, data.rows)
       else finish(new Error(data?.ok === false && typeof data.error === 'string' ? data.error : 'Réponse de lecture Excel invalide.'))
     }
-    try { worker.postMessage({ buffer, options }, [buffer]) } catch { finish(new Error('Impossible de démarrer la lecture Excel.')) }
+    try { worker.postMessage({ buffer, options, sheetsOnly }, [buffer]) } catch { finish(new Error('Impossible de démarrer la lecture Excel.')) }
   })
+}
+
+export async function readSpreadsheetSheetNames(file: Pick<File, 'name' | 'size' | 'arrayBuffer'>, signal?: AbortSignal): Promise<string[]> {
+  return (await readSpreadsheetRows(file, {raw:true}, signal, {}, true))[0] as string[]
 }

@@ -43,7 +43,7 @@ export default function ProfessionnelMessagesPage() {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('role, full_name, email')
+        .select('role, full_name, email, administrative_access')
         .eq('id', user.id)
         .limit(1)
         .maybeSingle()

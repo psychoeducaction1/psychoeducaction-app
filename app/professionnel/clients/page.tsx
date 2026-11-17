@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppNav } from '@/components/AppNav'
+import { MyClinicalCaseLink } from '@/components/clinical-real/MyClinicalCaseLink'
+import { realWorkspaceRequest } from '@/lib/clinical-real/workspaceClient'
 import { EmptyState } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
 import {
@@ -75,7 +77,7 @@ export default function ProfessionnelClientsPage() {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('role, full_name, email')
+        .select('role, full_name, email, administrative_access')
         .eq('id', user.id)
         .limit(1)
         .maybeSingle()
@@ -352,12 +354,19 @@ export default function ProfessionnelClientsPage() {
       return
     }
 
-    const waitingListSyncError = await syncWaitingListStatus(client)
-    void sendUnreachableFollowupNotification(client)
-
     const previousStatus =
       persistedStatusByClientIdRef.current[client.id] ?? 'not_contacted'
     const nextStatus = getAssignedClientStatus(client)
+    const waitingListSyncError = await syncWaitingListStatus(client)
+    let clinicalLinkError = ''
+    if (nextStatus === 'taken' && process.env.NEXT_PUBLIC_PEA_CLINICAL_ASSIGNMENT_NAV === 'true') {
+      try {
+        await realWorkspaceRequest(`/assignment-link/${client.id}`, 'POST')
+      } catch {
+        clinicalLinkError = 'Service pris enregistré, mais le dossier clinique n’a pas pu être lié. Utilisez « Ouvrir le dossier clinique » pour réessayer.'
+      }
+    }
+    void sendUnreachableFollowupNotification(client)
 
     if (previousStatus !== nextStatus) {
       const previousFields = getFieldsForAssignedClientStatus(previousStatus)
@@ -414,10 +423,10 @@ export default function ProfessionnelClientsPage() {
 
     if (!client.assignment_request_id) {
       setClients(updatedClients.filter(shouldKeepClientVisible))
-      if (waitingListSyncError) {
+      if (waitingListSyncError || clinicalLinkError) {
         setClientErrors((currentErrors) => ({
           ...currentErrors,
-          [client.id]: waitingListSyncError,
+          [client.id]: waitingListSyncError || clinicalLinkError,
         }))
       } else {
         setClientMessages((currentMessages) => ({
@@ -480,10 +489,10 @@ export default function ProfessionnelClientsPage() {
     }
 
     setClients(updatedClients.filter(shouldKeepClientVisible))
-    if (waitingListSyncError) {
+    if (waitingListSyncError || clinicalLinkError) {
       setClientErrors((currentErrors) => ({
         ...currentErrors,
-        [client.id]: waitingListSyncError,
+        [client.id]: waitingListSyncError || clinicalLinkError,
       }))
     } else {
       setClientMessages((currentMessages) => ({
@@ -737,6 +746,7 @@ export default function ProfessionnelClientsPage() {
                       </dd>
                     </div>
                   </dl>
+                  {getAssignedClientStatus(client) === 'taken' && <MyClinicalCaseLink assignmentId={client.id} />}
                 </div>
               </div>
 

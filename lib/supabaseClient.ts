@@ -7,4 +7,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables')
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// Keep Supabase's default key explicit so local sign-out can clear only this
+// application's Auth entries even when the Auth server is unavailable.
+export const supabaseAuthStorageKey = `sb-${new URL(supabaseUrl).hostname.split('.')[0]}-auth-token`
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, { auth: { storageKey: supabaseAuthStorageKey } })
