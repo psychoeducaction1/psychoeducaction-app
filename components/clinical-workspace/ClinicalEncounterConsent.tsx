@@ -13,8 +13,7 @@ const withdrawalKey = '70000000-0000-4000-8000-000000000000'
 const newPerson = (): Participant => ({ key: crypto.randomUUID(), role: 'other', name: '', roleDescription: '', decision: 'refused', recording: false, transcription: false, drafting: false, evidence: 'oral_witnessed' })
 
 export function ClinicalEncounterConsent({ recordId, appointmentId, onReadyChange }: { recordId: string; appointmentId: string; onReadyChange: (recordingReady: boolean, draftingReady: boolean, knownParticipants: KnownClinicalPerson[]) => void }) {
-  const noticeVersion = typeof window !== 'undefined' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)
-    ? 'ai-encounter-pilot-v1' : 'ai-encounter-pilot-v2'
+  const noticeVersion = 'ai-encounter-pilot-v1'
   const [people, setPeople] = useState<Participant[]>([])
   const [clientAttested, setClientAttested] = useState(false)
   const [view, setView] = useState<ConsentView | null>(null)
