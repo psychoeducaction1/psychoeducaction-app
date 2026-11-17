@@ -1,3 +1,4 @@
+import { calendarFailure } from '../clinical-calendar/errors.ts'
 import { realClinicalConfiguration } from './mandateTransport.ts'
 import { mandateDefaultFailure } from '../clinical-mandates/defaultErrors.ts'
 import { documentStorageOperation, finishDocumentRpc } from './documentStorage.ts'
@@ -26,8 +27,9 @@ export function realClinicalTransport() {
       const value: unknown = await response.json().catch(() => null)
       if (!response.ok) {
         const prerequisite = mandateDefaultFailure(value)
+        const calendar = name.startsWith('clinical_unified_calendar_') || name.startsWith('clinical_unified_encounter_') ? calendarFailure(value, 'clinical') : null
         const error = new Error(prerequisite?.code ?? 'REAL_CLINICAL_RPC_FAILED') as Error & { code?: string }
-        error.code = value && typeof value === 'object' && 'code' in value && typeof value.code === 'string' ? value.code : undefined
+        error.code = calendar?.code ?? (value && typeof value === 'object' && 'code' in value && typeof value.code === 'string' ? value.code : undefined)
         throw error
       }
       return finishDocumentRpc(value, url, operation, name)

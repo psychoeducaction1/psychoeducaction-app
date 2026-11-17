@@ -1,0 +1,5 @@
+# Specific calendar conflict messages — prepared
+
+Replace the combined conflict message on calendar endpoints with fixed domain messages for occupied office, professional overlap, client overlap, unavailable office, office grant, stale event/series version and correction/removal preview changes. Exact domain identifiers and known exclusion-constraint names are mapped at the transport boundary; provider details, dates and identities are never returned. Generic concurrent-update and reservation fallbacks stay distinct when PostgreSQL provides no precise classification. Both transport normalization and the HTTP handler preserve the fixed code; administrative wording refers to the professional rather than the viewer. SQL permissions and conflict validation remain unchanged.
+
+No data mutation, email, migration or deployment. Targeted lint and diff review only; user performs behavioral acceptance. Previous mandate-text and office-label changes remain pending in the same integration checkout.

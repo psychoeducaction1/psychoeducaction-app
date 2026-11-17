@@ -1,3 +1,4 @@
+import { calendarFailure } from '../clinical-calendar/errors.ts'
 import type { ClinicalAccessContext } from '../clinical-core/types.ts'
 import { JsonBodyError, readBoundedJsonObject } from '../boundedJsonBody.ts'
 import { CALENDAR_UUID, isCalendarAck, isCalendarCommand, isCalendarFinancialContext, isCalendarPeriod, isDurableCalendarWorkspace } from '../clinical-calendar/durableTransport.ts'
@@ -56,6 +57,8 @@ export async function handleUnifiedCalendarRequest(request: Request, segments: s
     }
     return reply({ error: 'Ressource introuvable.', code: 'NOT_FOUND' }, 404)
   } catch (cause) {
+    const failure = calendarFailure(cause, auth.context)
+    if (failure) return reply({ error: failure.message, code: failure.code }, failure.status)
     if (cause instanceof JsonBodyError) return reply({ error: cause.message, code: 'INVALID_BODY' }, cause.status)
     throw cause
   }
