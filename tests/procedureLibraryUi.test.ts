@@ -26,6 +26,7 @@ function harness(name: string, initial: unknown[], call: (body: unknown) => Prom
   const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText
   const box = ({ children }: { children?: ReactNode }) => createElement('div', null, children)
   runInNewContext(js, { exports, Error, require: (specifier: string) => {
+    if (specifier === './ProcedurePdfs') return { ProcedurePdfs: () => null }
     if (specifier === 'react') return hooks
     if (specifier === 'react/jsx-runtime') return require(specifier)
     if (specifier === 'next/navigation') return { useRouter: () => ({ push() {} }) }
