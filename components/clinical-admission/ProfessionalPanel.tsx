@@ -115,7 +115,7 @@ export function AssignmentCase({ ui, assignment, clientAccessible }: { ui: Admis
       })
     }} /></Fold>}
     {administrative && !assignment.canceledAt && assignment.admissionId && <Fold title="Annuler cette assignation et retourner en attente"><p className="mb-3 text-sm">La place sera libérée. Un futur cycle créera un nouvel épisode ; les anciens épisodes, dossiers, notes et habilitations seront conservés.</p><ActionForm fields={[{ name: 'reason', label: 'Motif d’annulation et de retour', required: true, type: 'textarea', maxLength: 1000 }]} submitLabel="Annuler et remettre en attente" onSubmit={async values => { if (!window.confirm('Annuler cette assignation et remettre sa demande en attente, sans supprimer l’historique ?')) throw new Error('Retour annulé.'); await ui.run('assignments.return', assignment.id, { expectedVersion: assignment.version, ...values }) }} /></Fold>}
-    <AdmissionHistory ui={ui} assignmentId={assignment.id} />
+    {administrative && <AdmissionHistory ui={ui} assignmentId={assignment.id} />}
   </div>
 }
 
