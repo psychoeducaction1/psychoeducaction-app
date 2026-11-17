@@ -323,3 +323,8 @@ Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workfl
 - Retirer une rencontre propre retire ses notes meme signees des vues normales; les originaux restent proteges.
 - Annuler la facture liee sans credit automatique; preparer un brouillon pour les autres rencontres sans envoi.
 - Ajout, retrait et retablissement des paiements reserves a Direction/administration; aucun mouvement bancaire automatique.
+
+## Calendrier — actions par role (880 preparee, activation en attente)
+- Professionnel: modifier/annuler les rencontres planifiees; corriger ses rencontres effectuees avec motif et verification des conflits.
+- Suppression reservee a Direction/administrateurs en contexte administratif, pas aux assistants.
+- Correction: une occurrence, originaux signes et factures existantes conserves; impacts financiers a verifier par administration.

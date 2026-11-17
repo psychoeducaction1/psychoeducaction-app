@@ -14,13 +14,18 @@ export async function handleUnifiedCalendarRequest(request: Request, segments: s
   transport: UnifiedWorkspaceTransport): Promise<Response> {
   try {
     if (new URL(request.url).search) return invalid()
+    if (request.method === 'GET' && segments.length === 2 && segments[0] === 'correction-preview') {
+      if (!CALENDAR_UUID.test(segments[1])) return invalid()
+      return reply(await transport.rpc('clinical_unified_encounter_correction_preview', { p_context: auth.context, p_appointment_id: segments[1] }, auth.token))
+    }
     if (request.method === 'GET' && segments.length === 2 && segments[0] === 'removal-preview') {
+      if (auth.context === 'clinical') return reply({ error: 'La suppression des rencontres n’est pas autorisée dans l’espace professionnel.', code: 'FORBIDDEN' }, 403)
       if (!CALENDAR_UUID.test(segments[1])) return invalid()
       return reply(await transport.rpc('clinical_unified_encounter_removal_preview', { p_context: auth.context, p_appointment_id: segments[1] }, auth.token))
     }
     if (request.method === 'GET' && segments.length === 2) {
       if (!isCalendarPeriod(segments[0], segments[1])) return invalid()
-      const value = await transport.rpc('clinical_unified_calendar_query_870', {
+      const value = await transport.rpc('clinical_unified_calendar_query_880', {
         p_context: auth.context, p_from_date: segments[0], p_to_date: segments[1],
       }, auth.token)
       if (!object(value) || Object.keys(value).length !== 1 || !isDurableCalendarWorkspace(value.workspace, auth.context, undefined,
@@ -42,6 +47,7 @@ export async function handleUnifiedCalendarRequest(request: Request, segments: s
       if (!key || !CALENDAR_UUID.test(key)) return invalid()
       const command = await readBoundedJsonObject(request, 32768)
       if (!isCalendarCommand(command)) return invalid()
+      if (auth.context === 'clinical' && command.action === 'appointments.remove') return reply({ error: 'La suppression des rencontres n’est pas autorisée dans l’espace professionnel.', code: 'FORBIDDEN' }, 403)
       const value = await transport.rpc('clinical_unified_calendar_command', {
         p_context: auth.context, p_action: command.action, p_id: command.id, p_data: command.data, p_request_key: key,
       }, auth.token)

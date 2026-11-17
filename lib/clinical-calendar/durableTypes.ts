@@ -28,7 +28,7 @@ export type DurableCalendarEvent = {
   seriesId: string | null; seriesRevision: number | null; occurrenceIndex: number | null; isException: boolean
   version: number; createdAt: string; updatedAt: string; cancelledAt: string | null
   cancellationReason: 'client' | 'professional' | 'clinic' | null
-  canRemove?: boolean; canReschedule: boolean; canCancel: boolean; canRecordOutcome: boolean; canCorrectActivity: boolean
+  canRemove?: boolean; canCorrectEncounter?: boolean; canReschedule: boolean; canCancel: boolean; canRecordOutcome: boolean; canCorrectActivity: boolean
   activity: CalendarActivity | null; clinicalLink: CalendarClinicalLink | null
   billable: boolean; financialOptions: CalendarFinancialOptions | null; absenceDecision: CalendarAbsenceDecision; canChangeProfessional: boolean
 }
@@ -47,6 +47,7 @@ export type CalendarEventInput = CalendarFinancialInput & {
 export type CalendarCommand =
   | { action: 'appointments.create'; id: null; data: CalendarEventInput }
   | { action: 'appointments.reschedule'; id: string; data: Omit<CalendarEventInput, 'recurrence' | 'episodeId' | 'professionalId' | 'kind' | 'absenceDecision'> & { absenceDecision?: CalendarCreateAbsence; professionalId?: string; expectedVersion: number; scope: CalendarScope; expectedSeriesRevision?: number } }
+  | { action: 'appointments.correct'; id: string; data: { expectedVersion: number; previewHash: string; confirmed: true; reason: string; title: string; startLocal: string; durationMinutes: number; modality: AppointmentModality | null; officeId: string | null; location: string; travelBeforeMinutes: number; travelAfterMinutes: number; travelKilometers: string; disambiguation?: 'earlier' | 'later' } }
   | { action: 'appointments.remove'; id: string; data: { expectedVersion: number; previewHash: string; confirmed: true } }
   | { action: 'appointments.cancel'; id: string; data: { expectedVersion: number; scope: CalendarScope; expectedSeriesRevision?: number; reason: 'client' | 'professional' | 'clinic'; feePercent?: CalendarFeePercent; travelPerformed?: boolean } }
   | { action: 'appointments.outcome'; id: string; data: { expectedVersion: number; status: 'completed' | 'no_show'; actualMinutes?: number; travelKilometers?: string; feePercent?: CalendarFeePercent; travelPerformed?: boolean } }

@@ -3,7 +3,7 @@ import type { CalendarCommand, CalendarCommandAck, DurableCalendarWorkspace } fr
 import { validCalendarDate } from '@/lib/clinical-calendar/time'
 
 export const CALENDAR_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-export const CALENDAR_ACTIONS = ['appointments.remove','appointments.create','appointments.reschedule','appointments.cancel','appointments.outcome','availability.set','offices.create','offices.update','office-grants.set','activities.correct'] as const
+export const CALENDAR_ACTIONS = ['appointments.correct','appointments.remove','appointments.create','appointments.reschedule','appointments.cancel','appointments.outcome','availability.set','offices.create','offices.update','office-grants.set','activities.correct'] as const
 const collections = ['professionals','clients','offices','officeGrants','availability','appointments','busy','history'] as const
 const object = (value: unknown): value is Record<string, unknown> => Boolean(value && typeof value === 'object' && !Array.isArray(value))
 const shape = (value: unknown, keys: readonly string[]): value is Record<string, unknown> => object(value) && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key))
@@ -41,6 +41,7 @@ export function isCalendarPeriod(from: unknown, to: unknown): from is string {
 }
 export function isCalendarCommand(value: unknown): value is CalendarCommand {
   if (!shape(value,['action','id','data']) || typeof value.action !== 'string' || !(CALENDAR_ACTIONS as readonly string[]).includes(value.action) || !object(value.data)) return false
+  if (value.action === 'appointments.correct') return uuid(value.id) && shape(value.data, ['expectedVersion','previewHash','confirmed','reason','title','startLocal','durationMinutes','modality','officeId','location','travelBeforeMinutes','travelAfterMinutes','travelKilometers', ...(value.data.disambiguation === undefined ? [] : ['disambiguation'])]) && integer(value.data.expectedVersion,1) && hash(value.data.previewHash) && value.data.confirmed === true && text(value.data.reason,1000) && String(value.data.reason).trim().length > 0 && text(value.data.title,200) && typeof value.data.startLocal === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value.data.startLocal) && integer(value.data.durationMinutes,1) && Number(value.data.durationMinutes) <= 720 && nullable(value.data.modality,x=>['office','home','phone','video'].includes(String(x))) && nullable(value.data.officeId,uuid) && text(value.data.location,500) && integer(value.data.travelBeforeMinutes) && Number(value.data.travelBeforeMinutes)<=180 && integer(value.data.travelAfterMinutes) && Number(value.data.travelAfterMinutes)<=180 && kilometers(value.data.travelKilometers) && (value.data.disambiguation === undefined || ['earlier','later'].includes(String(value.data.disambiguation)))
   if (value.action === 'appointments.remove') return uuid(value.id) && shape(value.data,['expectedVersion','previewHash','confirmed']) && integer(value.data.expectedVersion,1) && hash(value.data.previewHash) && value.data.confirmed === true
   const data = value.data, configurable = ['appointments.create','appointments.reschedule'].includes(value.action)
   if (value.action === 'appointments.reschedule' && Object.hasOwn(data,'professionalId') && !uuid(data.professionalId)) return false
@@ -63,7 +64,7 @@ function clinicalLink(value: unknown): boolean {
 }
 const eventKeys = ['id','kind','title','hiddenFromDirection','episodeId','caseId','clientId','clientName','professionalId','startAt','endAt','modality','officeId','location','travelBeforeMinutes','travelAfterMinutes','travelKilometers','status','seriesId','seriesRevision','occurrenceIndex','isException','version','createdAt','updatedAt','cancelledAt','cancellationReason','canReschedule','canCancel','canRecordOutcome','canCorrectActivity','activity','clinicalLink','billable','financialOptions','absenceDecision','canChangeProfessional']
 function event(value: unknown, actorId: string | undefined, context: ClinicalAccessContext): boolean {
-  if (!object(value) || !shape(value,value.canRemove === undefined ? eventKeys : [...eventKeys,'canRemove']) || value.canRemove !== undefined && typeof value.canRemove !== 'boolean') return false
+  if (!object(value) || !shape(value,[...eventKeys,...['canRemove','canCorrectEncounter'].filter(key=>value[key] !== undefined)]) || ['canRemove','canCorrectEncounter'].some(key=>value[key] !== undefined && typeof value[key] !== 'boolean')) return false
   return uuid(value.id) && ['meeting','documentation','absence','other'].includes(String(value.kind)) && text(value.title) && typeof value.hiddenFromDirection === 'boolean'
     && nullable(value.episodeId,uuid) && nullable(value.caseId,uuid) && nullable(value.clientId,uuid) && nullable(value.clientName,item=>text(item))
     && uuid(value.professionalId) && (context !== 'clinical' || !actorId || value.professionalId === actorId) && instant(value.startAt) && instant(value.endAt)
