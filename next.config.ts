@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+import { BROWSER_TRANSCRIPTION_ASSETS } from './lib/clinical-workspace/browserAssets.ts'
 import { controlledClinicalHeaders } from './lib/clinical-unification/controlledMergeProfile.ts'
 import type { NextConfig } from 'next'
 import { assertUnificationRuntime, unificationSecurityHeaders } from './lib/clinical-unification/isolation.ts'
@@ -25,6 +28,7 @@ const nextConfig: NextConfig = {
   ...(controlled && process.env.PEA_CONTROLLED_BUILD_CHECK === 'true' ? { distDir: '.next-controlled-merge-preflight' } : isRealLocalRehearsal(process.env) ? { distDir: process.env.PEA_REAL_LOCAL_BUILD === 'true'
     ? '.next-real-build' : '.next-real-rehearsal' } : {}),
   env: {
+    NEXT_PUBLIC_PEA_BROWSER_TRANSCRIPTION_READY: BROWSER_TRANSCRIPTION_ASSETS.every(file => existsSync(join(process.cwd(), 'public/clinical-model', file))) ? 'true' : 'false',
     NEXT_PUBLIC_PEA_CONTROLLED_MERGE: controlled ? 'true' : 'false',
     NEXT_PUBLIC_PEA_CLINICAL_REAL: real ? 'true' : 'false',
     NEXT_PUBLIC_PEA_CLINICAL_UNIFICATION: real ? 'true' : 'false',

@@ -1,3 +1,4 @@
+import { BROWSER_TRANSCRIPTION_ASSETS } from '../clinical-workspace/browserAssets.ts'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { authenticateUnifiedRequest, UnifiedAuthenticationError } from './auth.ts'
@@ -61,9 +62,8 @@ export async function unifiedNoteAssistance(request: Request, identity: UnifiedH
       existingType = String(note.noteType)
     }
     const draftingEnabled = options.draftingEnabled ?? (process.env.PEA_REAL_AI_SERVER_ENABLED === 'true' && isClinicalNotesAiEnabled())
-    const browser = options.browserAvailable ?? ['onnx-community/whisper-base/onnx/encoder_model_quantized.onnx',
-      'onnx-community/whisper-base/onnx/decoder_model_merged_quantized.onnx', 'onnx-runtime/ort-wasm-simd-threaded.asyncify.wasm']
-      .every(file => existsSync(join(process.cwd(), 'public/clinical-model', file)))
+    const browser = options.browserAvailable ?? (process.env.NEXT_PUBLIC_PEA_BROWSER_TRANSCRIPTION_READY === 'true'
+      || BROWSER_TRANSCRIPTION_ASSETS.every(file => existsSync(join(process.cwd(), 'public/clinical-model', file))))
     if (request.method === 'GET') return unifiedJson({ enabled: browser || draftingEnabled, draftingEnabled,
       transcriptionEngine: browser ? 'browser' : 'unavailable', languageEngineReady: false,
       maxAudioBytes: browser ? LOCAL_WHISPER_MAX_BYTES : 0 })

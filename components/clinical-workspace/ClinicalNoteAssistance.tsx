@@ -1,6 +1,6 @@
 'use client'
 
-import { clinicalSessionFetch } from '@/lib/clinical-unification/authClient'
+import { isUnifiedClinicalClient, clinicalSessionFetch } from '@/lib/clinical-unification/authClient'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import ClinicalNotesRecorder from '@/components/ClinicalNotesRecorder'
@@ -37,6 +37,7 @@ const reviewLabels = [
 export function ClinicalNoteAssistance({ recordId, appointmentId, noteId, noteType, templateId, templateLabel, currentText, clientName = '', dossierPeople = [], priorContext, priorContextLoading = false, onInsert }: {
   recordId: string; appointmentId: string; noteId?: string; noteType: ClinicalNoteType; templateId?: string; templateLabel?: string; currentText: string; clientName?: string; dossierPeople?: KnownClinicalPerson[]; priorContext?: string; priorContextLoading?: boolean; onInsert: (text: string) => void
 }) {
+  const realClinical = isUnifiedClinicalClient()
   const [open, setOpen] = useState(false)
   const [enabled, setEnabled] = useState<boolean | null>(null)
   const [consentReady, setConsentReady] = useState(false)
@@ -241,8 +242,8 @@ export function ClinicalNoteAssistance({ recordId, appointmentId, noteId, noteTy
     setFile(selected); setReviewAudioFile(null); playbackEndRef.current = null; setListened(false); setReviewedTranscript(false); setTranscript(''); setOriginal(''); setSegments([]); setTranscriptionDurationMs(undefined); setReviewedPages(new Set()); invalidate()
   }
   async function generateBrowserDraft(rawText: string) {
-    if (!draftingConsentReady || !draftingEnabled || priorContextLoading) {
-      setBusy(false); setMessage(priorContextLoading ? 'La dernière note se charge encore. Réessayez après son chargement.' : 'Transcription prête. Vérifiez que l’accord pour l’aide IA est enregistré avant de générer la note.'); return
+    if (!draftingConsentReady || !draftingEnabled || priorContextLoading || realClinical && !reviewedTranscript) {
+      setBusy(false); setMessage(realClinical && !reviewedTranscript ? 'Relisez et confirmez la transcription avant de générer la note.' : priorContextLoading ? 'La dernière note se charge encore. Réessayez après son chargement.' : 'Transcription prête. Vérifiez que l’accord pour l’aide IA est enregistré avant de générer la note.'); return
     }
     const quality = prepareTranscriptForDraft(rawText)
     if (!quality.text) {
@@ -481,12 +482,13 @@ export function ClinicalNoteAssistance({ recordId, appointmentId, noteId, noteTy
     <summary className="cursor-pointer font-semibold text-[#805738]">Aide à la rédaction par IA</summary>
     <div className="mt-4 space-y-4 text-sm">
       <ClinicalEncounterConsent recordId={recordId} appointmentId={appointmentId} onReadyChange={consentChanged} />
-      {enabled && transcriptionEngine === 'unavailable' && <p role="status" className="rounded-lg bg-white p-3">Saisissez ou collez votre texte ci-dessous pour préparer un brouillon avec l’IA. La transcription audio n’est pas disponible sur cette version.</p>}
+      {!realClinical && enabled && transcriptionEngine === 'unavailable' && <p role="status" className="rounded-lg bg-white p-3">Saisissez ou collez votre texte ci-dessous pour préparer un brouillon avec l’IA. La transcription audio n’est pas disponible sur cette version.</p>}
       {enabled === false && consentReady && <p role="status" className="rounded-lg bg-white p-3">Le transcripteur et la rédaction IA sont indisponibles. La rédaction manuelle reste disponible.</p>}
       {enabled && !draftingEnabled && <p role="status" className="rounded-lg bg-white p-3">La transcription contrôlée reste disponible; la rédaction externe attend sa configuration.</p>}
-      {enabled && (transcriptionEngine === 'browser' || transcriptionEngine === 'local') ? <div className="space-y-4">
+      {enabled && (realClinical || transcriptionEngine === 'browser' || transcriptionEngine === 'local') ? <div className="space-y-4">
+        {realClinical && transcriptionEngine === 'unavailable' && <p role="status">L’enregistrement est momentanément indisponible. Actualisez la page avant de réessayer.</p>}
         <p className="text-sm font-medium">Gabarit de rédaction : {templateLabel || getClinicalNoteTemplate(noteType).label}</p>
-        <ClinicalNotesRecorder localProcessing disabled={busy || !consentReady || priorContextLoading} onRecorded={selected => {
+        <ClinicalNotesRecorder localProcessing disabled={busy || !consentReady || priorContextLoading || transcriptionEngine === 'unavailable'} onRecorded={selected => {
           if (transcriptionEngine === 'local') { chooseAudio(selected); return }
           browserAudio.current = selected; setFile(selected)
           if (browserWorker.current) { browserWorker.current.postMessage({ type: 'finish' }); setBusy(true) }
@@ -494,14 +496,14 @@ export function ClinicalNoteAssistance({ recordId, appointmentId, noteId, noteTy
         }} onRecordingChange={active => { setRecording(active); if (transcriptionEngine === 'browser' && active && armRetention()) startBrowserWorker(null) }}
           onAudioChunk={transcriptionEngine === 'browser' ? (samples, sampleRate, offsetMs) => browserWorker.current?.postMessage({ type: 'chunk', samples, sampleRate, offsetMs }, [samples.buffer]) : undefined}
           onCancelled={() => { browserWorker.current?.terminate(); browserWorker.current = null; browserAudio.current = null; setBusy(false) }} />
-        <div className="flex flex-wrap items-center gap-3"><button type="button" className={buttonClass('secondary')} disabled={busy || recording || !consentReady || priorContextLoading} onClick={() => fileRef.current?.click()}>Importer un audio</button><span className="text-xs">{file?.name ?? 'WAV, MP3, M4A ou WebM · 160 Mo maximum'}</span><input ref={fileRef} type="file" accept=".wav,.mp3,.m4a,.webm" aria-label="Audio à importer" className="hidden" onChange={event => { chooseAudio(event.target.files?.[0] ?? null); event.target.value = '' }} /></div>
+        {!realClinical && <div className="flex flex-wrap items-center gap-3"><button type="button" className={buttonClass('secondary')} disabled={busy || recording || !consentReady || priorContextLoading} onClick={() => fileRef.current?.click()}>Importer un audio</button><span className="text-xs">{file?.name ?? 'WAV, MP3, M4A ou WebM · 160 Mo maximum'}</span><input ref={fileRef} type="file" accept=".wav,.mp3,.m4a,.webm" aria-label="Audio à importer" className="hidden" onChange={event => { chooseAudio(event.target.files?.[0] ?? null); event.target.value = '' }} /></div>}
         {audioUrl && <div className="space-y-2 rounded-lg border border-[#dfd0bf] bg-white p-3">
           <p className="font-medium">Audio de cette rencontre</p>
           <audio ref={audioRef} controls src={audioUrl} aria-label="Écouter l’audio enregistré sur cet ordinateur" className="w-full" />
           <button type="button" className={buttonClass('secondary')} disabled={busy || recording} onClick={() => { audioRef.current?.pause(); setFile(null); setReviewAudioFile(null); playbackEndRef.current = null }}>Effacer cet audio de la page</button>
         </div>}
-        {file && <><p>{file.size > audioMaxBytes ? 'Ce fichier dépasse la limite de 160 Mo.' : 'Le fichier reste sur cet ordinateur pendant la transcription.'}</p><button type="button" className={buttonClass('primary')} disabled={busy || !consentReady || priorContextLoading || !file.size || file.size > audioMaxBytes} onClick={() => void run('transcribe')}>Transcrire l’audio</button></>}
-        <div className="flex flex-wrap items-center gap-3">
+        {file && <><p>{file.size > audioMaxBytes ? 'Ce fichier dépasse la limite de 160 Mo.' : 'Le fichier reste sur cet ordinateur pendant la transcription.'}</p><button type="button" className={buttonClass('primary')} disabled={busy || !consentReady || priorContextLoading || !file.size || file.size > audioMaxBytes} onClick={() => void run('transcribe')}>{realClinical ? 'Réessayer la transcription' : 'Transcrire l’audio'}</button></>}
+        {!realClinical && <div className="flex flex-wrap items-center gap-3">
           <button type="button" className={buttonClass('secondary')} disabled={busy || recording || !consentReady} onClick={() => transcriptFileRef.current?.click()}>Importer une transcription</button>
           <span className="text-xs">Fichier texte TXT ou Markdown · lu sur cet ordinateur</span>
           <input ref={transcriptFileRef} type="file" accept=".txt,.md,text/plain,text/markdown" aria-label="Transcription à importer" className="hidden" onChange={async event => {
@@ -515,11 +517,13 @@ export function ClinicalNoteAssistance({ recordId, appointmentId, noteId, noteTy
             setTranscript(text); setOriginal(text); setSegments([]); setReviewedPages(new Set()); invalidate()
             setMessage('Transcription chargée. Relisez-la avant de générer la note.')
           }} />
-        </div>
+        </div>}
         {transcript && <div className="space-y-3 rounded-lg border border-[#dfd0bf] bg-white p-4">
-          <label className="block font-medium">Transcription de l’audio<textarea className="mt-2 h-64 w-full rounded-xl border border-[#dfd0bf] p-3 leading-7" maxLength={LOCAL_NOTE_TRANSCRIPT_MAX_CHARS} disabled={busy} value={transcript} onChange={event => { setTranscript(event.target.value); invalidate() }} /></label>
+          <h4 className="font-semibold">Relire la transcription</h4>
+          <label className="block font-medium">Transcription de l’audio<textarea className="mt-2 h-64 w-full rounded-xl border border-[#dfd0bf] p-3 leading-7" maxLength={LOCAL_NOTE_TRANSCRIPT_MAX_CHARS} disabled={busy} value={transcript} onChange={event => { setTranscript(event.target.value); setReviewedTranscript(false); invalidate() }} /></label>
           {transcriptQuality?.suspectPassages.length ? <p role="alert" className="rounded-lg bg-amber-50 p-3 text-sm">Répétition probable à {transcriptQuality.suspectPassages.join(', ')}. Ce passage reste visible ici, mais il sera écarté du brouillon. Réécoutez l’audio et corrigez la transcription si des propos utiles manquent.</p> : null}
-          <button type="button" className={buttonClass('primary')} disabled={busy || recording || !transcriptQuality?.text || !draftingConsentReady || !draftingEnabled || priorContextLoading} onClick={() => void generateBrowserDraft(transcript)}>Générer la note à partir de cette transcription</button>
+          {realClinical && <label className="flex items-start gap-2"><input type="checkbox" checked={reviewedTranscript} disabled={busy || recording} onChange={event => setReviewedTranscript(event.target.checked)} />J’ai relu et corrigé la transcription.</label>}
+          <button type="button" className={buttonClass('primary')} disabled={busy || recording || realClinical && !reviewedTranscript || !transcriptQuality?.text || !draftingConsentReady || !draftingEnabled || priorContextLoading} onClick={() => void generateBrowserDraft(transcript)}>Générer la note à partir de cette transcription</button>
         </div>}
         {result && <div className="space-y-3 rounded-lg border border-[#dfd0bf] bg-white p-4">
           {stale && <p role="alert" className="rounded-lg bg-amber-50 p-3">La transcription a changé. Actualisez le brouillon avant de l’insérer.</p>}
@@ -531,7 +535,7 @@ export function ClinicalNoteAssistance({ recordId, appointmentId, noteId, noteTy
           <button type="button" className={buttonClass('primary')} disabled={!canInsertBrowserAssistedDraft({ stale, sourcesReady: sourcePermissions, draft, busy })} onClick={() => { onInsert(draft.trim()); setMessage('Texte inséré dans la note. Vérifiez-le avant la signature.') }}>Insérer le texte dans la note</button>
         </div>}
         {retentionDeadline && <p className="text-xs">Les données de travail de cette page sont effacées au plus tard après 24 heures. Fermer l’onglet efface leur copie en mémoire.</p>}
-      </div> : enabled && <>
+      </div> : !realClinical && enabled && <>
         <p className="rounded-lg border border-[#dfd0bf] bg-white p-3">Parcours sans envoi d’audio : saisissez ou collez une transcription fictive ci-dessous, puis relisez-la avant de demander un brouillon. Seul le texte confirmé sera envoyé pour la rédaction.</p>
         <details className="rounded-lg border border-[#dfd0bf] bg-white p-3"><summary className="cursor-pointer font-medium">Option : enregistrer ou importer un audio fictif</summary>
           <div className="mt-3 space-y-3">
