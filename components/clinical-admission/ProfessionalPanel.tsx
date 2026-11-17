@@ -1,5 +1,6 @@
 'use client'
 
+import { assignmentEncounterMessage, isAssignmentEncounterFailure } from '@/lib/clinical-admission/outcomeErrors'
 import { clinicalUiText } from '@/lib/clinical-workspace/presentationText'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { admissionNotificationStatusLabel } from '@/lib/clinical-admission/notificationStatus'
@@ -92,6 +93,7 @@ export function AssignmentCase({ ui, assignment, clientAccessible }: { ui: Admis
   const administrative = ui.data.context === 'administration'
   const notices = administrative ? ui.data.notifications.filter(item => item.assignmentId === assignment.id) : []
   const [editingEmail, setEditingEmail] = useState(false)
+  const [closureRequired, setClosureRequired] = useState(false)
   const pendingEmails = notices.filter(item => item.purpose === 'assignment' && item.status === 'prepared' && !notices.some(review => review.supersedesNotificationId === item.id))
   return <div className="grid gap-4"><section className={panelClass}><h2 className="text-xl font-semibold">{assignment.clientSnapshot.firstName} {assignment.clientSnapshot.lastName}</h2><p className="my-3 text-sm">{assignment.canceledAt ? 'Annulée le ' + dateTime(assignment.canceledAt) + ' · ' + assignment.cancellationReason : getAssignedClientStatusMeta(assignment.outcome).label} · Assignée le {dateTime(assignment.assignedAt)}</p><Details value={{ ...assignment.clientSnapshot, internalNotes: '' }} />{clientAccessible && <button className={buttonClass('secondary')} onClick={() => assignment.clientId && void ui.openClient(assignment.clientId)}>Ouvrir le dossier client</button>}{administrative && assignment.admissionId && <button className={buttonClass('ghost')} onClick={() => void ui.navigate('waiting', { admission: assignment.admissionId!, tab: 'history' })}>Ouvrir la demande d’admission</button>}</section>
     {administrative && <Fold title={`Courriels et rappels (${notices.length})`}><p className="mb-3 text-sm">{clinicalUiText("Aucun courriel réel n’est parti du laboratoire.","Historique des courriels et rappels de cette prise en charge.")}</p>{pendingEmails.length > 0 && <button className={buttonClass('secondary') + ' mb-3'} onClick={() => setEditingEmail(true)}>Modifier les courriels d’assignation</button>}<div className="grid gap-2">{notices.map(item => <div key={item.id} className="rounded-xl border border-[#eadfd2] p-3 text-sm"><p className="font-semibold">{item.subject} · {admissionNotificationStatusLabel(item.status)} · {dateTime(item.createdAt)}</p><p>{item.recipientLabel}{item.cc.length ? ' · Cc : ' + item.cc.join(', ') : ''}</p><p className="mt-2 whitespace-pre-wrap">{item.body}</p></div>)}</div></Fold>}
@@ -109,11 +111,13 @@ export function AssignmentCase({ ui, assignment, clientAccessible }: { ui: Admis
       if (values.outcome === 'not_taken') { const error = getNonServiceReasonError(reason); if (error) throw new Error(error) }
       const appointment = values.outcome === 'taken' && assignment.outcome !== 'taken'
         ? validateServiceAppointmentInput({ date: text(values.appointmentDate), time: text(values.appointmentTime), modality: text(values.appointmentModality) }) : null
-      await ui.run('assignments.result', assignment.id, { expectedVersion: assignment.version, outcome: values.outcome,
+      setClosureRequired(false)
+      try { await ui.run('assignments.result', assignment.id, { expectedVersion: assignment.version, outcome: values.outcome,
         ...(values.outcome === 'not_taken' ? { reason } : {}),
         ...(appointment ? { appointmentDate: appointment.date, appointmentTime: appointment.time, appointmentModality: appointment.modality, appointmentStartsAt: dateTimeInputToUtcInToronto(`${appointment.date}T${appointment.time}`).toISOString() } : {}),
-      })
+      }) } catch (cause) { if (isAssignmentEncounterFailure(cause)) setClosureRequired(true); throw cause }
     }} /></Fold>}
+    {closureRequired && <section role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm"><p>{assignmentEncounterMessage}</p>{assignment.clientId && <button type="button" className={buttonClass('secondary') + ' mt-3'} onClick={() => void ui.openClient(assignment.clientId!)}>Aller à la fermeture du dossier</button>}</section>}
     {administrative && !assignment.canceledAt && assignment.admissionId && <Fold title="Annuler cette assignation et retourner en attente"><p className="mb-3 text-sm">La place sera libérée. Un futur cycle créera un nouvel épisode ; les anciens épisodes, dossiers, notes et habilitations seront conservés.</p><ActionForm fields={[{ name: 'reason', label: 'Motif d’annulation et de retour', required: true, type: 'textarea', maxLength: 1000 }]} submitLabel="Annuler et remettre en attente" onSubmit={async values => { if (!window.confirm('Annuler cette assignation et remettre sa demande en attente, sans supprimer l’historique ?')) throw new Error('Retour annulé.'); await ui.run('assignments.return', assignment.id, { expectedVersion: assignment.version, ...values }) }} /></Fold>}
     {administrative && <AdmissionHistory ui={ui} assignmentId={assignment.id} />}
   </div>

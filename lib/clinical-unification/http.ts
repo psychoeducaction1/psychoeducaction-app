@@ -1,3 +1,4 @@
+import { assignmentEncounterCode, assignmentEncounterMessage, isAssignmentEncounterFailure, assignmentEncounterLinkCode, assignmentEncounterLinkMessage, isAssignmentEncounterLinkFailure } from '../clinical-admission/outcomeErrors.ts'
 import { readControlledMergeProfile } from './controlledMergeProfile.ts'
 import { authenticateUnifiedRequest, UnifiedAuthenticationError } from './auth.ts'
 import { clearUnifiedDocumentCookie, unifiedDocumentCookie } from './authDocumentCookie.ts'
@@ -31,6 +32,8 @@ export function unifiedHttpFailure(error: unknown): Response {
   if (error instanceof Error && ['DOCUMENT_COOKIE_ORIGIN_REFUSED', 'DOCUMENT_COOKIE_TOKEN_EXPIRED'].includes(error.message)) {
     return unifiedJson({ error: 'La session documentaire locale n’a pas pu être établie.', code: error.message }, 503)
   }
+  if (isAssignmentEncounterFailure(error)) return unifiedJson({ error: assignmentEncounterMessage, code: assignmentEncounterCode }, 409)
+  if (isAssignmentEncounterLinkFailure(error)) return unifiedJson({ error: assignmentEncounterLinkMessage, code: assignmentEncounterLinkCode }, 409)
   const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : ''
   if (code === '42501') return unifiedJson({ error: 'Accès à ce dossier refusé.', code: 'FORBIDDEN' }, 403)
   if (code === 'P0002') return unifiedJson({ error: 'Ressource introuvable.', code: 'NOT_FOUND' }, 404)
