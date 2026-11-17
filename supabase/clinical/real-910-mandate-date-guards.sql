@@ -53,7 +53,7 @@ revoke all on function clinical.assert_mandate_start_date(uuid,uuid,date),clinic
 alter function public.clinical_create_note(uuid,text,text,date,jsonb,uuid) rename to clinical_create_note_910_base;
 revoke all on function public.clinical_create_note_910_base(uuid,text,text,date,jsonb,uuid) from public,anon,authenticated,service_role;
 create function public.clinical_create_note(p_case_id uuid,p_note_type text,p_title text,p_encounter_date date,p_content jsonb,p_appointment_id uuid default null) returns jsonb
-language plpgsql security definer set search_path='' set row_security=off as $
+language plpgsql security definer set search_path='' set row_security=off as $$
 declare ep uuid;pro uuid:=auth.uid();begin
  if clinical.has_case_access(p_case_id,'write') then
   select episode_id into ep from clinical.care_cases where id=p_case_id;
@@ -61,11 +61,11 @@ declare ep uuid;pro uuid:=auth.uid();begin
   perform clinical.assert_mandate_start_date(ep,pro,p_encounter_date);
  end if;
  return public.clinical_create_note_910_base(p_case_id,p_note_type,p_title,p_encounter_date,p_content,p_appointment_id);
-end $;
+end $$;
 alter function public.clinical_save_note(uuid,integer,text,date,jsonb) rename to clinical_save_note_910_base;
 revoke all on function public.clinical_save_note_910_base(uuid,integer,text,date,jsonb) from public,anon,authenticated,service_role;
 create function public.clinical_save_note(p_note_id uuid,p_expected_version integer,p_title text,p_encounter_date date,p_content jsonb) returns jsonb
-language plpgsql security definer set search_path='' set row_security=off as $
+language plpgsql security definer set search_path='' set row_security=off as $$
 declare n clinical.notes;ep uuid;begin
  select * into n from clinical.notes where id=p_note_id and author_id=auth.uid();
  if n.id is not null and clinical.has_case_access(n.case_id,'write') and p_encounter_date is distinct from n.encounter_date then
@@ -73,7 +73,7 @@ declare n clinical.notes;ep uuid;begin
   perform clinical.assert_mandate_start_date(ep,n.author_id,p_encounter_date);
  end if;
  return public.clinical_save_note_910_base(p_note_id,p_expected_version,p_title,p_encounter_date,p_content);
-end $;
+end $$;
 revoke all on function public.clinical_create_note(uuid,text,text,date,jsonb,uuid),public.clinical_save_note(uuid,integer,text,date,jsonb) from public,anon,authenticated,service_role;
 grant execute on function public.clinical_create_note(uuid,text,text,date,jsonb,uuid),public.clinical_save_note(uuid,integer,text,date,jsonb) to authenticated;
 
