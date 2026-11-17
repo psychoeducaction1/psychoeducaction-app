@@ -1,6 +1,7 @@
 'use client'
 
 import { Suspense, useEffect, useState } from 'react'
+import { ProcedureLibraryLink } from '@/components/procedures/ProcedureLibraryLink'
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
@@ -333,7 +334,7 @@ function LegacyAppNav() {
           </div>
         )}
 
-        <nav className="mt-7 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">{renderLinks()}</nav>
+        <nav className="mt-7 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">{renderLinks()}<ProcedureLibraryLink /></nav>
 
         <button type="button" onClick={handleSignOut} className={`${buttonClass('secondary')} mt-4 shrink-0`}>
           Déconnexion
@@ -367,7 +368,7 @@ function LegacyAppNav() {
           </div>
 
           <nav className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-1 sm:-mx-4 sm:px-4">
-            {renderLinks()}
+            {renderLinks()}<ProcedureLibraryLink />
           </nav>
         </div>
       </header>

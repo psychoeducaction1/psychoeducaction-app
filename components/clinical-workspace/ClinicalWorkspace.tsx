@@ -1,5 +1,7 @@
 'use client'
 
+import { ProcedureLibraryLink } from '@/components/procedures/ProcedureLibraryLink'
+
 import { loadClinicalCoordinationAccess } from '@/lib/clinicalCoordinationClient'
 import { clinicalUiText } from '@/lib/clinical-workspace/presentationText'
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -206,7 +208,7 @@ function WorkspaceShell({ realApplication }: { realApplication: boolean }) {
       <nav aria-label="Navigation clinique" className="flex gap-1 overflow-x-auto px-3 pb-3 lg:min-h-0 lg:flex-1 lg:flex-col lg:gap-4 lg:overflow-x-hidden lg:overflow-y-auto lg:overscroll-contain">{menuGroups.map(group => <div key={group.id} role="group" aria-label={group.label} className="flex shrink-0 gap-1 lg:grid"><p className="hidden px-3 text-[11px] font-semibold uppercase tracking-wide text-[#8a6f5d] lg:block">{group.label}</p>{group.sections.map(id => {
         const item = menu.find(value => value.id === id)!
         return <button key={item.id} onClick={() => void navigate(item.id)} aria-current={menuSection === item.id ? 'page' : undefined} className={'flex shrink-0 items-center gap-2 rounded-xl px-4 py-3 text-left text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#8a5633] ' + (menuSection === item.id ? 'bg-[#8a5633] text-white' : 'text-[#6c5a4d] hover:bg-[#f5ebe0]')}><item.icon size={18} className="shrink-0" />{item.id === 'calendar' ? route.context === 'clinical' ? 'Mon calendrier' : 'Calendriers des professionnels' : item.id === 'billing' && route.context === 'clinical' ? 'Mes honoraires' : item.id === 'clients' && route.context === 'clinical' ? 'Mes clients' : item.id === 'assignments' && route.context === 'clinical' ? 'Mes assignations' : item.label}</button>
-      })}</div>)}{coordinationActorId && coordinationActorId === actorId && <button type="button" className="flex shrink-0 items-center gap-2 rounded-xl px-4 py-3 text-left text-sm font-semibold text-[#6c5a4d] hover:bg-[#f5ebe0]" onClick={async () => { if (await navigation.canLeave()) router.push('/coordination-clinique') }}><ClipboardList size={18} className="shrink-0" />Coordination clinique</button>}</nav>
+      })}</div>)}{coordinationActorId && coordinationActorId === actorId && <button type="button" className="flex shrink-0 items-center gap-2 rounded-xl px-4 py-3 text-left text-sm font-semibold text-[#6c5a4d] hover:bg-[#f5ebe0]" onClick={async () => { if (await navigation.canLeave()) router.push('/coordination-clinique') }}><ClipboardList size={18} className="shrink-0" />Coordination clinique</button>}<ProcedureLibraryLink identityKey={actorId} onNavigate={async () => { if (await navigation.canLeave()) router.push('/procedures') }} /></nav>
       <div className="shrink-0 border-t border-[#eadfd2] px-4 py-3 text-[11px] leading-5 text-[#8a6f5d]"><span className="hidden lg:inline"><ShieldCheck size={16} className="mr-1 inline" />Les accès administratifs et cliniques sont indépendants.</span>{isDurableIdentity(identity?.mode) && <button className="mt-2 flex items-center gap-1 text-sm" onClick={() => void logout()}><LogOut size={14} />Déconnexion</button>}</div>
     </aside>
     <main className="min-w-0 p-4 sm:p-6 lg:ml-64 lg:p-8"><div className="mx-auto max-w-[1500px]">
