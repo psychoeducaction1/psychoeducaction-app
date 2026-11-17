@@ -1,0 +1,82 @@
+{
+  "status": "prepared-only-not-applied",
+  "addressSource": "https://psychoeducaction.com/",
+  "offices": [
+    {
+      "name": "Longueuil — bureau 101",
+      "officeNumber": "101",
+      "address": "401, chemin du Coteau-Rouge",
+      "city": "Longueuil",
+      "province": "Québec",
+      "postalCode": "J4J 1X5",
+      "active": true
+    },
+    {
+      "name": "Longueuil — bureau 102",
+      "officeNumber": "102",
+      "address": "401, chemin du Coteau-Rouge",
+      "city": "Longueuil",
+      "province": "Québec",
+      "postalCode": "J4J 1X5",
+      "active": true
+    },
+    {
+      "name": "Longueuil — bureau 103",
+      "officeNumber": "103",
+      "address": "401, chemin du Coteau-Rouge",
+      "city": "Longueuil",
+      "province": "Québec",
+      "postalCode": "J4J 1X5",
+      "active": true
+    },
+    {
+      "name": "Longueuil — bureau 104",
+      "officeNumber": "104",
+      "address": "401, chemin du Coteau-Rouge",
+      "city": "Longueuil",
+      "province": "Québec",
+      "postalCode": "J4J 1X5",
+      "active": true
+    },
+    {
+      "name": "Montréal — bureau 233",
+      "officeNumber": "233",
+      "address": "1600, boulevard Henri-Bourassa Ouest",
+      "city": "Montréal",
+      "province": "Québec",
+      "postalCode": "H3M 3E3",
+      "active": true
+    },
+    {
+      "name": "Montréal — bureau 250",
+      "officeNumber": "250",
+      "address": "1600, boulevard Henri-Bourassa Ouest",
+      "city": "Montréal",
+      "province": "Québec",
+      "postalCode": "H3M 3E3",
+      "active": true
+    }
+  ],
+  "requestedAccess": [
+    {
+      "professional": "Hicham",
+      "officeNames": [
+        "Longueuil — bureau 101",
+        "Longueuil — bureau 102",
+        "Longueuil — bureau 103",
+        "Longueuil — bureau 104",
+        "Montréal — bureau 233",
+        "Montréal — bureau 250"
+      ]
+    },
+    {
+      "professional": "Ève",
+      "officeNames": [
+        "Longueuil — bureau 101",
+        "Longueuil — bureau 102",
+        "Longueuil — bureau 103",
+        "Longueuil — bureau 104"
+      ]
+    }
+  ]
+}
