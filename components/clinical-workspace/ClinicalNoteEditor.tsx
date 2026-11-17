@@ -1,5 +1,7 @@
 'use client'
 
+import { SavedEncounterTranscript } from './SavedEncounterTranscript'
+
 import { useEffect, useRef, useState } from 'react'
 import { CheckCircle2, FilePenLine, LockKeyhole, Save } from 'lucide-react'
 import { Badge, buttonClass } from '@/components/Ui'
@@ -28,6 +30,7 @@ export function ClinicalNoteEditor({ initial, workspace, type, priorContext, pri
   const [snapshot, setSnapshot] = useState(() => controller.snapshot())
   const [attested, setAttested] = useState(false)
   const [finalizing, setFinalizing] = useState(false)
+  const transcriptFlush = useRef<(() => Promise<void>) | null>(null)
   const actionPending = useRef(false)
   const [actionError, setActionError] = useState('')
   const [original, setOriginal] = useState<ClinicalNoteView | null>(null)
@@ -88,6 +91,7 @@ export function ClinicalNoteEditor({ initial, workspace, type, priorContext, pri
     actionPending.current = true
     setFinalizing(true); setActionError('')
     try {
+      if (action === 'sign') await transcriptFlush.current?.()
       const latest = editable ? await controller.flush() : controller.snapshot().view
       const body = action === 'amend' ? { expectedVersion: latest.note.version, reason: 'correction' } : { expectedVersion: latest.note.version, attested: true }
       const payload = await clinicalRequest<{ note: ClinicalNoteView }>({ actorId: workspace.actor.id, context: workspace.context }, `/notes/${note.id}/${action}`, body, 'POST')
@@ -126,8 +130,9 @@ export function ClinicalNoteEditor({ initial, workspace, type, priorContext, pri
       {note.amendsNoteId && signatureControls}
       {note.amendsNoteId && (originalText !== null ? <ClinicalNoteCorrectionDiff original={originalText} corrected={documentText} signedAt={note.signedAt ?? snapshot.view.signatures.find(signature => signature.kind === 'author')?.signedAt ?? null} /> : <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">{originalError || 'Chargement de la note signée d’origine pour afficher les changements…'}{originalError && <span className="block mt-2 whitespace-pre-wrap">{documentText}</span>}</p>)}
     </div>
-    {editable && !note.amendsNoteId && !snapshot.conflict && note.appointmentId && <ClinicalNoteAssistance recordId={note.recordId} appointmentId={note.appointmentId} noteId={note.id} noteType={note.noteType} currentText={clinicalNoteDocumentText(type, snapshot.content)} priorContext={priorContext?.text} priorContextLoading={priorContextLoading} onInsert={value => { controller.editDocument(value); setAttested(false) }} />}
+    {editable && !note.amendsNoteId && !snapshot.conflict && note.appointmentId && <ClinicalNoteAssistance realClinical={workspace.mode === 'isolated_unified'} actorId={workspace.actor.id} transcriptFlushRef={transcriptFlush} recordId={note.recordId} appointmentId={note.appointmentId} noteId={note.id} noteType={note.noteType} currentText={clinicalNoteDocumentText(type, snapshot.content)} priorContext={priorContext?.text} priorContextLoading={priorContextLoading} onInsert={value => { controller.editDocument(value); setAttested(false) }} />}
 
+    {!editable && workspace.mode === 'isolated_unified' && workspace.context === 'clinical' && note.appointmentId && <SavedEncounterTranscript actorId={workspace.actor.id} recordId={note.recordId} appointmentId={note.appointmentId} />}
     {!note.amendsNoteId && signatureControls}
     {actionError && <p role="alert" className="mt-4 text-sm text-red-700">{actionError}</p>}
     <ClinicalNoteSignatures note={snapshot.view} workspace={workspace} />

@@ -41,6 +41,18 @@ export async function handleUnifiedClients(request: Request, segments: string[],
   const reader = createUnifiedWorkspaceReader(transport)
   const rpc = (name: string, args: Record<string, unknown>) => transport.rpc(name, args, token)
   try {
+    if (area === 'records' && action === 'appointments' && nativeContext === 'transcript' && segments.length === 5) {
+      if (context !== 'clinical') throw new ClinicalError(403, 'FORBIDDEN', 'Accès clinique requis.')
+      if (new URL(request.url).search) invalid()
+      uuid(id); uuid(target)
+      const args = { p_context: context, p_case_id: id, p_appointment_id: target }
+      if (request.method === 'GET') return json(await rpc('clinical_unified_encounter_transcript', { ...args, p_action: 'read' }))
+      if (request.method !== 'POST' || !/^application\/json(?:\s*;|$)/i.test(request.headers.get('Content-Type') ?? '')) invalid()
+      const data = await readBoundedJsonObject(request, 1_100_000)
+      object(data, ['expectedVersion','text','reviewed'])
+      if (Object.keys(data).length !== 3 || !Number.isSafeInteger(data.expectedVersion) || Number(data.expectedVersion)<0 || typeof data.text!=='string' || !data.text.trim() || data.text.length>250000 || typeof data.reviewed!=='boolean') invalid()
+      return json(await rpc('clinical_unified_encounter_transcript', { ...args, p_action: 'save', p_data: data, p_key: uuid(request.headers.get('Idempotency-Key')) }))
+    }
     if (area === 'note-templates') {
       if (context !== 'clinical') throw new ClinicalError(403, 'FORBIDDEN', 'Ces gabarits sont réservés à votre espace clinique.')
       if (segments.length !== 1 || new URL(request.url).search) invalid()
@@ -194,6 +206,9 @@ export async function handleUnifiedClients(request: Request, segments: string[],
     if (!plain(result)) failure()
     return json(result, post && !['notes.sign', 'notes.cosign'].includes(command) ? 201 : 200)
   } catch (error) {
+    const transcriptMessages: Record<string,string> = { TRANSCRIPT_VERSION_CONFLICT: 'La transcription a été modifiée ailleurs. Rouvrez la note avant de poursuivre pour éviter d’écraser cette modification.', TRANSCRIPT_SIGNED_NOTE_LOCKED: 'La note est déjà signée. Sa transcription enregistrée est conservée et ne peut plus être modifiée.', TRANSCRIPT_OPERATION_CONFLICT: 'Cette opération de transcription ne correspond plus au texte affiché. Rouvrez la note.', TRANSCRIPT_INVALID: 'La transcription est vide ou dépasse la taille permise.' }
+    const transcriptCode = plain(error) && typeof error.code==='string' ? error.code : ''
+    if (Object.hasOwn(transcriptMessages,transcriptCode)) return json({error:transcriptMessages[transcriptCode],code:transcriptCode},409)
     if (error instanceof JsonBodyError) return json({ error: 'Le contenu est invalide ou dépasse la taille permise.', code: 'INVALID_BODY' }, error.status)
     if (isClinicalError(error)) return json({ error: error.message, code: error.code }, error.status)
     throw error

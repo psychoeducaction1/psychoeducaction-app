@@ -125,12 +125,14 @@ export function AppointmentNotePage({ workspace, clientId, recordId, appointment
     setContent({ document: chosen.document }); setDirty(true)
   }
 
+  const transcriptFlush = useRef<(() => Promise<void>) | null>(null)
   const saveAndClose = async () => {
     if (pending || !record || !appointment) return
     if (note) { if (await navigation.canLeave()) onBack(); return }
     if (!canWrite) return
     setPending(true); form.markPending(); setError('')
     try {
+      await transcriptFlush.current?.()
       await clinicalRequest<{ note: ClinicalNoteView }>({ actorId: workspace.actor.id, context: workspace.context }, `/records/${recordId}/notes`, {
         noteType: selectedNoteType, appointmentId, content, title: titleOverride?.trim() || getClinicalNoteTemplate(selectedNoteType).label,
       }, 'POST')
@@ -161,7 +163,7 @@ export function AppointmentNotePage({ workspace, clientId, recordId, appointment
       <p className="mt-2 text-xs text-[#7a6859]">Si l’évaluation se poursuit après trois rencontres, reprenez le gabarit d’approfondissement ou d’intégration selon le travail effectué. Le plan d’intervention se choisit lorsqu’il a réellement lieu.</p>
       <label className={`${clinicalLabel} mt-4`}>Titre de la note<input className={`${clinicalInput} mt-2`} maxLength={120} value={titleOverride ?? getClinicalNoteTemplate(selectedNoteType).label} onChange={event => { setTitleOverride(event.target.value); setDirty(true) }} /></label>
       <label className={`${clinicalLabel} mt-4`}>Texte de la note<textarea className={`${clinicalInput} mt-2 min-h-80 leading-7`} maxLength={24000} value={content.document ?? ''} onChange={event => { contentEdited.current = true; setContent({ document: event.target.value }); setDirty(true) }} /></label>
-      <ClinicalNoteAssistance recordId={recordId} appointmentId={appointmentId} clientName={`${record.client.firstName} ${record.client.lastName}`} dossierPeople={dossierClinicalPeople(record.client)} noteType={selectedNoteType} templateId={selectedTemplate} templateLabel={selectedTemplateLabel} currentText={content.document ?? ''} priorContext={priorContext?.text} priorContextLoading={contextPending} onInsert={value => { contentEdited.current = true; setContent({ document: value }); setDirty(true) }} />
+      <ClinicalNoteAssistance realClinical={workspace.mode === 'isolated_unified'} actorId={workspace.actor.id} transcriptFlushRef={transcriptFlush} recordId={recordId} appointmentId={appointmentId} clientName={`${record.client.firstName} ${record.client.lastName}`} dossierPeople={dossierClinicalPeople(record.client)} noteType={selectedNoteType} templateId={selectedTemplate} templateLabel={selectedTemplateLabel} currentText={content.document ?? ''} priorContext={priorContext?.text} priorContextLoading={contextPending} onInsert={value => { contentEdited.current = true; setContent({ document: value }); setDirty(true) }} />
     </section>}
     {record && appointment && !note && !canWrite && <p role="alert" className={clinicalCard}>La création d’une note n’est pas autorisée dans ce dossier.</p>}
     {note && record && <ClinicalNoteEditor key={note.note.id} initial={note} workspace={{ ...workspace, records: [record.record] }} type={workspace.noteTypes.find(item => item.id === note.note.noteType)!} priorContext={priorContext} priorContextLoading={contextPending} priorContextError={contextError} onChanged={updated => { setNote(updated); void onUpdated() }} onAccessDenied={cause => { setNote(null); setRecord(null); setError(cause instanceof Error ? cause.message : 'Accès retiré.') }} />}
