@@ -347,3 +347,9 @@ Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workfl
 - Les mandats historiques financièrement valides conservent leur couverture; un ancien mandat sans date ne reçoit pas de limite inventée. Le contrôle ne force ni signature ni création d’un mandat absent.
 - Préserver les notes signées, les PDF importés et les rencontres existantes; annulation et signature/cosignature seules ne réécrivent pas les dates et restent soumises aux permissions existantes.
 - Message borné au code métier connu et à une date ISO validée; aucune erreur brute ou texte clinique transmis au navigateur.
+
+## Bibliothèque privée des procédures (intégrée, activation en attente)
+- Liste explicite de membres active/can_edit, indépendante de direction, coordination, clinique et paie; compte plateforme actif requis côté API et RLS/RPC.
+- Éditions versionnées avec refus des écrasements concurrents; les documents de procédure ne modifient aucune règle métier.
+- PDF privés versionnés, 3 Mo par fichier, contrôle d’accès à chaque requête, aucune URL publique permanente. Pièces jointes en base: leurs versions consomment le quota PostgreSQL; elles ne remplacent pas le moteur Storage des documents cliniques.
+- Migrations001/002/003 et cinq adhésions à autoriser séparément de l’intégration du code; aucune activation automatique au déploiement.

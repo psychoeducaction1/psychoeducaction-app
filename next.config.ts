@@ -43,7 +43,7 @@ const nextConfig: NextConfig = {
     '/api/clinical-workspace/**': ['./public/psychoeducaction-email-logo.png'],
   },
   ...(local || staging || real ? {
-    headers: async () => controlled ? ['/clinique/:path*', '/administration/:path*', '/signature-convention', '/api/clinical-workspace/:path*'].map(source => ({ source, headers: controlledClinicalHeaders(process.env) })) : [{ source: '/:path*', headers: real ? unificationSecurityHeaders() : staging ? stagingSecurityHeaders() : developmentSecurityHeaders(process.env.NODE_ENV === 'production') }],
+    headers: async () => controlled ? ['/clinique/:path*', '/administration/:path*', '/signature-convention', '/api/clinical-workspace/:path*', '/procedures/:path*', '/api/procedures/:path*'].map(source => ({ source, headers: controlledClinicalHeaders(process.env) })) : [{ source: '/:path*', headers: real ? unificationSecurityHeaders() : staging ? stagingSecurityHeaders() : developmentSecurityHeaders(process.env.NODE_ENV === 'production') }],
     redirects: async () => real ? [] : developmentLegacyPageRedirects(),
     rewrites: async () => ({ beforeFiles: real ? [] : developmentLegacyApiRewrites(), afterFiles: [], fallback: [] }),
   } : {}),
