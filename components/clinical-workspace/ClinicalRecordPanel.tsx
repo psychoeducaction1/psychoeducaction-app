@@ -1,13 +1,10 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, FilePlus2 } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { Badge, buttonClass } from '@/components/Ui'
-import type { ClinicalAppointmentSnapshot, ClinicalNoteView, ClinicalRecordSummary, ClinicalRecordView, WorkspaceView } from '@/lib/clinical-core/types'
+import type { ClinicalNoteView, ClinicalRecordSummary, ClinicalRecordView, WorkspaceView } from '@/lib/clinical-core/types'
 import { clinicalRequest, isClinicalAccessDenied } from '@/lib/clinical-workspace/api'
-import { useNoteTemplates } from './useNoteTemplates'
-import { selectedNoteTemplate } from '@/lib/clinical-workspace/noteTemplates'
-import { EntityForm } from './EntityForm'
 import { ClinicalNoteEditor } from './ClinicalNoteEditor'
 import { clinicalCard } from './styles'
 import { useClinicalNavigation } from './NavigationGuard'
@@ -18,18 +15,13 @@ const noteDate = new Intl.DateTimeFormat('fr-CA', { timeZone: 'America/Toronto',
 const noteTime = new Intl.DateTimeFormat('fr-CA', { timeZone: 'America/Toronto', hour: '2-digit', minute: '2-digit' })
 const NOTE_PAGE_SIZE = 10
 
-export function ClinicalRecordPanel({ record, workspace, onBack, onUpdated, initialNoteId, initialAppointmentId, embedded = false, showBack = true, showRecordLabel = true }: { record: ClinicalRecordSummary; workspace: WorkspaceView; onBack: () => void; onUpdated: () => Promise<void>; initialNoteId?: string | null; initialAppointmentId?: string | null; embedded?: boolean; showBack?: boolean; showRecordLabel?: boolean }) {
+export function ClinicalRecordPanel({ record, workspace, onBack, onUpdated, initialNoteId, embedded = false, showBack = true, showRecordLabel = true }: { record: ClinicalRecordSummary; workspace: WorkspaceView; onBack: () => void; onUpdated: () => Promise<void>; initialNoteId?: string | null; initialAppointmentId?: string | null; embedded?: boolean; showBack?: boolean; showRecordLabel?: boolean }) {
   const navigation = useClinicalNavigation()
-  const templates = useNoteTemplates(workspace.actor.id, workspace.durable && workspace.context === 'clinical')
   const [data, setData] = useState<ClinicalRecordView | null>(null)
   const [note, setNote] = useState<ClinicalNoteView | null>(null)
   const [error, setError] = useState('')
-  const [creating, setCreating] = useState(Boolean(initialAppointmentId && !initialNoteId))
   const [loadingNote, setLoadingNote] = useState(false)
   const [refresh, setRefresh] = useState(0)
-  const [appointments, setAppointments] = useState<ClinicalAppointmentSnapshot[]>([])
-  const [appointmentError, setAppointmentError] = useState('')
-  const [loadingAppointments, setLoadingAppointments] = useState(Boolean(initialAppointmentId && !initialNoteId))
   const [editorGeneration, setEditorGeneration] = useState(0)
   const [removingId, setRemovingId] = useState<string | null>(null)
   const [page, setPage] = useState(0)
@@ -44,7 +36,7 @@ export function ClinicalRecordPanel({ record, workspace, onBack, onUpdated, init
     noteRequest.current++
     noteOperationPending.current = false
     previewCache.current = {}; setPreviews({})
-    setData(null); setNote(null); setCreating(false); setAppointments([]); setLoadingNote(false)
+    setData(null); setNote(null); setLoadingNote(false)
     setError(cause instanceof Error ? cause.message : 'Accès au dossier retiré.')
     void onUpdated()
   }, [onUpdated])
@@ -81,16 +73,6 @@ export function ClinicalRecordPanel({ record, workspace, onBack, onUpdated, init
     return () => controller.abort()
   }, [data, note, visibleNotes, record.id, workspace.actor.id, workspace.context, workspace.noteTypes, invalidateAccess])
   useEffect(() => {
-    if (!creating || !canWrite) return
-    const controller = new AbortController()
-    setAppointments([]); setAppointmentError(''); setLoadingAppointments(true)
-    void clinicalRequest<{ appointments: ClinicalAppointmentSnapshot[] }>({ actorId: workspace.actor.id, context: workspace.context }, `/records/${record.id}/appointments`, undefined, 'GET', controller.signal)
-      .then(payload => { if (!controller.signal.aborted && !accessRevoked.current) setAppointments(payload.appointments) })
-      .catch(cause => { if (!controller.signal.aborted) { invalidateAccess(cause); setAppointmentError(cause instanceof Error ? cause.message : 'Les rencontres ne peuvent pas être chargées.') } })
-      .finally(() => { if (!controller.signal.aborted) setLoadingAppointments(false) })
-    return () => controller.abort()
-  }, [creating, canWrite, record.id, workspace.actor.id, workspace.context, invalidateAccess])
-  useEffect(() => {
     if (!initialNoteId) return
     const controller = new AbortController(), request = ++noteRequest.current
     noteOperationPending.current = true; setLoadingNote(true)
@@ -126,21 +108,7 @@ export function ClinicalRecordPanel({ record, workspace, onBack, onUpdated, init
   return <div className="grid min-w-0 gap-5">{showBack && !note && <div><button className={buttonClass('ghost')} onClick={async () => { if (await navigation.canLeave()) onBack() }}><ArrowLeft size={17} />{embedded ? 'Retour au dossier client' : 'Retour au client'}</button></div>}
     {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</p>}
     {!data && !error && <p role="status">Ouverture du dossier autorisé…</p>}
-    {data && <>{!note && <section className={embedded ? 'min-w-0' : clinicalCard}><div className="flex flex-wrap items-start justify-between gap-3"><div>{embedded ? showRecordLabel && <h4 className="font-semibold">{record.label}</h4> : <h2 className="text-xl font-semibold">{data.client.firstName} {data.client.lastName}</h2>}</div>{canWrite && <button className={buttonClass('secondary')} onClick={async () => { if (!creating || await navigation.canLeave()) setCreating(value => !value) }} aria-expanded={creating}><FilePlus2 size={17} />Nouvelle note</button>}</div>
-      {creating && <div className="mt-5 rounded-xl bg-[#f7f1e9] p-4">{!loadingAppointments && <EntityForm fields={[{ name: 'noteType', label: 'Gabarit de la rencontre', type: 'select', required: true, defaultValue: 'evolution', options: [...workspace.noteTypes.map(type => ({ value: type.id, label: type.label })), ...templates.templates.filter(item => !item.archived).map(item => ({ value: 'personal:' + item.id, label: item.title + ' (personnel)' }))] }, { name: 'title', label: 'Titre (facultatif, par exemple « Évaluation 4 »)' }, { name: 'appointmentId', label: 'Rencontre de mon agenda à rattacher (facultatif)', type: 'select', defaultValue: initialAppointmentId ?? '', required: Boolean(initialAppointmentId), options: appointments.map(appointment => ({ value: appointment.id, label: `${new Intl.DateTimeFormat('fr-CA', { timeZone: 'America/Toronto', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(appointment.startAt))} · ${appointment.status === 'completed' ? 'Effectuée dans l’agenda' : 'Planifiée'}` })) }, { name: 'encounterDate', label: 'Date de la rencontre fictive (si saisie, même jour que le rendez-vous lié)', type: 'date' }]} submitLabel="Créer le brouillon" onSubmit={async values => {
-        const chosen = selectedNoteTemplate(String(values.noteType), templates.templates)
-        const noteValues = { ...values, noteType: chosen.noteType, title: values.title || chosen.title, content: { document: chosen.document } }
-        if (initialAppointmentId && !values.appointmentId) throw new Error('Le rendez-vous lié doit être sélectionné et encore autorisé.')
-        if (!await navigation.canLeave({ ignoreForms: true })) throw new Error('Le brouillon actuel est conservé. Terminez sa sauvegarde avant de changer de note.')
-        if (noteOperationPending.current) throw new Error('Une note est encore en cours d’ouverture.')
-        const request = ++noteRequest.current
-        noteOperationPending.current = true
-        try {
-          const payload = await clinicalRequest<{ note: ClinicalNoteView }>({ actorId: workspace.actor.id, context: workspace.context }, `/records/${record.id}/notes`, noteValues, 'POST')
-          if (request === noteRequest.current) { setNote(payload.note); setEditorGeneration(value => value + 1); setCreating(false); setRefresh(value => value + 1); await onUpdated() }
-        } catch (cause) { invalidateAccess(cause); throw cause }
-        finally { if (request === noteRequest.current) noteOperationPending.current = false }
-      }} />}{loadingAppointments && <p role="status" className="mt-2 text-xs text-[#8a6f5d]">Chargement de vos rencontres autorisées…</p>}{appointmentError && <p role="alert" className="mt-2 text-xs text-red-700">{appointmentError} Vous pouvez conserver une note sans rattachement.</p>} <p className="mt-3 text-xs text-[#7a6859]">Une évaluation peut se poursuivre à la quatrième ou cinquième rencontre : choisissez de nouveau l’approfondissement ou l’intégration selon son contenu.</p></div>}
+    {data && <>{!note && <section className={embedded ? 'min-w-0' : clinicalCard}><div className="flex flex-wrap items-start justify-between gap-3"><div>{embedded ? showRecordLabel && <h4 className="font-semibold">{record.label}</h4> : <h2 className="text-xl font-semibold">{data.client.firstName} {data.client.lastName}</h2>}</div></div>
       {sortedNotes.length ? <><div className="mt-5 overflow-x-auto rounded-xl border border-[#eadfd2]"><table className="w-full min-w-[720px] table-fixed border-collapse text-left text-sm"><colgroup><col className="w-[11%]" /><col className="w-[16%]" /><col className="w-[16%]" /><col className="w-[31%]" /><col className="w-[12%]" /><col className="w-[14%]" /></colgroup><thead className="bg-[#f7f1e9] text-[#604936]"><tr><th scope="col" className="px-3 py-3">Date</th><th scope="col" className="px-3 py-3">Activité</th><th scope="col" className="px-3 py-3">Type</th><th scope="col" className="px-3 py-3">Note</th><th scope="col" className="px-3 py-3">Statut</th><th scope="col" className="px-3 py-3">Actions</th></tr></thead><tbody>{visibleNotes.map(summary => {
         const start = summary.appointmentSnapshot?.startAt
         const end = summary.appointmentSnapshot?.endAt

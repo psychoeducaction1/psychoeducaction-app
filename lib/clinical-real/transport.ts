@@ -17,7 +17,7 @@ export function realClinicalTransport() {
       return user && typeof user === 'object' && 'id' in user && typeof user.id === 'string' ? token : null
     },
     async rpc(name: string, args: Record<string, unknown>, token: string): Promise<unknown> {
-      if (!/^clinical_[a-z_]{1,80}$/.test(name)) throw new Error('REAL_CLINICAL_RPC_REFUSED')
+      if (!/^clinical_[a-z_]{1,80}(?:_[0-9]{1,3})?$/.test(name)) throw new Error('REAL_CLINICAL_RPC_REFUSED')
       const operation = documentStorageOperation()
       const response = await fetch(`${url}/rest/v1/rpc/${name}`, { method: 'POST', cache: 'no-store',
         redirect: 'error', signal: AbortSignal.timeout(15_000),
