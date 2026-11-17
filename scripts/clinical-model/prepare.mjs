@@ -28,6 +28,7 @@ const wasm = {
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const target = join(root, 'public', 'clinical-model')
 const enabled = process.argv.includes('--force') || process.env.PEA_REAL_BROWSER_TRANSCRIPTION_ENABLED === 'true'
+  || process.env.PEA_CONTROLLED_MERGE === 'true'
 
 async function digest(path) {
   const hash = createHash('sha256')
@@ -60,5 +61,6 @@ if (enabled) {
     await copyFile(source, destination)
   }
   // No personal or clinical data is written to the public model directory.
-  console.log('Modèle de transcription local prêt.')
+  await import('./prepare-ner.mjs')
+  console.log('Modèles de transcription et de filtrage des noms prêts.')
 }

@@ -43,3 +43,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Public model binaries are restored by the existing prebuild helper.
+/public/clinical-model/
