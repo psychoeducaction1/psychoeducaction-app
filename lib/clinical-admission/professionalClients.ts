@@ -6,6 +6,21 @@ export type ProfessionalClientStatus = keyof typeof professionalClientLabels
 export type ProfessionalClientRow = { key: string; clientId: string | null; firstName: string; lastName: string; status: ProfessionalClientStatus; assignments: AdmissionAssignment[] }
 const priority: Record<ProfessionalClientStatus, number> = { not_contacted: 0, pending: 1, taken: 2, archived: 3 }
 
+export type ProfessionalClientView = 'assignments' | 'clients'
+/** Split workflows before grouping so a new assignment cannot hide an existing follow-up. */
+export function professionalClientViewRows(workspace: WorkspaceView, assignments: readonly AdmissionAssignment[], professionalId: string, view: ProfessionalClientView): ProfessionalClientRow[] {
+  const own = assignments.filter(item => item.professionalId === professionalId)
+  const pending = own.filter(item => !item.canceledAt && item.status !== 'closed' && (item.outcome === 'not_contacted' || item.outcome === 'pending'))
+  if (view === 'assignments') return professionalClientRows({ ...workspace, clients: [] }, pending, professionalId)
+  const pendingIds = new Set(pending.map(item => item.id))
+  const completed = own.filter(item => !pendingIds.has(item.id))
+  const pendingClients = new Set(pending.map(item => item.clientId))
+  const completedClients = new Set(completed.map(item => item.clientId))
+  const clinicalClients = new Set([...workspace.records, ...workspace.managedRecords].filter(record => record.members.some(member => member.actorId === professionalId && member.canRead)).map(record => record.clientId))
+  const clients = workspace.clients.filter(client => !pendingClients.has(client.id) || completedClients.has(client.id) || clinicalClients.has(client.id))
+  return professionalClientRows({ ...workspace, clients }, completed, professionalId)
+}
+
 /** Group only by persistent identity; never merge homonyms. No workflow state is written. */
 export function professionalClientRows(workspace: WorkspaceView, assignments: readonly AdmissionAssignment[], professionalId: string): ProfessionalClientRow[] {
   const rows = new Map<string, ProfessionalClientRow>()

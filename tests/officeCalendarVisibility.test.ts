@@ -72,7 +72,7 @@ test('sélecteur : décocher, recocher et tout afficher avec les bureaux autoris
   const all = elements(render()).find(element => element.type === 'button')!
   ;(all.props.onClick as () => void)()
   assert.deepEqual(selection, offices.map(office => office.id))
-  assert.equal(render(true).props.disabled, true)
+  assert.equal((render(true).props as { disabled: boolean }).disabled, true)
   assert.equal(elements(render()).filter(element => element.type === 'input').length, 2)
   const url = new URLSearchParams({ offices: officeB.id, day: '2026-11-16', view: 'day' })
   url.set('day', '2026-11-23'); url.set('view', 'week')
