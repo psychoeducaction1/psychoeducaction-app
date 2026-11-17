@@ -45,7 +45,7 @@ export function useBillingWorkspace(actorId: string, context: ClinicalAccessCont
     if (operation.current) throw new Error('Une opération est déjà en cours. Attendez sa confirmation.')
     operation.current = true; guard.markPending(); setPending(true); setMessage(''); setError('')
     try {
-      const { ack, refreshed } = await acknowledgeAndRefresh(write, () => load(), () => setMessage('Écriture confirmée dans le registre fictif. Aucun mouvement bancaire ni courriel.'))
+      const { ack, refreshed } = await acknowledgeAndRefresh(write, () => load(), () => setMessage('Opération enregistrée. Aucun mouvement bancaire ni courriel.'))
       if (!refreshed) setMessage('Écriture confirmée. L’actualisation est indisponible : ne réémettez pas cette opération ; utilisez Actualiser.')
       return ack
     } catch (cause) { if (isClinicalAccessDenied(cause)) clear(); throw cause }

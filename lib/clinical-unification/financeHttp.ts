@@ -1,3 +1,4 @@
+import { financialErrors } from '../clinical-finance/errors.ts'
 import { createHash } from 'node:crypto'
 import { JsonBodyError, readBoundedJsonObject } from '../boundedJsonBody.ts'
 import { authenticateUnifiedRequest, UnifiedAuthenticationError } from './auth.ts'
@@ -80,7 +81,16 @@ export async function handleUnifiedFinanceHttp(originalRequest: Request, segment
       const { filters, invoiceId } = parseUnifiedBillingFilters(request.url)
       const data = await rpc('clinical_unified_billing_data_870')
       const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Toronto', year: 'numeric', month: '2-digit', day: '2-digit' }).format((deps.now ?? (() => new Date()))())
-      return reply(projectUnifiedBilling(data, identity.actor, filters, invoiceId, day))
+      const workspace = projectUnifiedBilling(data, identity.actor, filters, invoiceId, day)
+      if (workspace.eligibleActivities.some(activity => !activity.prepared)) {
+        const fees = await rpc('clinical_unified_fee_workspace', { p_context: context })
+        if (!isFeeWorkspace(fees, context, identity.actor.id) || fees.kind !== 'administrative') throw new Error('INVALID_RESPONSE')
+        workspace.eligibleActivities = workspace.eligibleActivities.map(activity => {
+          const missingContract = !fees.contracts.some(contract => contract.professionalId === activity.professionalId && contract.effectiveFrom <= activity.serviceDate)
+          return !activity.prepared && !activity.blockedReason && missingContract ? { ...activity, blockedReason: 'FEE_CONTRACT_REQUIRED' } : activity
+        })
+      }
+      return reply(workspace)
     }
     if (segments.length === 1 && segments[0] === 'fees' && request.method === 'GET') {
       const value = await rpc('clinical_unified_fee_workspace', { p_context: context })
@@ -143,6 +153,8 @@ export async function handleUnifiedFinanceHttp(originalRequest: Request, segment
     const status = code === '42501' ? 403 : ['40001','22023'].includes(code) ? 409 : code === 'INVALID_INPUT' ? 400
       : ['0A000','FILTER_NOT_CONNECTED'].includes(code) ? 501 : code === 'INVALID_RESPONSE' ? 502 : 503
     const message = object(cause) && typeof cause.message === 'string' ? cause.message : ''
+
+    for (const [key, error] of Object.entries(financialErrors)) if (code === key || message === key) return reply({ code: key, error }, 409)
     if (message.includes('PAYMENT_ADMIN_REQUIRED')) return reply({ code: 'PAYMENT_ADMIN_REQUIRED', error: 'Seuls la Direction et les administrateurs peuvent modifier les paiements.' },403)
     if (message.includes('REPLACEMENT_PAYMENT_REVIEW_REQUIRED')) return reply({ code: 'PAYMENT_REVIEW_REQUIRED', error: 'Retirez ou réaffectez d’abord les paiements de la facture annulée.' },409)
     if (message.includes('INVOICE_VOIDED')) return reply({ code: 'INVOICE_VOIDED', error: 'Cette facture est annulée.' },409)

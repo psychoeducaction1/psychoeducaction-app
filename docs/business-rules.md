@@ -328,3 +328,9 @@ Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workfl
 - Professionnel: modifier/annuler les rencontres planifiees; corriger ses rencontres effectuees sans motif manuel et avec verification des conflits; une mention technique automatique conserve la trace.
 - Suppression reservee a Direction/administrateurs en contexte administratif, pas aux assistants.
 - Correction: une occurrence, originaux signes et factures existantes conserves; impacts financiers a verifier par administration.
+## Préparation manuelle de la facturation — 17 novembre 2026
+- Réutilisation du panneau de préparation d’origine dans Facturation et paiements; aucune nouvelle règle de calcul.
+- Prestations admissibles à partir du lendemain; commande existante avec clé d’idempotence et détection des lignes déjà facturées.
+- Préparation des honoraires administratifs depuis le professionnel de la prestation; seuls les relevés validés/clôturés sont visibles dans son espace professionnel.
+- Tarif et payeurs issus du mandat; messages explicites pour conditions manquantes et entente non applicable à la date de prestation.
+- Ouverture unique selon la politique du client: nouveaux dossiers traités par le moteur existant, dossiers historiques sans décision à vérifier avant facturation; aucune rétroactivité inventée.

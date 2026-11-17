@@ -9,6 +9,7 @@ import { ProspectDialog } from '@/components/intake/ProspectDialog'
 import { Field, clinicalCard, inputClass, read } from './primitives'
 import { InvoiceDetail, type BillingUi } from './InvoiceDetail'
 import { FeesPanel } from './FeesPanel'
+import { PreparationPanel } from './PreparationPanel'
 import { invoiceStatusLabels, money } from './model'
 import { useBillingWorkspace } from './useBillingWorkspace'
 
@@ -107,6 +108,7 @@ export function InvoiceWorkspace({ data, ui, action = null }: { data: DurableBil
       </tbody></table>{!data.invoices.length && <p className="py-6 text-center text-sm">Aucune facture pour ces filtres.</p>}</div>
       <div className="mt-4 flex items-center justify-between gap-2 text-sm"><button className={buttonClass('ghost')} disabled={ui.busy || data.filters.page <= 1} onClick={() => void ui.select({ page: String(data.filters.page - 1) })}>Précédent</button><span>{data.filters.page} / {Math.max(1, Math.ceil(data.total / data.filters.pageSize))}</span><button className={buttonClass('ghost')} disabled={ui.busy || data.filters.page * data.filters.pageSize >= data.total} onClick={() => void ui.select({ page: String(data.filters.page + 1) })}>Suivant</button></div>
     </section>
+    <PreparationPanel ui={ui} />
     {data.selected && <ProspectDialog compactHeader title={'Facture ' + (data.selected.invoice.number ?? 'ouverte')} onClose={() => void ui.select({ invoiceId: null, billingAction: null })}><InvoiceDetail key={data.selected.invoice.id + ':' + data.selected.invoice.version} ui={ui} /></ProspectDialog>}
   </div>
 }

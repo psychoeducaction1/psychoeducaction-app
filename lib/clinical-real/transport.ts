@@ -1,3 +1,4 @@
+import { financialFailureCode } from '../clinical-finance/errors.ts'
 import { calendarFailure } from '../clinical-calendar/errors.ts'
 import { realClinicalConfiguration } from './mandateTransport.ts'
 import { mandateDefaultFailure } from '../clinical-mandates/defaultErrors.ts'
@@ -27,10 +28,11 @@ export function realClinicalTransport() {
       const value: unknown = await response.json().catch(() => null)
       if (!response.ok) {
         const prerequisite = mandateDefaultFailure(value)
+        const financialCode = name === 'clinical_unified_finance_command' || name === 'clinical_unified_fee_quote' ? financialFailureCode(value) : null
         const transcriptCode = name === 'clinical_unified_encounter_transcript' && value && typeof value === 'object' && 'message' in value && typeof value.message === 'string' && ['TRANSCRIPT_VERSION_CONFLICT','TRANSCRIPT_SIGNED_NOTE_LOCKED','TRANSCRIPT_OPERATION_CONFLICT','TRANSCRIPT_INVALID'].includes(value.message) ? value.message : null
         const calendar = name.startsWith('clinical_unified_calendar_') || name.startsWith('clinical_unified_encounter_') ? calendarFailure(value, 'clinical') : null
         const error = new Error(prerequisite?.code ?? 'REAL_CLINICAL_RPC_FAILED') as Error & { code?: string }
-        error.code = transcriptCode ?? calendar?.code ?? (value && typeof value === 'object' && 'code' in value && typeof value.code === 'string' ? value.code : undefined)
+        error.code = financialCode ?? transcriptCode ?? calendar?.code ?? (value && typeof value === 'object' && 'code' in value && typeof value.code === 'string' ? value.code : undefined)
         throw error
       }
       return finishDocumentRpc(value, url, operation, name)
