@@ -1,3 +1,4 @@
+import { mandateDateFailure } from '../clinical-mandates/dateErrors.ts'
 import type { ClinicalAccessContext } from '../clinical-core/types.ts'
 
 /** Fixed messages only: never forward provider details, dates or identities. */
@@ -19,6 +20,8 @@ const messages: Record<string, string> = {
   CORRECTION_COMPLETED_DATE_REQUIRED: 'Une rencontre effectuée doit conserver une date et une heure de fin déjà passées.',
 }
 export function calendarFailure(error: unknown, context: ClinicalAccessContext): { code: string; message: string; status: 409 } | null {
+  const mandateDate = mandateDateFailure(error)
+  if (mandateDate) return { code: mandateDate.code, message: mandateDate.message, status: 409 }
   if (!error || typeof error !== 'object') return null
   const raw = 'code' in error && typeof error.code === 'string' ? error.code : ''
   const message = 'message' in error && typeof error.message === 'string' ? error.message : ''

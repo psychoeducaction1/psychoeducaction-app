@@ -1,3 +1,4 @@
+import { mandateDateFailure } from '../clinical-mandates/dateErrors.ts'
 import { createHash } from 'node:crypto'
 import { JsonBodyError, readBoundedJsonObject } from '../boundedJsonBody.ts'
 import { ClinicalError, isClinicalError, object, uuid, version, text, date, noteType, content } from '../clinical-core/validation.ts'
@@ -206,6 +207,8 @@ export async function handleUnifiedClients(request: Request, segments: string[],
     if (!plain(result)) failure()
     return json(result, post && !['notes.sign', 'notes.cosign'].includes(command) ? 201 : 200)
   } catch (error) {
+    const mandateDate = mandateDateFailure(error)
+    if (mandateDate) return json({ code: mandateDate.code, error: mandateDate.message }, 409)
     const transcriptMessages: Record<string,string> = { TRANSCRIPT_VERSION_CONFLICT: 'La transcription a été modifiée ailleurs. Rouvrez la note avant de poursuivre pour éviter d’écraser cette modification.', TRANSCRIPT_SIGNED_NOTE_LOCKED: 'La note est déjà signée. Sa transcription enregistrée est conservée et ne peut plus être modifiée.', TRANSCRIPT_OPERATION_CONFLICT: 'Cette opération de transcription ne correspond plus au texte affiché. Rouvrez la note.', TRANSCRIPT_INVALID: 'La transcription est vide ou dépasse la taille permise.' }
     const transcriptCode = plain(error) && typeof error.code==='string' ? error.code : ''
     if (Object.hasOwn(transcriptMessages,transcriptCode)) return json({error:transcriptMessages[transcriptCode],code:transcriptCode},409)

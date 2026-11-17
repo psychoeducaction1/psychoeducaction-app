@@ -340,3 +340,10 @@ Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workfl
 - Seuls les refus métier connus sont isolés. Une erreur technique inattendue annule encore toute la commande; elle n’est jamais présentée comme un succès partiel.
 - L’accusé du lot conserve la clé d’idempotence et indique le nombre de rencontres préparées et les dossiers bloqués. Le replay restitue ce même résultat.
 - Aucune modification des mandats, tarifs, dates d’entente, signatures ou règles d’ouverture historiques.
+
+## Dates des rencontres et notes — 910 préparée
+- Refuser création/déplacement/changement de rattachement d’une rencontre clinique avant le début connu des mandats du professionnel pour cet épisode, en jour Toronto.
+- Refuser création ou changement de date/rattachement d’une note avant ce début. Utiliser la date de rencontre, jamais la date de rédaction/signature.
+- Les mandats historiques financièrement valides conservent leur couverture; un ancien mandat sans date ne reçoit pas de limite inventée. Le contrôle ne force ni signature ni création d’un mandat absent.
+- Préserver les notes signées, les PDF importés et les rencontres existantes; annulation et signature/cosignature seules ne réécrivent pas les dates et restent soumises aux permissions existantes.
+- Message borné au code métier connu et à une date ISO validée; aucune erreur brute ou texte clinique transmis au navigateur.
