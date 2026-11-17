@@ -1,5 +1,6 @@
 'use client'
 
+import { loadClinicalCoordinationAccess } from '@/lib/clinicalCoordinationClient'
 import { clinicalUiText } from '@/lib/clinical-workspace/presentationText'
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
@@ -58,6 +59,7 @@ function WorkspaceShell({ realApplication }: { realApplication: boolean }) {
   const [identity, setIdentity] = useState<Identity | null>(null)
   const [workspace, setWorkspace] = useState<WorkspaceView | null>(null)
   const [refreshSequence, setRefreshSequence] = useState(0)
+  const [coordinationActorId, setCoordinationActorId] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [bootError, setBootError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -69,6 +71,15 @@ function WorkspaceShell({ realApplication }: { realApplication: boolean }) {
   const section = route.section
   const selected = active?.clients.find(client => client.id === route.clientId) ?? (!active?.durable && !route.clientId ? active?.clients[0] : undefined)
   const record = route.recordId ? active?.records.find(item => item.id === route.recordId && (!selected || item.clientId === selected.id)) : undefined
+
+  useEffect(() => {
+    if (!realApplication || !actorId || identity?.mode !== 'isolated_unified') return
+    let cancelled = false
+    void loadClinicalCoordinationAccess().then(result => {
+      if (!cancelled) setCoordinationActorId(result.context && (result.context.isManager || result.context.staff?.profile_id === actorId && result.context.staff.is_active) ? actorId : null)
+    })
+    return () => { cancelled = true }
+  }, [realApplication, actorId, identity?.mode])
 
   useEffect(() => {
     if (route.context !== 'clinical' || route.section !== 'clients' || route.clientId || params.get('view') !== 'assignments') return
@@ -137,6 +148,7 @@ function WorkspaceShell({ realApplication }: { realApplication: boolean }) {
 
   const navigate = async (next: WorkspaceSection, query: Record<string, string | null | undefined> = {}, context = route.context, ignoreForms = false) => {
     if (!await navigation.canLeave({ ignoreForms })) return
+    const previousUrl = new URL(window.location.href)
     const target = canonicalWorkspaceDestination(context, next, query)
     const href = workspaceHref(context, target.section, { ...(identity?.mode === 'isolated_fixture' ? { actor: actorId } : {}), recherche: route.search || null, page: route.page ? String(route.page + 1) : null, ...(target.section === 'clients' ? { directoryStatus: params.get('directoryStatus') } : {}), ...target.query })
     const targetUrl = new URL(href, window.location.origin)
@@ -147,7 +159,8 @@ function WorkspaceShell({ realApplication }: { realApplication: boolean }) {
     else if (target.section === 'note-page') router.push(href)
     else writeHistory(href)
     if ((operational ?? href) === window.location.pathname + window.location.search
-      && window.location.pathname === '/clinique/mon-profil' && new URLSearchParams(window.location.search).has('tab')) {
+      && window.location.pathname === '/clinique/mon-profil' && new URLSearchParams(window.location.search).has('tab')
+      && (previousUrl.pathname !== window.location.pathname || previousUrl.searchParams.get('tab') !== new URLSearchParams(window.location.search).get('tab'))) {
       document.getElementById('professional-profile-sections')?.scrollIntoView({ block: 'start' })
     }
   }
@@ -193,7 +206,7 @@ function WorkspaceShell({ realApplication }: { realApplication: boolean }) {
       <nav aria-label="Navigation clinique" className="flex gap-1 overflow-x-auto px-3 pb-3 lg:min-h-0 lg:flex-1 lg:flex-col lg:gap-4 lg:overflow-x-hidden lg:overflow-y-auto lg:overscroll-contain">{menuGroups.map(group => <div key={group.id} role="group" aria-label={group.label} className="flex shrink-0 gap-1 lg:grid"><p className="hidden px-3 text-[11px] font-semibold uppercase tracking-wide text-[#8a6f5d] lg:block">{group.label}</p>{group.sections.map(id => {
         const item = menu.find(value => value.id === id)!
         return <button key={item.id} onClick={() => void navigate(item.id)} aria-current={menuSection === item.id ? 'page' : undefined} className={'flex shrink-0 items-center gap-2 rounded-xl px-4 py-3 text-left text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#8a5633] ' + (menuSection === item.id ? 'bg-[#8a5633] text-white' : 'text-[#6c5a4d] hover:bg-[#f5ebe0]')}><item.icon size={18} className="shrink-0" />{item.id === 'calendar' ? route.context === 'clinical' ? 'Mon calendrier' : 'Calendriers des professionnels' : item.id === 'billing' && route.context === 'clinical' ? 'Mes honoraires' : item.id === 'clients' && route.context === 'clinical' ? 'Mes clients' : item.id === 'assignments' && route.context === 'clinical' ? 'Mes assignations' : item.label}</button>
-      })}</div>)}</nav>
+      })}</div>)}{coordinationActorId && coordinationActorId === actorId && <button type="button" className="flex shrink-0 items-center gap-2 rounded-xl px-4 py-3 text-left text-sm font-semibold text-[#6c5a4d] hover:bg-[#f5ebe0]" onClick={async () => { if (await navigation.canLeave()) router.push('/coordination-clinique') }}><ClipboardList size={18} className="shrink-0" />Coordination clinique</button>}</nav>
       <div className="shrink-0 border-t border-[#eadfd2] px-4 py-3 text-[11px] leading-5 text-[#8a6f5d]"><span className="hidden lg:inline"><ShieldCheck size={16} className="mr-1 inline" />Les accès administratifs et cliniques sont indépendants.</span>{isDurableIdentity(identity?.mode) && <button className="mt-2 flex items-center gap-1 text-sm" onClick={() => void logout()}><LogOut size={14} />Déconnexion</button>}</div>
     </aside>
     <main className="min-w-0 p-4 sm:p-6 lg:ml-64 lg:p-8"><div className="mx-auto max-w-[1500px]">
