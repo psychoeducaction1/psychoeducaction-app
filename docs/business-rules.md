@@ -325,6 +325,6 @@ Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workfl
 - Ajout, retrait et retablissement des paiements reserves a Direction/administration; aucun mouvement bancaire automatique.
 
 ## Calendrier — actions par role (880 preparee, activation en attente)
-- Professionnel: modifier/annuler les rencontres planifiees; corriger ses rencontres effectuees avec motif et verification des conflits.
+- Professionnel: modifier/annuler les rencontres planifiees; corriger ses rencontres effectuees sans motif manuel et avec verification des conflits; une mention technique automatique conserve la trace.
 - Suppression reservee a Direction/administrateurs en contexte administratif, pas aux assistants.
 - Correction: une occurrence, originaux signes et factures existantes conserves; impacts financiers a verifier par administration.

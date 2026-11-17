@@ -19,7 +19,6 @@ type EditorKind = CalendarEventKind | 'client_absence'
 export function AppointmentEditor({ ui, slot, editing, onSaved, onCancel, formRef, lockedClientId }: { ui: CalendarUi; slot: NewCalendarSlot; editing?: DurableCalendarEvent; onSaved: (id: string, focus: CalendarSavedFocus) => Promise<void>; onCancel: () => void; formRef?: Ref<CalendarFormHandle>; lockedClientId?: string }) {
   const correcting = editing?.status === 'completed'
   const correction = useEncounterCorrection(editing, ui)
-  const [correctionReason, setCorrectionReason] = useState('')
   const initialPro = editing?.professionalId ?? slot.professionalId ?? ui.data.professionals[0]?.id ?? ''
   const initialClient = ui.data.clients.find(client => client.episodeId === (editing?.episodeId ?? slot.episodeId))
   const initialStart = editing ? localDateTime(editing.startAt) : slot.day + 'T' + String(Math.floor(slot.minute / 60)).padStart(2, '0') + ':' + String(slot.minute % 60).padStart(2, '0')
@@ -91,9 +90,9 @@ export function AppointmentEditor({ ui, slot, editing, onSaved, onCancel, formRe
     }
     if (data.modality === 'office' && !allowedOffices.some(office => office.id === data.officeId)) throw new Error('Choisissez un bureau disponible pour cet horaire.')
     if (correcting && editing) {
-      if (!correction.preview || !correctionReason.trim()) throw new Error('Précisez le motif de la correction.')
+      if (!correction.preview) throw new Error('Actualisez la rencontre avant de confirmer la correction.')
       if (!globalThis.confirm('Enregistrer cette correction ? Les notes signées et les factures existantes restent inchangées. La facturation devra être vérifiée si nécessaire.')) throw new Error('Correction non enregistrée.')
-      const ack = await ui.command({ action: 'appointments.correct', id: editing.id, data: { expectedVersion: editing.version, previewHash: correction.preview.hash, confirmed: true, reason: correctionReason.trim(), title: data.title, startLocal: data.startLocal, durationMinutes: data.durationMinutes, modality: data.modality, officeId: data.officeId, location: data.location, travelBeforeMinutes: data.travelBeforeMinutes ?? 0, travelAfterMinutes: data.travelAfterMinutes ?? 0, travelKilometers: data.travelKilometers ?? '0', disambiguation: data.disambiguation } })
+      const ack = await ui.command({ action: 'appointments.correct', id: editing.id, data: { expectedVersion: editing.version, previewHash: correction.preview.hash, confirmed: true, reason: 'Correction de la rencontre', title: data.title, startLocal: data.startLocal, durationMinutes: data.durationMinutes, modality: data.modality, officeId: data.officeId, location: data.location, travelBeforeMinutes: data.travelBeforeMinutes ?? 0, travelAfterMinutes: data.travelAfterMinutes ?? 0, travelKilometers: data.travelKilometers ?? '0', disambiguation: data.disambiguation } })
       return () => onSaved(ack.result.id, { clientId: selectedClient?.clientId ?? null, professionalId: editing.professionalId, day: value.day, officeId: data.officeId })
     }
     if (editing) {
@@ -109,7 +108,6 @@ export function AppointmentEditor({ ui, slot, editing, onSaved, onCancel, formRe
       {correction.error && <p role="alert" className="text-red-800">{correction.error}</p>}
       {!correction.preview && !correction.error && <p role="status">Vérification des documents liés…</p>}
       {correction.preview && <p>{correction.preview.noteCount} note(s) et {correction.preview.invoiceCount} facture(s) liées. {correction.preview.invoiceCount > 0 && 'La facturation devra être vérifiée par la direction ou l’administration.'}</p>}
-      <Field label="Motif de la correction"><input className={inputClass} required maxLength={1000} value={correctionReason} onChange={event => { setChanged(true); setCorrectionReason(event.target.value) }} /></Field>
     </section>}
     <div className="grid gap-3 sm:grid-cols-2">
       <Field label="Type d’activité"><select className={inputClass} disabled={correcting} value={value.kind} onChange={event => update('kind', event.target.value as EditorKind)}>
