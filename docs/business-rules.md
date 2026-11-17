@@ -341,15 +341,15 @@ Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workfl
 - L’accusé du lot conserve la clé d’idempotence et indique le nombre de rencontres préparées et les dossiers bloqués. Le replay restitue ce même résultat.
 - Aucune modification des mandats, tarifs, dates d’entente, signatures ou règles d’ouverture historiques.
 
-## Dates des rencontres et notes — 910 préparée
+## Dates des rencontres et notes — 910 activée le 17 novembre 2026
 - Refuser création/déplacement/changement de rattachement d’une rencontre clinique avant le début connu des mandats du professionnel pour cet épisode, en jour Toronto.
 - Refuser création ou changement de date/rattachement d’une note avant ce début. Utiliser la date de rencontre, jamais la date de rédaction/signature.
 - Les mandats historiques financièrement valides conservent leur couverture; un ancien mandat sans date ne reçoit pas de limite inventée. Le contrôle ne force ni signature ni création d’un mandat absent.
 - Préserver les notes signées, les PDF importés et les rencontres existantes; annulation et signature/cosignature seules ne réécrivent pas les dates et restent soumises aux permissions existantes.
 - Message borné au code métier connu et à une date ISO validée; aucune erreur brute ou texte clinique transmis au navigateur.
 
-## Bibliothèque privée des procédures (intégrée, activation en attente)
+## Bibliothèque privée des procédures (activée le 17 novembre 2026)
 - Liste explicite de membres active/can_edit, indépendante de direction, coordination, clinique et paie; compte plateforme actif requis côté API et RLS/RPC.
 - Éditions versionnées avec refus des écrasements concurrents; les documents de procédure ne modifient aucune règle métier.
 - PDF privés versionnés, 3 Mo par fichier, contrôle d’accès à chaque requête, aucune URL publique permanente. Pièces jointes en base: leurs versions consomment le quota PostgreSQL; elles ne remplacent pas le moteur Storage des documents cliniques.
-- Migrations001/002/003 et cinq adhésions à autoriser séparément de l’intégration du code; aucune activation automatique au déploiement.
+- Migrations001/002/003 et cinq adhésions explicitement autorisées et appliquées; les déploiements ultérieurs n’activent aucun nouveau membre automatiquement.
