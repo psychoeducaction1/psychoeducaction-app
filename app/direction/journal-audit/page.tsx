@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/index'
 import { buttonClass } from '@/components/Ui'
 import { supabase } from '@/lib/supabaseClient'
-import { excludeSatisfactionAuditEvents, isVisibleInAuditJournal } from '@/lib/auditJournal'
+import { excludeSatisfactionAuditEvents, excludeTemporaryActorAuditEvents, isActorEventVisibleInJournal, isVisibleInAuditJournal } from '@/lib/auditJournal'
 import { clinicalAuditLabel, clinicalAuditRow, type ClinicalAuditEvent } from '@/lib/clinical-real/auditJournal'
 import {
   getAssignedClientStatusMeta,
@@ -217,7 +217,7 @@ export default function DirectionJournalAuditPage() {
         .select(
           'id, created_at, actor_profile_id, actor_name, actor_role, action, entity_type, entity_id, description, metadata'
         )
-      const { data, error: auditError } = await excludeSatisfactionAuditEvents(auditQuery)
+      const { data, error: auditError } = await excludeTemporaryActorAuditEvents(excludeSatisfactionAuditEvents(auditQuery))
         .order('created_at', { ascending: false })
         .limit(500)
 
@@ -239,7 +239,7 @@ export default function DirectionJournalAuditPage() {
           else setClinicalNotice('Le journal clinique a renvoyé une réponse inattendue.')
         }
       }
-      setLogs([...historical, ...clinical].sort((left, right) =>
+      setLogs([...historical, ...clinical].filter(log => isActorEventVisibleInJournal(log.actor_profile_id, log.created_at)).sort((left, right) =>
         (right.created_at ?? '').localeCompare(left.created_at ?? '')))
       setLoading(false)
     }

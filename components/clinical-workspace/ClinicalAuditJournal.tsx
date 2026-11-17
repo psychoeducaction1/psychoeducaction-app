@@ -1,4 +1,5 @@
 'use client'
+import { isActorEventVisibleInJournal } from '@/lib/auditJournal'
 
 import { useEffect, useMemo, useState } from 'react'
 import type { WorkspaceView } from '@/lib/clinical-core/types'
@@ -72,7 +73,7 @@ export function ClinicalAuditJournal({ workspace }: { workspace: WorkspaceView }
     if (!workspace.durable || workspace.context !== 'administration') return
     const abort = new AbortController()
     void clinicalRequest<CalendarJournal>({ actorId: workspace.actor.id, context: 'administration' }, '/calendar/journal', undefined, 'GET', abort.signal, undefined, isCalendarJournal)
-      .then(value => { if (!abort.signal.aborted) setJournal(value) })
+      .then(value => { if (!abort.signal.aborted) setJournal({ ...value, events: value.events.filter(event => isActorEventVisibleInJournal(event.actorId, event.at)) }) })
       .catch(cause => { if (!abort.signal.aborted) setError(cause instanceof Error ? cause.message : 'Le journal d’audit est indisponible.') })
     return () => abort.abort()
   }, [workspace.actor.id, workspace.context, workspace.durable])
