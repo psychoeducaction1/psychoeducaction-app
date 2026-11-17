@@ -12,15 +12,15 @@ export function officeOccupations(data: Pick<DurableCalendarWorkspace, 'appointm
   }
   return [...result.values()].sort((a, b) => a.startAt.localeCompare(b.startAt) || a.officeId.localeCompare(b.officeId))
 }
-export function selectedOfficeIds(query: string | null, offices: readonly Pick<DurableCalendarOffice, 'id'>[]): string[] {
+export function selectedOfficeIds(query: string | null, offices: readonly (Pick<DurableCalendarOffice, 'id'> & Partial<Pick<DurableCalendarOffice, 'name'>>)[]): string[] {
   if (query === null || query === '') return offices.map(office => office.id)
   if (query === 'none') return []
-  const requested = new Set(query.split(','))
-  return offices.filter(office => requested.has(office.id)).map(office => office.id)
+  const requested = new Set(query.split(/[,.]/))
+  return offices.filter(office => requested.has(office.id) || requested.has(officeUrlKey(office, offices))).map(office => office.id)
 }
 export function officeSelectionQuery(ids: readonly string[], offices: readonly Pick<DurableCalendarOffice, 'id'>[]): string | null {
   const selected = offices.filter(office => ids.includes(office.id)).map(office => office.id)
-  return selected.length === offices.length ? null : selected.length ? selected.join(',') : 'none'
+  return selected.length === offices.length ? null : selected.length ? selected.map(id => officeUrlKey(offices.find(office => office.id === id)!, offices)).join('.') : 'none'
 }
 const fallbackColors = ['#245f70', '#a65b31', '#62559b', '#38764c', '#b03e68', '#3569a4', '#887420', '#974545', '#4d7375', '#8e5281', '#546b36', '#a95c51']
 function hashId(id: string) { let hash = 0; for (const char of id) hash = (hash * 31 + char.charCodeAt(0)) >>> 0; return hash }
@@ -95,4 +95,21 @@ export function officeClock(instant: string): string {
   if (!timeline.repeatedHours.includes(local.slice(11, 13))) return local.slice(11)
   const earlier = Date.parse(torontoLocalInstant(local, 'earlier'))
   return local.slice(11) + (Date.parse(instant) < earlier + 60000 ? ' (1re)' : ' (2e)')
+}
+
+/** Presentation only: retain the original office IDs and stored names. */
+export function officeDisplayName(office: Pick<DurableCalendarOffice, 'id' | 'name'>): string {
+  const legacyLongueuil = office.id === '546baf24-c0ef-48f5-90c5-3e904074693a' || office.id === 'fee9ad73-9f51-40cb-b610-f81196c00fe2'
+  return legacyLongueuil && /^bureau\s+(101|102)$/i.test(office.name.trim()) ? 'Longueuil — bureau ' + office.name.trim().match(/(101|102)$/)![1] : office.name
+}
+export function officeShortLabel(office: Pick<DurableCalendarOffice, 'name'>): string {
+  const number = office.name.match(/\bbureau\s+(\d+[a-z]?)\s*$/i)?.[1]
+  return number ? 'B' + number : office.name
+}
+
+/** Human-readable filters resolve only within the already-authorized office catalog. */
+function officeUrlKey(office: Pick<DurableCalendarOffice, 'id'> & Partial<Pick<DurableCalendarOffice, 'name'>>, offices: readonly (Pick<DurableCalendarOffice, 'id'> & Partial<Pick<DurableCalendarOffice, 'name'>>)[]): string {
+  const key = (name: string) => { const number = name.match(/\bbureau\s+(\d+[a-z]?)\s*$/i)?.[1]; return number ? 'b' + number.toLowerCase() : '' }
+  const token = key(office.name ?? '')
+  return token && offices.filter(candidate => key(candidate.name ?? '') === token).length === 1 ? token : office.id
 }

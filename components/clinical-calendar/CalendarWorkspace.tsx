@@ -21,7 +21,7 @@ import { ActivityInvoiceDialog } from './ActivityInvoiceDialog'
 import { OfficeCalendarGrid } from './OfficeCalendarGrid'
 import { CalendarDateNavigation, OfficeSelection } from './CalendarNavigation'
 import { CapacityOfferDialog } from './CapacityOfferDialog'
-import { officeDisplayColors, officeOccupations, officeReservationProfessional, officeSelectionQuery, selectedOfficeIds } from './officeModel'
+import { officeDisplayColors, officeDisplayName, officeOccupations, officeReservationProfessional, officeSelectionQuery, selectedOfficeIds } from './officeModel'
 import { Field, inputClass, type CalendarUi, type CalendarFormHandle } from './primitives'
 import { calendarClientName, calendarSavedFocusPatch, confirmCalendarWrite, filterCalendarEvents, frenchDay, periodFor, refreshBeforeCalendarLink, shiftMonth, primaryActivityColors, type CalendarDisplayScope, type CalendarView } from './model'
 
@@ -74,7 +74,7 @@ export function CalendarWorkspace({ workspace, onNavigate, onUpdated, embeddedCl
   const professionalId = embeddedProfessionalId ?? (administrative ? (!embeddedClientId && !officesOnly ? data?.professionals.find(pro => pro.id === query.get('pro'))?.id : undefined) ?? data?.clients.find(client => client.clientId === (embeddedClientId ?? query.get('client')))?.professionalIds.find(id => data.professionals.some(pro => pro.id === id)) ?? data?.professionals[0]?.id ?? '' : workspace.actor.id)
   const clientId = embeddedClientId ?? (officesOnly ? '' : query.get('client') ?? ''), officeId = officesOnly || embeddedClientId ? '' : query.get('office') ?? ''
   const occupations = useMemo(() => data ? officeOccupations(data) : [], [data])
-  const officeCatalog = data?.offices.filter(office => office.active || occupations.some(row => row.officeId === office.id)) ?? []
+  const officeCatalog = data?.offices.filter(office => office.active || occupations.some(row => row.officeId === office.id)).sort((a, b) => officeDisplayName(a).localeCompare(officeDisplayName(b), 'fr', { numeric: true })) ?? []
   const chosenOfficeIds = selectedOfficeIds(query.get('offices'), officeCatalog)
   const officeColors = officeDisplayColors(data?.offices ?? [])
   const events = filterCalendarEvents(data?.appointments ?? [], { scope, professionalId, explicitProfessional: Boolean(embeddedProfessionalId) || !embeddedClientId && Boolean(query.get('pro')), clientId, officeId, showCancelled: Boolean(embeddedClientId) || query.get('cancelled') === 'yes' })
