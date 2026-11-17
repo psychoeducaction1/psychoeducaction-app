@@ -44,6 +44,7 @@ export function ActivityInvoiceDialog({ actorId, clientId, activityId, endAt, on
     {message && <p role="status" className="mb-3 rounded-lg bg-green-50 p-3 text-sm text-green-900">{message}</p>}
     {activityId && !data && !error && <p>Chargement des factures…</p>}
     {data && !invoiceId && <div className="grid gap-3">{data.invoices.map(invoice => <button key={invoice.id} className={buttonClass('secondary') + ' justify-between text-left'} disabled={busy} onClick={() => void select(invoice.id)}><span>{invoice.number ?? 'Facture à envoyer'} · {invoice.payerName}<br /><small>{dateLabel(invoice.serviceDate)}</small></span><strong>{money(invoice.dueCents)}</strong></button>)}{!data.invoices.length && <p>{blockedReason ? blockReasonLabel(blockedReason) : 'Aucune facture n’est encore préparée pour cette activité.'}</p>}</div>}
+    {data && !invoiceId && !data.invoices.length && <button type="button" className={buttonClass('secondary') + ' mt-3'} disabled={busy} onClick={async () => { onClose(); await onNavigate('billing', { client: clientId, activity: activityId ?? null, status: 'all', invoiceId: null }) }}>Ouvrir la facturation et les vérifications</button>}
     {ui && invoiceId && <div className="grid gap-3"><button className={buttonClass('ghost')} disabled={busy} onClick={() => void select()}>← Toutes les factures de l’activité</button><InvoiceDetail key={invoiceId + ':' + (data?.selected?.invoice.version ?? 0)} ui={ui} /></div>}
   </ProspectDialog>
 }

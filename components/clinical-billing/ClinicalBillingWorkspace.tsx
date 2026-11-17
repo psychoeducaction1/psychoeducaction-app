@@ -86,6 +86,7 @@ export function InvoiceWorkspace({ data, ui, action = null }: { data: DurableBil
       {data.filters.activityId && <span className="rounded-xl bg-[#f8eee1] p-3 text-sm">Activité sélectionnée</span>}
       <button className={buttonClass('secondary')} disabled={ui.busy} onClick={() => void ui.select({ client: null, activity: null, invoiceId: null, page: null })}>Afficher tous les dossiers</button>
     </div></section>}
+    <PreparationPanel ui={ui} />
     <section className={clinicalCard}>
       <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="flex items-center gap-2 text-lg font-semibold"><FileText size={19} />Liste des factures</h2><p className="text-sm text-[#8a6f5d]">{data.total} facture{data.total > 1 ? 's' : ''} selon les filtres.</p></div><button type="button" className={buttonClass('secondary')} onClick={() => void exportExcel()} disabled={ui.busy || exporting || data.total === 0} title="Exporter toutes les factures filtrées"><Sheet size={17} /> {exporting ? 'Export en cours…' : 'Excel'}</button></div>
       {exportError && <p role="alert" className="mt-3 text-sm text-red-700">{exportError}</p>}
@@ -108,7 +109,6 @@ export function InvoiceWorkspace({ data, ui, action = null }: { data: DurableBil
       </tbody></table>{!data.invoices.length && <p className="py-6 text-center text-sm">Aucune facture pour ces filtres.</p>}</div>
       <div className="mt-4 flex items-center justify-between gap-2 text-sm"><button className={buttonClass('ghost')} disabled={ui.busy || data.filters.page <= 1} onClick={() => void ui.select({ page: String(data.filters.page - 1) })}>Précédent</button><span>{data.filters.page} / {Math.max(1, Math.ceil(data.total / data.filters.pageSize))}</span><button className={buttonClass('ghost')} disabled={ui.busy || data.filters.page * data.filters.pageSize >= data.total} onClick={() => void ui.select({ page: String(data.filters.page + 1) })}>Suivant</button></div>
     </section>
-    <PreparationPanel ui={ui} />
     {data.selected && <ProspectDialog compactHeader title={'Facture ' + (data.selected.invoice.number ?? 'ouverte')} onClose={() => void ui.select({ invoiceId: null, billingAction: null })}><InvoiceDetail key={data.selected.invoice.id + ':' + data.selected.invoice.version} ui={ui} /></ProspectDialog>}
   </div>
 }

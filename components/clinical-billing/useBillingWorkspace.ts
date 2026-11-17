@@ -1,4 +1,6 @@
 'use client'
+import { isDurableBillingAck } from '@/lib/clinical-finance/transport'
+import { financialErrors } from '@/lib/clinical-finance/errors'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import type { ClinicalAccessContext } from '@/lib/clinical-core/types'
@@ -45,7 +47,13 @@ export function useBillingWorkspace(actorId: string, context: ClinicalAccessCont
     if (operation.current) throw new Error('Une opération est déjà en cours. Attendez sa confirmation.')
     operation.current = true; guard.markPending(); setPending(true); setMessage(''); setError('')
     try {
-      const { ack, refreshed } = await acknowledgeAndRefresh(write, () => load(), () => setMessage('Opération enregistrée. Aucun mouvement bancaire ni courriel.'))
+      const { ack, refreshed } = await acknowledgeAndRefresh(write, () => load(), result => {
+        if (isDurableBillingAck(result, 'batch.prepare') && result.preparation) {
+          const p = result.preparation
+          const reasons = [...new Set(p.blockedCases.map(item => financialErrors[item.code] ?? 'Vérifiez les frais d’ouverture et les conditions financières du dossier.'))]
+          setMessage(`${p.reconciledAppointments} rencontre(s) préparée(s). ${p.blockedCases.length} dossier(s) à vérifier. ${reasons.join(' ')} Aucun courriel envoyé.`)
+        } else setMessage('Opération enregistrée. Aucun mouvement bancaire ni courriel.')
+      })
       if (!refreshed) setMessage('Écriture confirmée. L’actualisation est indisponible : ne réémettez pas cette opération ; utilisez Actualiser.')
       return ack
     } catch (cause) { if (isClinicalAccessDenied(cause)) clear(); throw cause }

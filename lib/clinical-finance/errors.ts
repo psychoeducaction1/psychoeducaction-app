@@ -4,3 +4,11 @@ export function financialFailureCode(value: unknown): string | null {
   if (!value || typeof value !== 'object' || !('message' in value) || typeof value.message !== 'string') return null
   return Object.hasOwn(financialErrors, value.message) ? value.message : null
 }
+
+/** A structured Postgres/PostgREST failure means the RPC did not commit.
+ * Network errors/timeouts have no such payload and must remain uncertain. */
+export function isFinancialRpcRejection(value: unknown): boolean {
+  return Boolean(value && typeof value === 'object' && 'code' in value && 'message' in value
+    && typeof value.message === 'string' && typeof value.code === 'string'
+    && (/^[0-9A-Z]{5}$/.test(value.code) || /^PGRST[0-9]{3}$/.test(value.code)))
+}

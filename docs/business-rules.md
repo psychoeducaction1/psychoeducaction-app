@@ -334,3 +334,9 @@ Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workfl
 - Préparation des honoraires administratifs depuis le professionnel de la prestation; seuls les relevés validés/clôturés sont visibles dans son espace professionnel.
 - Tarif et payeurs issus du mandat; messages explicites pour conditions manquantes et entente non applicable à la date de prestation.
 - Ouverture unique selon la politique du client: nouveaux dossiers traités par le moteur existant, dossiers historiques sans décision à vérifier avant facturation; aucune rétroactivité inventée.
+
+## Préparation manuelle — isolation des dossiers bloqués (900, préparée)
+- Chaque dossier est traité dans une sous-transaction: conditions financières ou entente datée manquantes annulent ce seul dossier, puis le lot continue.
+- Seuls les refus métier connus sont isolés. Une erreur technique inattendue annule encore toute la commande; elle n’est jamais présentée comme un succès partiel.
+- L’accusé du lot conserve la clé d’idempotence et indique le nombre de rencontres préparées et les dossiers bloqués. Le replay restitue ce même résultat.
+- Aucune modification des mandats, tarifs, dates d’entente, signatures ou règles d’ouverture historiques.

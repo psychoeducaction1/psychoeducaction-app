@@ -154,6 +154,7 @@ export async function handleUnifiedFinanceHttp(originalRequest: Request, segment
       : ['0A000','FILTER_NOT_CONNECTED'].includes(code) ? 501 : code === 'INVALID_RESPONSE' ? 502 : 503
     const message = object(cause) && typeof cause.message === 'string' ? cause.message : ''
 
+    if (code === 'FINANCE_RPC_REJECTED') return reply({ code, error: 'L’opération financière a été refusée par la base et n’a pas été enregistrée. La configuration de facturation doit être vérifiée avant de réessayer.' }, 409)
     for (const [key, error] of Object.entries(financialErrors)) if (code === key || message === key) return reply({ code: key, error }, 409)
     if (message.includes('PAYMENT_ADMIN_REQUIRED')) return reply({ code: 'PAYMENT_ADMIN_REQUIRED', error: 'Seuls la Direction et les administrateurs peuvent modifier les paiements.' },403)
     if (message.includes('REPLACEMENT_PAYMENT_REVIEW_REQUIRED')) return reply({ code: 'PAYMENT_REVIEW_REQUIRED', error: 'Retirez ou réaffectez d’abord les paiements de la facture annulée.' },409)

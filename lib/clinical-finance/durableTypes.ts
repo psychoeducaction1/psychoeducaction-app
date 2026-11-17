@@ -10,7 +10,7 @@ export type BillingOpeningCandidate={appointmentId:string;appointmentVersion:num
 export type BillingHistory={id:string;action:string;invoiceId:string|null;sourceId:string|null;actorId:string|null;source:'authenticated'|'worker';at:string}
 export type DurableBillingWorkspace=({mode:'isolated_local';fictional:true}|{mode:'isolated_unified';fictional:false})&{context:ClinicalAccessContext;actor:FixtureActor;kind:'administrative';canManagePayments?:boolean;canCreditRefund:boolean;currentDate:string;taxWarning:string;allocationRule:string;automaticPreparation:{mode:'local_worker'|'user_action'|'on_load'|'scheduled';lastRunAt:string|null;preparedCount:number};filters:DurableBillingFilter;invoices:DurableInvoice[];total:number;summary:{totalCents:number;paidCents:number;dueCents:number};selected:{invoice:DurableInvoice;ledger:DurableBillingLedger[];history:BillingHistory[]}|null;eligibleActivities:BillingEligibleActivity[];openingCandidates:BillingOpeningCandidate[]}
 export type BillingDocumentPayload={id:string;sha256:string;byteLength:number;bytesBase64:string}
-export type DurableBillingAck={ok:true;action:string;id:string;version:number;affectedInvoiceIds:string[];replayed?:boolean}
+export type DurableBillingAck={ok:true;action:string;id:string;version:number;affectedInvoiceIds:string[];replayed?:boolean;preparation?:{reconciledAppointments:number;blockedCases:{caseId:string;code:string}[]}}
 export type DurableBillingCommand=
  |{action:'batch.prepare';data:{throughDate:string}}
  |{action:'opening.confirm';data:{appointmentId:string;expectedAppointmentVersion:number;confirmed:true}}
