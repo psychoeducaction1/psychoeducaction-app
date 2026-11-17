@@ -82,7 +82,7 @@ export function BillingForm<C, A>({ children, build, execute, onConfirmed, submi
       <h3 id={reviewId + '-title'} className="text-xl font-semibold">Confirmer l’opération fictive</h3>
       <p id={reviewId + '-description'} className="mt-3 text-sm">{review.message}</p>
       {review.details && <div className="mt-4 rounded-xl bg-[#f8f2e9] p-3 text-sm">{review.details}</div>}
-      <p className="mt-3 text-xs text-amber-950">Les données à envoyer sont figées. Aucun débit bancaire ni courriel réel. Annuler conserve votre saisie sans envoyer cette opération.</p>
+      <p className="mt-3 text-xs text-amber-950">Vérifiez les informations avant de confirmer. Annuler conserve votre saisie.</p>
       <div className="mt-5 flex flex-wrap gap-3"><button ref={cancelButton} type="button" className={buttonClass('secondary')} onClick={cancelReview}>Annuler et revenir au formulaire</button><button ref={confirmButton} type="button" className={buttonClass('primary')} disabled={disabled || busy} onClick={async () => {
         const snapshot = reviewRef.current
         if (!snapshot || operation.current || disabled) return

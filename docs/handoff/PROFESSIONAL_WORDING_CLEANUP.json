@@ -1,0 +1,90 @@
+{
+  "scope": "Presentation only; real billing banner removed. Lab safety banners and all send/payment/AI gates preserved.",
+  "changes": [
+    {
+      "path": "components/clinical-billing/ClinicalBillingWorkspace.tsx",
+      "before": "    </section>\n    {state.message",
+      "after": "    </section>}\n    {state.message"
+    },
+    {
+      "path": "components/clinical-calendar/CalendarWorkspace.tsx",
+      "before": "Enregistrement confirmé dans la base locale.",
+      "after": "Enregistré."
+    },
+    {
+      "path": "components/clinical-calendar/primitives.tsx",
+      "before": "Enregistrement confirmé dans la base locale.",
+      "after": "Enregistré."
+    },
+    {
+      "path": "components/clinical-billing/primitives.tsx",
+      "before": "Les données à envoyer sont figées. Aucun débit bancaire ni courriel réel. Annuler conserve votre saisie sans envoyer cette opération.",
+      "after": "Vérifiez les informations avant de confirmer. Annuler conserve votre saisie."
+    },
+    {
+      "path": "components/clinical-workspace/ClinicalNoteAssistance.tsx",
+      "before": "Original, conservé dans le laboratoire",
+      "after": "Texte original"
+    },
+    {
+      "path": "components/clinical-workspace/ProfessionalWorkspace.tsx",
+      "before": "Ajouter une pièce fictive",
+      "after": "Ajouter un document"
+    },
+    {
+      "path": "components/clinical-workspace/ProfessionalWorkspace.tsx",
+      "before": "Assignations de l’ancienne application",
+      "after": "Historique des assignations"
+    },
+    {
+      "path": "components/clinical-workspace/ClientFileAttachments.tsx",
+      "before": "Aucune autre communication associée à ce client. Les invitations de consentement apparaissent ci-dessus. Aucun envoi réel n’est activé dans ce laboratoire.",
+      "after": "Aucune autre communication associée à ce client. Les invitations de consentement apparaissent ci-dessus."
+    },
+    {
+      "path": "components/clinical-workspace/ClinicalWorkspace.tsx",
+      "before": "Ouverture de la facturation durable…",
+      "after": "Ouverture de la facturation…"
+    },
+    {
+      "path": "components/clinical-workspace/ClinicalWorkspace.tsx",
+      "before": "Ouverture de l’admission durable…",
+      "after": "Ouverture de l’admission…"
+    },
+    {
+      "path": "components/clinical-workspace/ClinicalWorkspace.tsx",
+      "before": "Ouverture du calendrier durable…",
+      "after": "Ouverture du calendrier…"
+    },
+    {
+      "path": "components/clinical-workspace/ClinicalWorkspace.tsx",
+      "before": "La connexion durable n’est pas disponible. Aucun mode mémoire de secours n’est utilisé.",
+      "after": "Connexion indisponible. Réessayez ou reconnectez-vous."
+    },
+    {
+      "path": "components/clinical-workspace/ClinicalWorkspace.tsx",
+      "before": "Le compte, l’espace ou le stockage a changé. Reconnectez-vous au laboratoire ; aucun repli entre base locale et mémoire n’est autorisé.",
+      "after": "Votre session a changé. Reconnectez-vous."
+    },
+    {
+      "path": "components/clinical-workspace/ClinicalWorkspace.tsx",
+      "before": "Ce module n’est pas encore raccordé au stockage durable.",
+      "after": "Cette section est indisponible."
+    },
+    {
+      "path": "components/clinical-workspace/ClinicalWorkspace.tsx",
+      "before": "La finance reste un prototype séparé jusqu’au lot correspondant. Les dossiers, demandes, épisodes, accès et traces de ce lot restent accessibles.",
+      "after": "Actualisez la page ou réessayez plus tard."
+    },
+    {
+      "path": "components/clinical-workspace/ClinicalWorkspace.tsx",
+      "before": "Les bureaux intégrés nécessitent le laboratoire local persistant.",
+      "after": "Les bureaux ne sont pas disponibles dans cette session."
+    },
+    {
+      "path": "components/clinical-workspace/StandaloneNotePage.tsx",
+      "before": "La session du laboratoire est indisponible.",
+      "after": "Votre session est indisponible. Reconnectez-vous."
+    }
+  ]
+}

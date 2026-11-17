@@ -58,7 +58,7 @@ export function CalendarWorkspace({ workspace, onNavigate, onUpdated, embeddedCl
     if (operation.current) throw new Error('Une écriture est déjà en cours de confirmation.')
     operation.current = true; guard.markPending(); setPending(true); setError(''); setMessage('')
     try {
-      const { ack, refreshed } = await confirmCalendarWrite(() => runCalendarCommand(input, actor), () => load(), () => setMessage('Enregistrement confirmé dans la base locale.'))
+      const { ack, refreshed } = await confirmCalendarWrite(() => runCalendarCommand(input, actor), () => load(), () => setMessage('Enregistré.'))
       if (!refreshed) setMessage('Enregistrement confirmé. La relecture est momentanément indisponible : actualisez le calendrier. Aucune commande n’est rejouée.')
       return ack
     } catch (cause) { if (isClinicalAccessDenied(cause)) { setData(null); setSlot(null); setEditingId(null); void onUpdated() } throw cause }

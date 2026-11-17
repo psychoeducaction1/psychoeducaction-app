@@ -29,10 +29,10 @@ import { isUnifiedClinicalClient, loadUnifiedIdentity, signOutUnifiedSession, Un
 import { unifiedOperationalDestination } from '@/lib/clinical-unification/routes'
 
 const MigrationCentre = dynamic(() => import('@/components/clinical-migration/MigrationCentre'), { loading: () => <p role="status">Ouverture de la migration…</p> })
-const DurableBilling = dynamic(() => import('@/components/clinical-billing/ClinicalBillingWorkspace').then(value => value.ClinicalBillingWorkspace), { loading: () => <p role="status">Ouverture de la facturation durable…</p> })
+const DurableBilling = dynamic(() => import('@/components/clinical-billing/ClinicalBillingWorkspace').then(value => value.ClinicalBillingWorkspace), { loading: () => <p role="status">Ouverture de la facturation…</p> })
 const MandatesModule = dynamic(() => import('@/components/clinical-mandates/MandatesWorkspace').then(value => value.MandatesWorkspace), { loading: () => <p role="status">Ouverture du dossier client…</p> })
-const AdmissionModule = dynamic(() => import('@/components/clinical-admission/AdmissionModule').then(value => value.AdmissionModule), { loading: () => <p role="status">Ouverture de l’admission durable…</p> })
-const DurableCalendar = dynamic(() => import('@/components/clinical-calendar/CalendarWorkspace').then(value => value.CalendarWorkspace), { loading: () => <p role="status">Ouverture du calendrier durable…</p> })
+const AdmissionModule = dynamic(() => import('@/components/clinical-admission/AdmissionModule').then(value => value.AdmissionModule), { loading: () => <p role="status">Ouverture de l’admission…</p> })
+const DurableCalendar = dynamic(() => import('@/components/clinical-calendar/CalendarWorkspace').then(value => value.CalendarWorkspace), { loading: () => <p role="status">Ouverture du calendrier…</p> })
 const OfficeCalendar = dynamic(() => import('@/components/clinical-calendar/CalendarWorkspace').then(value => value.OfficeCalendarWorkspace), { loading: () => <p role="status">Ouverture des bureaux…</p> })
 const CalendarPanel = dynamic(() => import('./CalendarPanel'), { loading: () => <p role="status">Ouverture du prototype d’agenda…</p> })
 const BillingPanel = dynamic(() => import('./BillingPanel'), { loading: () => <p role="status">Ouverture du prototype financier…</p> })
@@ -100,7 +100,7 @@ function WorkspaceShell({ realApplication }: { realApplication: boolean }) {
         const response = await fetch('/api/lab-auth/session', options)
         if (response.status === 401) { router.replace(`/connexion?retour=${encodeURIComponent(`${window.location.pathname}${window.location.search}`)}`); return }
         const payload = await response.json().catch(() => null)
-        if (!response.ok || !['isolated_local', 'isolated_stage'].includes(payload?.mode) || payload?.durable !== true || !payload.actor) throw new Error('La connexion durable n’est pas disponible. Aucun mode mémoire de secours n’est utilisé.')
+        if (!response.ok || !['isolated_local', 'isolated_stage'].includes(payload?.mode) || payload?.durable !== true || !payload.actor) throw new Error('Connexion indisponible. Réessayez ou reconnectez-vous.')
         if (!controller.signal.aborted) setIdentity({ mode: payload.mode, actor: payload.actor })
       } catch (cause) { if (!controller.signal.aborted) {
         if (cause instanceof UnifiedSessionError && cause.status === 401) {
@@ -122,7 +122,7 @@ function WorkspaceShell({ realApplication }: { realApplication: boolean }) {
       if (!signal?.aborted && sequence === requestSequence.current) {
         if (!workspaceMatchesIdentity(identity?.mode, payload.workspace) || payload.workspace.actor.id !== actorId || payload.workspace.context !== route.context) {
           setWorkspace(null)
-          throw new Error(clinicalUiText("Le compte, l’espace ou le stockage a changé. Reconnectez-vous au laboratoire ; aucun repli entre base locale et mémoire n’est autorisé.","Votre accès a changé. Reconnectez-vous à l’application."))
+          throw new Error(clinicalUiText("Votre session a changé. Reconnectez-vous.","Votre accès a changé. Reconnectez-vous à l’application."))
         }
         setWorkspace(payload.workspace); setError(''); onSuccess?.()
       }
@@ -211,7 +211,7 @@ function WorkspaceShell({ realApplication }: { realApplication: boolean }) {
         {!section && <section className={clinicalCard}>{clinicalUiText("Cette route du laboratoire n’est pas disponible.","Cette page n’est pas disponible.")}</section>}
         {section === 'home' && route.context === 'administration' && <AdministrationDashboard actorId={active.actor.id} onNavigate={(next, query) => void navigate(next, query)} />}
         {section === 'home' && route.context === 'clinical' && <><ConsentReminders workspace={active} onNavigate={navigate} /><PendingProfessionalAgreement workspace={active} onNavigate={(next, query) => navigate(next, query)} /></>}
-        {unavailable && <section className={clinicalCard}><h2 className="font-semibold">Ce module n’est pas encore raccordé au stockage durable.</h2><p className="mt-3 text-sm">La finance reste un prototype séparé jusqu’au lot correspondant. Les dossiers, demandes, épisodes, accès et traces de ce lot restent accessibles.</p></section>}
+        {unavailable && <section className={clinicalCard}><h2 className="font-semibold">Cette section est indisponible.</h2><p className="mt-3 text-sm">Actualisez la page ou réessayez plus tard.</p></section>}
         {section === 'clients' && (active.durable ? route.clientId ? selected ? <ClientAdministrativePanel key={selected.id} client={selected} workspace={active} onUpdated={reload} onNavigate={(next, query) => navigate(next, query)} onBack={() => void navigate('clients', clientDirectoryReturn(new URLSearchParams(params.toString())))} />
           : <section role="alert" className={clinicalCard}>Client introuvable ou non autorisé.<button type="button" className={buttonClass('ghost')} onClick={() => void navigate('clients', clientDirectoryReturn(new URLSearchParams(params.toString())))}>Retour au répertoire</button></section>
           : route.context === 'clinical' ? params.get('view') === 'assignments' ? <p role="status">Ouverture de mes assignations…</p> : <AdmissionModule workspace={active} section="clients" professionalId={active.actor.id} embedded onNavigate={(next, query) => navigate(next, query)} onUpdated={reload} />
@@ -221,7 +221,7 @@ function WorkspaceShell({ realApplication }: { realApplication: boolean }) {
         {section === 'migration' && route.context === 'administration' && <MigrationCentre />}
         {section === 'clinic-settings' && route.context === 'administration' && <ClinicSettingsPanel workspace={active} onNavigate={(next, query) => navigate(next, query)} />}
         {section === 'calendar' && !unavailable && (active.durable ? <DurableCalendar key={active.actor.id + ':' + active.context} workspace={active} onNavigate={(next, query) => navigate(next, query)} onUpdated={reload} /> : <CalendarPanel actorId={active.actor.id} context={active.context} />)}
-        {section === 'offices' && (active.durable ? <OfficeCalendar workspace={active} onNavigate={(next, query) => navigate(next, query)} onUpdated={reload} /> : <section className={clinicalCard}>Les bureaux intégrés nécessitent le laboratoire local persistant.</section>)}
+        {section === 'offices' && (active.durable ? <OfficeCalendar workspace={active} onNavigate={(next, query) => navigate(next, query)} onUpdated={reload} /> : <section className={clinicalCard}>Les bureaux ne sont pas disponibles dans cette session.</section>)}
         {section === 'billing' && (active.durable ? <DurableBilling actorId={active.actor.id} context={active.context} /> : <BillingPanel actorId={active.actor.id} context={active.context} />)}
         {section === 'timeline' && route.context === 'administration' && <ClinicalAuditJournal workspace={active} />}
         {section === 'timeline' && route.context !== 'administration' && <section role="alert" className={clinicalCard}>Le journal d’audit est réservé à la direction et à l’administration.</section>}

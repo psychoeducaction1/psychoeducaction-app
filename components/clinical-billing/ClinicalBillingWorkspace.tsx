@@ -26,10 +26,11 @@ function invoiceDayIso(value: string) {
 
 export function ClinicalBillingWorkspace({ actorId, context }: { actorId: string; context: ClinicalAccessContext }) {
   const state = useBillingWorkspace(actorId, context)
+  const realApplication = process.env.NEXT_PUBLIC_PEA_CONTROLLED_MERGE === 'true'
   return <div className="grid min-w-0 gap-5">
-    <section className={clinicalCard}><p className="text-sm text-amber-950">{process.env.NEXT_PUBLIC_PEA_CONTROLLED_MERGE === 'true' ? 'Facturation manuelle · envois cliniques et préparation automatique à J+1 désactivés. Saisir un paiement ici ne déclenche aucun débit bancaire.' : 'Simulation locale : aucun paiement bancaire ni courriel réel. Les documents ne sont pas validés pour un usage fiscal.'}</p>
+    {(context === 'administration' || !realApplication) && <section className={clinicalCard}>{!realApplication && <p className="text-sm text-amber-950">Simulation locale : aucun paiement bancaire ni courriel réel. Les documents ne sont pas validés pour un usage fiscal.</p>}
       {context === 'administration' && <nav className="mt-4 flex flex-wrap gap-2" aria-label="Sections financières">{[['invoices', 'Factures'], ['fees', 'Honoraires']].map(([key, label]) => <button key={key} className={buttonClass(state.tab === key ? 'primary' : 'secondary')} aria-current={state.tab === key ? 'page' : undefined} onClick={() => void state.select({ billingTab: key, invoiceId: null, statement: null })}>{label}</button>)}</nav>}
-    </section>
+    </section>}
     {state.message && <p role="status" className="rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-950">{state.message}</p>}
     {state.error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">{state.error}{state.stale && ' Les écritures restent bloquées jusqu’à une actualisation réussie.'}</p>}
     {state.loading && <p role="status" className="text-sm">Chargement des informations autorisées…</p>}

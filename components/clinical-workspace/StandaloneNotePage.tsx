@@ -57,7 +57,7 @@ function NoteScreen() {
         }
         const fixtureResponse = await fetch('/api/clinical-workspace/actors', { cache: 'no-store', credentials: 'same-origin', signal: controller.signal })
         const fixture = await fixtureResponse.json().catch(() => null)
-        if (!fixtureResponse.ok || fixture?.mode !== 'isolated_fixture' || !Array.isArray(fixture.actors)) throw new Error('La session du laboratoire est indisponible.')
+        if (!fixtureResponse.ok || fixture?.mode !== 'isolated_fixture' || !Array.isArray(fixture.actors)) throw new Error('Votre session est indisponible. Reconnectez-vous.')
         const actor = fixture.actors.find((item: FixtureActor) => item.id === requestedActor) ?? fixture.actors.find((item: FixtureActor) => item.capabilities.includes('practice'))
         if (!actor) throw new Error('Aucun professionnel fictif autorisé.')
         if (!controller.signal.aborted) setIdentity({ actor, actors: fixture.actors, mode: 'isolated_fixture' })

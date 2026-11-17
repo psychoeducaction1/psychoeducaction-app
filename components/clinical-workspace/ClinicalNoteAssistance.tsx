@@ -618,7 +618,7 @@ export function ClinicalNoteAssistance({ recordId, appointmentId, noteId, noteTy
              {(['transcript', 'history', 'metadata'] as const).filter(source => source === 'transcript' || sources[source].trim()).map(source => <div key={source} className="rounded-lg border border-[#dfd0bf] p-3">
                <strong>{source === 'transcript' ? 'Transcription' : source === 'history' ? 'Dernière note' : 'Renseignements confirmés'}</strong>
                <div className="mt-2 grid gap-3 lg:grid-cols-2">
-                 <div><span className="text-xs font-semibold">Original, conservé dans le laboratoire</span><p className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg bg-[#f8f3ec] p-3">{source === 'transcript' ? original || sources.transcript : sources[source]}</p></div>
+                 <div><span className="text-xs font-semibold">Texte original</span><p className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg bg-[#f8f3ec] p-3">{source === 'transcript' ? original || sources.transcript : sources[source]}</p></div>
                  <label className="block text-xs font-semibold">Version préparée, à corriger avant l’envoi<textarea className="mt-1 min-h-48 w-full rounded-lg border border-[#dfd0bf] p-3 text-sm font-normal leading-6" value={providerSources[source]} disabled={busy || recording} onChange={event => editPrepared(source, event.target.value)} /></label>
                </div>
                {source !== 'transcript' && <button type="button" className={buttonClass('secondary')} disabled={busy || recording} onClick={() => {
