@@ -202,7 +202,7 @@ function LegacyAppNav({ beforeNavigate }: AppNavProps) {
       : displayRole === 'professionnel'
         ? [
             { href: coordinationAuthorized ? '/coordination-clinique/tableau-de-bord' : '/professionnel', label: coordinationAuthorized ? 'Tableau de bord clinique' : 'Tableau de bord', icon: LayoutDashboard },
-            ...(isUnifiedClinicalClient() ? [{ href: '/clinique/mon-profil?tab=requests', label: 'Demande et disponibilités', icon: ClipboardList }] : [
+            ...(isUnifiedClinicalClient() && clinicalReal ? [{ href: '/clinique/mon-profil?tab=requests', label: 'Demande et disponibilités', icon: ClipboardList }] : [
             { href: '/professionnel/clients', label: 'Mes assignations', icon: UserCheck },
             { href: '/professionnel/demande', label: 'Ma demande', icon: ClipboardList },
             { href: '/professionnel/historique', label: 'Historique', icon: History }]),

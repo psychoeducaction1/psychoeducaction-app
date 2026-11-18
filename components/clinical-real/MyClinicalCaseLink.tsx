@@ -7,11 +7,11 @@ import { clinicalSessionFetch, isUnifiedClinicalClient } from '@/lib/clinical-un
 import { isUnifiedAssignmentId, unifiedAssignmentDestination } from '@/lib/clinical-unification/assignmentLink'
 
 /** Ouvre uniquement le dossier que le RPC autorise pour cette assignation. */
-export function MyClinicalCaseLink({ assignmentId }: { assignmentId: string }) {
+export function MyClinicalCaseLink({ assignmentId, enabled = false }: { assignmentId: string; enabled?: boolean }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
-  if (process.env.NEXT_PUBLIC_PEA_CLINICAL_ASSIGNMENT_NAV !== 'true') return null
+  if (!enabled) return null
 
   const open = async () => {
     if (busy || !isUnifiedAssignmentId(assignmentId)) return

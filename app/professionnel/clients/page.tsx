@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppNav } from '@/components/AppNav'
+import { useClinicalAssignmentAccess } from '@/lib/clinical-real/useClinicalAssignmentAccess'
 import { MyClinicalCaseLink } from '@/components/clinical-real/MyClinicalCaseLink'
 import { realWorkspaceRequest } from '@/lib/clinical-real/workspaceClient'
 import { EmptyState } from '@/components/ui/index'
@@ -44,6 +45,7 @@ const statusBadgeShapeClass =
 
 export default function ProfessionnelClientsPage() {
   const router = useRouter()
+  const clinicalAssignmentAccess = useClinicalAssignmentAccess()
   const [clients, setClients] = useState<AssignedClient[]>([])
   const [currentUserId, setCurrentUserId] = useState('')
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null)
@@ -359,7 +361,7 @@ export default function ProfessionnelClientsPage() {
     const nextStatus = getAssignedClientStatus(client)
     const waitingListSyncError = await syncWaitingListStatus(client)
     let clinicalLinkError = ''
-    if (nextStatus === 'taken' && process.env.NEXT_PUBLIC_PEA_CLINICAL_ASSIGNMENT_NAV === 'true') {
+    if (nextStatus === 'taken' && clinicalAssignmentAccess) {
       try {
         await realWorkspaceRequest(`/assignment-link/${client.id}`, 'POST')
       } catch {
@@ -746,7 +748,7 @@ export default function ProfessionnelClientsPage() {
                       </dd>
                     </div>
                   </dl>
-                  {getAssignedClientStatus(client) === 'taken' && <MyClinicalCaseLink assignmentId={client.id} />}
+                  {getAssignedClientStatus(client) === 'taken' && <MyClinicalCaseLink assignmentId={client.id} enabled={clinicalAssignmentAccess} />}
                 </div>
               </div>
 

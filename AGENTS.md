@@ -47,3 +47,7 @@
 - Ultra seulement pour un chantier divisible justifiant plusieurs sous-agents.
 - Adapter l'effort sans sacrifier la fiabilite; ne pas pretendre changer le modele actif
   ou controler le quota. Ces choix sont des preferences, pas des mesures de performance.
+
+## Validation des changements professionnels
+- Avant toute future modification des profils, menus ou parcours des professionnels, demander une seconde validation explicite du perimetre des comptes concernes.
+- Les professionnels non actives conservent leur interface et fonctionnement habituels. Un indicateur global de publication ne constitue pas une activation par compte.
