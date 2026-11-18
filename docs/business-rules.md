@@ -368,3 +368,7 @@ Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workfl
 - Seule une réponse serveur confirmant imported retire la fiche de la liste à traiter. Les erreurs restent visibles et les fiches réussies restent au rapport du lot; aucune suppression de client ou de PDF.
 
 - Préparation de migration : à partir de 14 ans à la date courante (Toronto), le client figure une seule fois comme requérant « Lui-même ». Avant 14 ans, les entrées identifiées comme le client sont retirées des requérants. Une naissance inconnue ne permet aucune déduction. Le lien générique du fichier n'est pas distribué à toutes les personnes. Aucun droit de consentement ni nouvelle part de paiement n'est déduit de cette règle. Les coordonnées personnelles modifiées à cet endroit alimentent les coordonnées principales du client.
+
+## Publication requérants — 17 novembre 2026
+
+Correctif 1c47659 : âge de 14 ans inclus, client identifié Lui-même, absence du client parmi les requérants avant 14 ans. Publié sur app.psychoeducaction.com : dpl_6xkFnKEWkqnB2GwMEPZm5tc519T5 (READY et alias vérifiés). Aucun import, migration SQL, courriel ou changement des dossiers existants exécuté. Recette utilisateur différée. Manifeste de référence suivant : output/unification-pilot/docs/migration/REQUESTER_AGE_RELEASE.json ; précédent déploiement conservé pour retour arrière dpl_GU2kGCe7iAtiVRpkTjqbsWyTEZgJ.
