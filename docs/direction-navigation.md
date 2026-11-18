@@ -21,3 +21,5 @@ et contrôle du diff. Aucun appel de mutation, import ou courriel pendant ces te
 
 Publication explicitement autorisée le 18 novembre 2026. Le candidat est préparé
 depuis le manifeste de la version 970 publiée, avec vérification des empreintes.
+
+Publication active : dpl_AWS5hpkWzuA47RZCe63N1hYEfuZ5 sur app.psychoeducaction.com. Build READY, 596 fichiers du candidat vérifiés. Recette navigateur authentifiée : mêmes destinations du menu entre paramètres cliniques et tableau de bord Direction ; anciennes fonctions et liens cliniques présents ; passage au profil professionnel puis retour Direction réussi. Aucun droit, dossier, import ou courriel modifié. Retour arrière : dpl_EJXrnVmLQen6fQqLiT42SaHGbd5c. Preuves : output/unification-pilot/docs/migration/DIRECTION_MENU_RELEASE.json et DIRECTION_MENU_LIVE_PROMOTED.json.
