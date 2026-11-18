@@ -258,5 +258,18 @@ test('migration individuelle : transaction complète, historique, mandat validé
    const payers=(await db.query(`select p.can_consent from clinical.mandate_people p join clinical.mandate_revisions r on r.id=p.revision_id where r.mandate_id=$1 and p.role='payer'`,[mid])).rows
    assert.ok(payers.length);assert.ok(payers.every(x=>x.can_consent===false))
   })
+  await t.test('demande opérationnelle : modifier et clore sans activer le volet clinique',async()=>{
+   const operational='98300000-0000-4000-8000-000000000008',request=randomUUID()
+   await db.query("insert into public.profiles(id,full_name,role,is_active,platform_access_enabled) values($1,'Professionnel sans activation fictif','professionnel',true,true)",[operational])
+   await db.query('insert into public.assignment_requests(id,professional_id,requested_count,remaining_count,is_active)values($1,$2,4,4,true)',[request,operational])
+   await db.exec(`select set_config('request.jwt.claim.sub','${admin}',false);set role authenticated`)
+   try{
+    const version=(await db.query("select (r->>'version')::int v from jsonb_array_elements(public.clinical_unified_admission_query('administration')->'capacityRequests') r where r->>'id'=$1",[request])).rows[0].v
+    const answer=(await db.query("select public.clinical_unified_admission_command('administration','capacities.update',$1,$2,$3) q",[request,{expectedVersion:version,requestedCount:6,comment:'Fictif',enabled:false},randomUUID()])).rows[0].q
+    const saved=answer.workspace.capacityRequests.find(r=>r.id===request)
+    assert.equal(saved.requestedCount,6);assert.equal(saved.enabled,false)
+   }finally{await db.exec('reset role')}
+   assert.equal((await db.query('select count(*)::int n from clinical.actor_capabilities where profile_id=$1',[operational])).rows[0].n,0)
+  })
  } finally {await db.close()}
 })
