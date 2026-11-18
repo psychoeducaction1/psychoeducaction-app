@@ -20,6 +20,7 @@ export async function handleUnifiedMandates(request: Request, full: string[], id
     await transport.rpc('clinical_unified_mandate_auto_signature_sources', { p_context: context, p_mandate_id: mandateId }, token), archiveSignedPdf,
   )
   const invalid = () => unifiedJson({ error: 'Vérifiez les renseignements du mandat.', code: 'INVALID_INPUT' }, 400)
+  let readStage = 'route'
   if (new URL(request.url).search) return invalid()
   try {
     if (request.method === 'GET') {
@@ -51,9 +52,13 @@ export async function handleUnifiedMandates(request: Request, full: string[], id
         clientId = path[1]
         if (path.length === 3) { if (!uuid(path[2])) return invalid(); mandateId = path[2] }
       } else if (path.length) return invalid()
+      readStage = mandateId ? 'detail' : 'list'
       let value = await transport.rpc('clinical_unified_mandate_query', { p_context: context, p_mandate_id: mandateId, p_client_id: clientId }, token)
+      readStage = 'response-validation'
       if (!isMandateWorkspace(value, context, caller.actor.id) || clientId && value.mandates.some(m => m.clientId !== clientId) || mandateId && value.selected?.mandate.id !== mandateId) throw new Error('UNIFIED_MANDATE_RESPONSE_INVALID')
+      readStage = 'automatic-signature-archive'
       if (value.selected && await completeAutomaticSignatures(value.selected.mandate.id)) {
+        readStage = 'detail-after-archive'
         value = await transport.rpc('clinical_unified_mandate_query', { p_context: context, p_mandate_id: mandateId, p_client_id: clientId }, token)
         if (!isMandateWorkspace(value, context, caller.actor.id) || clientId && value.mandates.some(m => m.clientId !== clientId) || mandateId && value.selected?.mandate.id !== mandateId) throw new Error('UNIFIED_MANDATE_RESPONSE_INVALID')
       }
@@ -86,6 +91,12 @@ export async function handleUnifiedMandates(request: Request, full: string[], id
     }
     return unifiedJson(value, command.action === 'mandate.create' ? 201 : 200)
   } catch (error) {
+    if (request.method === 'GET') {
+      // Fixed diagnostics only: never log the request URL, record, SQL message or provider payload.
+      const allowed = new Set(['UNIFIED_MANDATE_RESPONSE_INVALID','UNIFIED_DELIVERY_RESPONSE_INVALID','AUTOMATIC_SIGNATURE_SOURCES_INVALID','SIGNED_ARCHIVE_SOURCE_INVALID','SIGNED_ARCHIVE_RESULT_INVALID','SIGNED_ARCHIVE_INTEGRITY_FAILED','SIGNED_ARCHIVE_STORE_FAILED','LOCAL_SIGNED_ARCHIVE_REQUIRED','PDF_STORAGE_INTEGRITY','PDF_REFERENCE_INVALID','PDF_STORAGE_READ_FAILED','PDF_SERVER_CONFIGURATION'])
+      const diagnostic = error instanceof Error && allowed.has(error.message) ? error.message : 'MANDATE_READ_UNCLASSIFIED'
+      console.warn('MANDATE_READ_FAILED', readStage, diagnostic)
+    }
     if (error instanceof JsonBodyError) return unifiedJson({ error: 'Contenu invalide ou trop volumineux.', code: 'INVALID_BODY' }, error.status)
     throw error
   }

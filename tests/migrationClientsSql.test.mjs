@@ -20,7 +20,7 @@ test('migration individuelle : transaction complète, historique, mandat validé
   // fixture. Its operator capability column is represented below, without grants.
   const extra=(await readdir(new URL('../supabase/clinical/',import.meta.url))).filter(n=>/^real-(4[6-9]\d|[5-8]\d\d)-.*\.sql$/.test(n)&&!n.startsWith('real-820-')).sort()
   extra.splice(extra.indexOf('real-530-unified-mandates.sql'),0,extra.splice(extra.indexOf('real-535-unified-pdf-renderers.sql'),1)[0])
-  for(const name of [...initial,...extra,'real-910-mandate-date-guards.sql','real-920-individual-client-migration.sql','real-930-migration-report-removal.sql','real-940-migration-safe-errors.sql','real-950-migration-selected-historical-rate.sql','real-960-migration-identity-conflicts.sql']) {
+  for(const name of [...initial,...extra,'real-910-mandate-date-guards.sql','real-920-individual-client-migration.sql','real-930-migration-report-removal.sql','real-940-migration-safe-errors.sql','real-950-migration-selected-historical-rate.sql','real-960-migration-identity-conflicts.sql','real-970-migration-name-normalization.sql']) {
    if(name==='real-920-individual-client-migration.sql')await db.exec('alter table clinical.migration_operators add column can_import boolean not null default true')
    const canonical=`select p.oid::regprocedure::text identity,pg_get_functiondef(p.oid) definition from pg_proc p where p.oid in('clinical.ensure_mandate_for_case(uuid)'::regprocedure,'clinical.mandate_case_after_insert()'::regprocedure,'public.clinical_link_existing_assignment(uuid,uuid)'::regprocedure,'clinical.migration_link_assignment(uuid,uuid)'::regprocedure) order by 1`
    const before=name.startsWith('real-950-')?(await db.query(canonical)).rows:null
@@ -127,6 +127,8 @@ test('migration individuelle : transaction complète, historique, mandat validé
     const history=(await db.query('select a.is_active,a.dossier_closed from public.assigned_clients a join clinical.legacy_assignment_links l on l.source_id=a.id where l.patient_id=$1',[result.patientId])).rows[0]
     assert.equal(history.is_active,outcome!=='not_taken');assert.equal(history.dossier_closed,outcome==='closed')
     if(outcome==='closed'){
+     const workspace=(await db.query('select public.clinical_unified_mandate_query($1,$2,$3) q',['administration',result.mandateId,result.patientId])).rows[0].q
+     assert.equal(isMandateWorkspace(workspace,'administration',admin),true,'an archived mandate remains readable')
      const version=(await db.query('select version from clinical.patients where id=$1',[result.patientId])).rows[0].version
      const again=await saveFresh({...candidate,decision:'link',patientId:result.patientId,patientVersion:version,caseId:result.caseId,associationConfirmed:true,phone:'5145550102'})
      assert.equal(again.items[0].status,'imported',again.items[0].error_code)
@@ -172,7 +174,10 @@ test('migration individuelle : transaction complète, historique, mandat validé
    await db.query("update public.assigned_clients set created_at='2001-01-01T12:00:00Z' where id=$1",[aid])
    const fingerprint=(await db.query("select encode(sha256(convert_to(to_jsonb(a)::text,'UTF8')),'hex') f from public.assigned_clients a where id=$1",[aid])).rows[0].f
    const before=(await db.query('select count(*)::int n from public.assigned_clients')).rows[0].n
-   const answer=await saveFresh({...row,sourceKey:'fixture-individual:operational',firstName:'Opérationnel',lastName:'Fictif',birthDate:'2000-01-01',supervisorId:'98300000-0000-4000-8000-000000000003',preparation:{...preparation,startDate:'2002-02-03',contactDate:'2001-01-02',outcome:'closed',rateCents:14750,rateSource:'manual'},decision:'operational',assignmentId:aid,assignmentFingerprint:fingerprint,associationConfirmed:true})
+   for(const change of [{firstName:'Autre'},{lastName:'Autre'},{birthDate:'2000-01-02'},{assignmentFingerprint:'0'.repeat(64)}]){
+    await assert.rejects(saveFresh({...row,sourceKey:'fixture:guard-'+randomUUID(),firstName:'Operationnel',lastName:'Fictif',birthDate:'2000-01-01',decision:'operational',assignmentId:aid,assignmentFingerprint:fingerprint,associationConfirmed:true,...change}),error=>error.code==='PT409')
+   }
+   const answer=await saveFresh({...row,sourceKey:'fixture-individual:operational',firstName:'Operationnel',lastName:'Fictif',birthDate:'2000-01-01',supervisorId:'98300000-0000-4000-8000-000000000003',preparation:{...preparation,startDate:'2002-02-03',contactDate:'2001-01-02',outcome:'closed',rateCents:14750,rateSource:'manual'},decision:'operational',assignmentId:aid,assignmentFingerprint:fingerprint,associationConfirmed:true})
    assert.equal(answer.items[0].status,'imported',answer.items[0].error_code)
    assert.equal((await db.query('select count(*)::int n from public.assigned_clients')).rows[0].n,before)
    const result=answer.items[0].result

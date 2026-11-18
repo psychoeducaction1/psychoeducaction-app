@@ -17,6 +17,7 @@ import {useConsentDelivery} from './ConsentDeliveryPanel'
 import {MandateEditor} from './MandateEditor'
 import {Field,inputClass,type MandateUi} from './primitives'
 import {timeLabel} from './model'
+import {mandateLoadError} from '@/lib/clinical-mandates/loadError'
 
 export type ClientMandatesPanelProps={workspace:WorkspaceView;clientId:string;requesterFile?:ClientOverview;mode?:'consent'|'documents'|'communications';onNavigate:(section:WorkspaceSection,query?:Record<string,string|null>)=>Promise<void>;onUpdated:()=>Promise<void>;onEditRequesters?:()=>void;onEditProfile?:()=>void}
 export function ClientMandatesPanel({workspace,clientId,requesterFile,mode='consent',onNavigate,onUpdated,onEditRequesters,onEditProfile}:ClientMandatesPanelProps){
@@ -28,6 +29,7 @@ export function ClientMandatesPanel({workspace,clientId,requesterFile,mode='cons
  const data=loadedData?.actor.id===workspace.actor.id&&loadedData.context===workspace.context&&loadedData.clients.every(c=>c.id===clientId)&&loadedData.mandates.every(m=>m.clientId===clientId)?loadedData:null
  const sequence=useRef(0),writing=useRef(false),navigation=useClinicalNavigation(),guard=useClinicalFormGuard(false,busy)
  const delivery=useConsentDelivery(workspace,clientId)
+ const closed=!!requesterFile?.lifecycle.length&&requesterFile.lifecycle.every(item=>item.status==='closed')
  const load=useCallback(async(signal?:AbortSignal)=>{const request=++sequence.current
   try{
    const pending=isUnifiedClinicalClient()?await clinicalRequest<ImportedServices>(actor,`/clients/${clientId}/import-service`,undefined,'GET',signal,undefined,value=>isImportedServices(value,clientId)):{clientId,cases:[]}
@@ -38,8 +40,8 @@ export function ClientMandatesPanel({workspace,clientId,requesterFile,mode='cons
    const next=chosen?await loadClientMandate(actor,clientId,chosen.id,signal):list
    if(signal?.aborted||request!==sequence.current)return false
    setData(next);setStale(false);setError('');return true
-  }catch(cause){if(!signal?.aborted&&request===sequence.current){setData(null);setPendingImports(null);setStale(true);setError(cause instanceof Error?cause.message:'Le mandat n’est pas disponible.');if(isClinicalAccessDenied(cause))void onUpdated()}return false}
- },[actor,clientId,selection,onUpdated])
+  }catch(cause){if(!signal?.aborted&&request===sequence.current){setData(null);setPendingImports(null);setStale(true);setError(mandateLoadError(cause,closed));if(isClinicalAccessDenied(cause))void onUpdated()}return false}
+ },[actor,clientId,selection,onUpdated,closed])
  useEffect(()=>{setData(null);setPendingImports(null);if(mode!=='consent'||!workspace.durable)return;const controller=new AbortController();void load(controller.signal);return()=>controller.abort()},[load,mode,workspace.durable])
  const command=async(input:MandateCommand)=>{
   if(writing.current||stale)throw new Error('Actualisez la fiche avant de continuer.')
