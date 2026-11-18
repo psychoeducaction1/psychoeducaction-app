@@ -4,7 +4,7 @@ import { ClientFileSection } from './ClientFileIdentity'
 export function ClientImportedIntake({ overview }: { overview: ClientOverview }) {
   if (!overview.importedIntake?.length) return null
   return <ClientFileSection title="Détails de la prise en charge importée">
-    <p className="mb-3 text-sm text-amber-900">Informations de l’Excel à vérifier. Les requérants proposés ne disposent d’aucun droit de consentement automatique.</p>
+    {overview.importedIntake.some(item => item.reviewRequired) ? <p className="mb-3 text-sm text-amber-900">Informations de l’Excel à vérifier. Les requérants proposés ne disposent d’aucun droit de consentement automatique.</p> : <p className="mb-3 text-sm">Informations validées lors de la migration. Les consentements et signatures du client sont suivis séparément.</p>}
     {overview.importedIntake.map(({ caseId, facts, financiallyActive }) => <dl key={caseId} className="mb-3 grid gap-2 text-sm sm:grid-cols-2">
       <div className="sm:col-span-2"><dt className="text-[#7a6859]">Prise en charge financière</dt><dd>{financiallyActive ? 'Mandat actif pour la facturation · signatures suivies séparément' : 'Conditions financières à compléter'}</dd></div>
       {([

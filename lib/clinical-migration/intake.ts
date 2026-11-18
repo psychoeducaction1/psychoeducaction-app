@@ -15,7 +15,7 @@ export function validImportedIntake(value: unknown): boolean {
     const f = item.facts
     return ['initialCallDate','firstAppointmentDate','consultationReason','referredBy','clientele','sourceActive','billingResponsible','interlocutor','relationship'].every(k => text(f[k],1000))
       && Array.isArray(f.originalMandates) && f.originalMandates.length <= 20 && f.originalMandates.every(v => text(v,500))
-      && Array.isArray(f.requesters) && f.requesters.length <= 3 && f.requesters.every(p => object(p)
+      && Array.isArray(f.requesters) && f.requesters.length <= 10 && f.requesters.every(p => object(p)
         && text(p.fullName,200) && text(p.email,254) && text(p.city,200) && text(p.postalCode,30))
   })
 }

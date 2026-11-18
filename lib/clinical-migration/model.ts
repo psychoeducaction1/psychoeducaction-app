@@ -1,9 +1,10 @@
+import { preparationFromSource, type MigrationPreparation, type MigrationRequester } from './preparation.ts'
 import { extractMigrationIntake, type MigrationIntake } from './intake.ts'
 import { identityFromPdf, encounterDatesFromPdf, serviceFromPdf } from '../clinical-real/legacyBatchMatch.ts'
-export type MigrationPerson = {id:string;firstName:string;lastName:string;birthDate:string|null;email:string;phone:string;version:number;cases:{id:string;label:string;status:string;service?:string|null;professionalIds:string[]}[]}
+export type MigrationPerson = {address?:string;consultationReason?:string;requesters?:MigrationRequester[];id:string;firstName:string;lastName:string;birthDate:string|null;email:string;phone:string;version:number;cases:{id:string;label:string;status:string;service?:string|null;professionalIds:string[]}[]}
 export type MigrationOperationalPerson=MigrationPerson&{professionalId:string;fingerprint:string;status:string;service?:string|null}
 export type MigrationDocument = {sha256:string;name:string;bytes:number;pages:number;kind:'notes'|'report'|'consent'|'mandate'|'financial'}
-export type MigrationRow = {intake?:MigrationIntake;serviceSource?:'existing'|'professional'|'manual';professionalSource?:'existing'|'default'|'manual';supervisorId?:string|null;sourceKey:string;firstName:string;lastName:string;birthDate:string;email:string;phone:string;address:string;service:string;professionalId:string;decision:'create'|'link'|'operational'|'skip'|'';assignmentId?:string;assignmentFingerprint?:string;patientId:string;patientVersion:number;caseId:string;associationConfirmed:boolean;documents:MigrationDocument[];dates:string[];warnings:string[]}
+export type MigrationRow = {preparation?:MigrationPreparation;intake?:MigrationIntake;serviceSource?:'existing'|'professional'|'manual';professionalSource?:'existing'|'default'|'manual';supervisorId?:string|null;sourceKey:string;firstName:string;lastName:string;birthDate:string;email:string;phone:string;address:string;service:string;professionalId:string;decision:'create'|'link'|'operational'|'skip'|'';assignmentId?:string;assignmentFingerprint?:string;patientId:string;patientVersion:number;caseId:string;associationConfirmed:boolean;documents:MigrationDocument[];dates:string[];warnings:string[]}
 export const fields=['sourceId','firstName','lastName','birthDate','email','phone','address','service'] as const
 export type Mapping=Partial<Record<typeof fields[number],number>>
 const fold=(s:string)=>s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'')
@@ -30,7 +31,7 @@ export function proposeMigrationAssociation(row:MigrationRow,people:MigrationPer
   return{...row,decision:'operational'}
  }
  if(matches.length!==1||matches[0].conflict)return{...row,decision:'link',associationConfirmed:false}
- const p=matches[0].person,cases=p.cases.filter(c=>c.status==='open'&&c.professionalIds.includes(row.professionalId))
+ const p=matches[0].person,cases=p.cases.filter(c=>(c.status==='open'||['closed','not_taken'].includes(row.preparation?.outcome??'')&&c.status==='closed')&&c.professionalIds.includes(row.professionalId))
  return{...row,decision:'link',patientId:p.id,patientVersion:p.version,caseId:cases.length===1?cases[0].id:'',associationConfirmed:cases.length===1}
 }
 export type MigrationProfessionalService={professionalId:string;service:string;configured:boolean}
@@ -90,6 +91,8 @@ export function spreadsheetMigrationRows(rows:unknown[][],mapping:Mapping,namesp
  for(const field of fields){const col=mapping[field];if(col===undefined)continue;const value=cells[col];if(field==='sourceId'){if(value!==null&&value!==undefined&&String(value).trim())row.sourceKey=namespace+':id:'+String(value).trim().toLowerCase().replace(/[^a-z0-9-]/g,'-');continue}
  try{row[field]=field==='birthDate'?migrationDate(value):String(value??'').trim()}catch{row.warnings.push('Date de naissance invalide; corrigez-la.')}
  }
+ row.preparation=preparationFromSource(row,headers,cells)
+ row.email=row.email.split(/[;,\n]+/)[0].trim();row.phone=row.phone.split(/[;\n]+/)[0].trim()
  if(!row.firstName||!row.lastName)row.warnings.push('Prénom et nom requis.')
  return row
  })
