@@ -66,6 +66,8 @@ export function migrationExistingErrors(rows:MigrationRow[],people:MigrationPers
   if(row.decision==='create'&&sameName.length)return['Ligne '+(i+1)+' : un dossier porte déjà ce nom; vérifiez la correspondance ou ignorez cette ligne avant toute création.']
   const selected=row.decision==='link'?people.find(person=>person.id===row.patientId):row.decision==='operational'?operational.find(person=>person.id===row.assignmentId):undefined
   if(selected&&row.birthDate&&selected.birthDate&&row.birthDate!==selected.birthDate)return['Ligne '+(i+1)+' : la date de naissance saisie diffère de celle du dossier sélectionné. Vérifiez et corrigez la date avant de valider.']
+  if(selected&&(fold(selected.firstName)!==fold(row.firstName)||fold(selected.lastName)!==fold(row.lastName)))return['Ligne '+(i+1)+' : le prénom ou le nom diffère de la fiche sélectionnée. Vérifiez l’identité avant de valider.']
+  if(row.decision==='link'&&row.patientId&&!selected)return['Ligne '+(i+1)+' : le dossier sélectionné n’est plus disponible. Actualisez les correspondances.']
   if(row.decision==='link'&&!row.patientId)return['Ligne '+(i+1)+' : plusieurs dossiers ou une identité incertaine nécessitent une vérification dans Dossiers clients avant de poursuivre.']
   const existing=people.find(p=>p.id===row.patientId)?.cases.filter(c=>c.status==='open'&&c.professionalIds.includes(row.professionalId))??[]
   if(row.decision==='link'&&existing.length&&!existing.some(c=>c.id===row.caseId))return['Ligne '+(i+1)+' : plusieurs suivis nécessitent une vérification dans la fiche client avant de poursuivre.']
@@ -139,7 +141,7 @@ export function validateMigrationFiles(files:{name:string;size:number}[]):void {
 export type MigrationProcessedClient={documentHashes?:string[];sourceKey:string;patientId:string;caseId:string;professionalId:string;service:string;firstName:string;lastName:string;birthDate:string|null}
 /** Match a prior receipt, never a name alone; an ambiguous destination remains pending. */
 export function processedMigrationClient(row:MigrationRow,records:MigrationProcessedClient[]):MigrationProcessedClient|undefined{
- const exact=records.filter(record=>record.sourceKey===row.sourceKey&&record.professionalId===row.professionalId)
+ const exact=records.filter(record=>record.sourceKey===row.sourceKey&&record.professionalId===row.professionalId&&fold(record.firstName)===fold(row.firstName)&&fold(record.lastName)===fold(row.lastName)&&fold(record.service)===fold(row.service))
  const candidates=exact.length?exact:row.birthDate?records.filter(record=>record.professionalId===row.professionalId&&fold(record.service)===fold(row.service)&&record.birthDate===row.birthDate&&fold(record.firstName)===fold(row.firstName)&&fold(record.lastName)===fold(row.lastName)):[]
  const destinations=new Set(candidates.map(record=>record.patientId+'/'+record.caseId))
  if(destinations.size!==1)return undefined

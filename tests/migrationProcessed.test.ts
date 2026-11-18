@@ -12,6 +12,8 @@ test('reprise : même source traitée, nouvel export strict et ambiguïtés cons
  assert.equal(processedMigrationClient({...row,sourceKey:'fixture:new-export'},[receipt])?.caseId,receipt.caseId)
  assert.equal(processedMigrationClient({...row,sourceKey:'fixture:new-export',birthDate:'2000-01-02'},[receipt]),undefined)
  assert.equal(processedMigrationClient({...row,professionalId:'another-pro'},[receipt]),undefined)
+ assert.equal(processedMigrationClient({...row,firstName:'Autre identité'},[receipt]),undefined,'a reused source identifier is not enough to hide a different client')
+ assert.equal(processedMigrationClient({...row,service:'Autre service'},[receipt]),undefined)
  assert.equal(processedMigrationClient({...row,sourceKey:'fixture:new-export',service:'Autre service'},[receipt]),undefined)
  assert.equal(processedMigrationClient({...row,sourceKey:'fixture:new-export'},[receipt,{...receipt,sourceKey:'fixture:other',caseId:'other-case'}]),undefined)
  assert.equal(processedMigrationClient({...row,birthDate:'2000-01-02'},[receipt])?.caseId,receipt.caseId,'same source previously corrected by operator is not reimported')

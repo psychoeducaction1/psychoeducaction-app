@@ -9,6 +9,8 @@ test('identité : une confirmation ne permet pas de remplacer une naissance diff
  const person={id:row.patientId,firstName:row.firstName,lastName:row.lastName,birthDate:'2000-01-01',email:'',phone:'',version:1,cases:[{id:row.caseId,label:'Fictif',status:'open',professionalIds:[row.professionalId]}]}
  assert.match(migrationExistingErrors([row],[person])[0],/date de naissance/)
  assert.deepEqual(migrationExistingErrors([{...row,birthDate:person.birthDate}],[person]),[])
+ assert.match(migrationExistingErrors([{...row,birthDate:person.birthDate,firstName:'Autre'}],[person])[0],/prénom ou le nom/)
+ assert.match(migrationExistingErrors([{...row,birthDate:person.birthDate}],[])[0],/plus disponible/)
  assert.deepEqual(migrationExistingErrors([{...row,decision:'skip'}],[person]),[])
  assert.deepEqual(migrationExistingErrors([{...row,birthDate:''}],[person]),[])
  const operational={...person,id:'fictional-assignment',professionalId:row.professionalId,fingerprint:'fixture',status:'open'}
