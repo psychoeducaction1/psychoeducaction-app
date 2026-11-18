@@ -6,6 +6,9 @@ test('reprise : même source traitée, nouvel export strict et ambiguïtés cons
  const row={...emptyMigrationRow('fixture:original'),firstName:'Client',lastName:'Fictif',birthDate:'2000-01-01',professionalId:'pro-fictif',service:'Psychoéducation'}
  const receipt={sourceKey:row.sourceKey,patientId:'patient-fictif',caseId:'cas-fictif',professionalId:row.professionalId,service:row.service,firstName:row.firstName,lastName:row.lastName,birthDate:row.birthDate}
  assert.equal(processedMigrationClient(row,[receipt])?.patientId,receipt.patientId)
+ const document={sha256:'a'.repeat(64),name:'Fictif.pdf',bytes:100,pages:1,kind:'notes' as const}
+ assert.equal(processedMigrationClient({...row,documents:[document]},[receipt]),undefined,'a new PDF must remain available for review')
+ assert.equal(processedMigrationClient({...row,documents:[document]},[{...receipt,documentHashes:[document.sha256]}])?.caseId,receipt.caseId)
  assert.equal(processedMigrationClient({...row,sourceKey:'fixture:new-export'},[receipt])?.caseId,receipt.caseId)
  assert.equal(processedMigrationClient({...row,sourceKey:'fixture:new-export',birthDate:'2000-01-02'},[receipt]),undefined)
  assert.equal(processedMigrationClient({...row,professionalId:'another-pro'},[receipt]),undefined)

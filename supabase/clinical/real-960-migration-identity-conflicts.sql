@@ -35,6 +35,7 @@ declare q jsonb;begin
  q:=public.clinical_migration_query_960_base(p_batch);
  if p_batch is not null then return q;end if;
  return q||jsonb_build_object('processed',(select coalesce(jsonb_agg(jsonb_build_object(
+  'documentHashes',(select coalesce(jsonb_agg(document->'sha256'),'[]'::jsonb) from jsonb_array_elements(i.payload->'documents') document),
   'sourceKey',i.source_key,'patientId',i.result->>'patientId','caseId',i.result->>'caseId',
   'professionalId',i.payload->>'professionalId','service',i.payload->>'service',
   'firstName',p.first_name,'lastName',p.last_name,'birthDate',p.birth_date) order by b.created_at desc,i.source_key),'[]'::jsonb)

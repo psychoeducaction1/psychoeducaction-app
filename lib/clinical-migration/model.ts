@@ -136,13 +136,16 @@ export function validateMigrationFiles(files:{name:string;size:number}[]):void {
  }
 }
 
-export type MigrationProcessedClient={sourceKey:string;patientId:string;caseId:string;professionalId:string;service:string;firstName:string;lastName:string;birthDate:string|null}
+export type MigrationProcessedClient={documentHashes?:string[];sourceKey:string;patientId:string;caseId:string;professionalId:string;service:string;firstName:string;lastName:string;birthDate:string|null}
 /** Match a prior receipt, never a name alone; an ambiguous destination remains pending. */
 export function processedMigrationClient(row:MigrationRow,records:MigrationProcessedClient[]):MigrationProcessedClient|undefined{
  const exact=records.filter(record=>record.sourceKey===row.sourceKey&&record.professionalId===row.professionalId)
  const candidates=exact.length?exact:row.birthDate?records.filter(record=>record.professionalId===row.professionalId&&fold(record.service)===fold(row.service)&&record.birthDate===row.birthDate&&fold(record.firstName)===fold(row.firstName)&&fold(record.lastName)===fold(row.lastName)):[]
  const destinations=new Set(candidates.map(record=>record.patientId+'/'+record.caseId))
- return destinations.size===1?candidates[0]:undefined
+ if(destinations.size!==1)return undefined
+ const hashes=new Set(candidates.flatMap(record=>record.documentHashes??(/^pdf:[a-f0-9]{64}$/.test(record.sourceKey)?[record.sourceKey.slice(4)]:[])))
+ if(row.documents.some(document=>!hashes.has(document.sha256)))return undefined
+ return candidates[0]
 }
 export function migrationBirthDateConflict(row:MigrationRow,people:MigrationPerson[],operational:MigrationOperationalPerson[]=[]):boolean{
  const selected=row.decision==='link'?people.find(person=>person.id===row.patientId):row.decision==='operational'?operational.find(person=>person.id===row.assignmentId):undefined
