@@ -27,12 +27,12 @@ export function proposeMigrationAssociation(row:MigrationRow,people:MigrationPer
   const assigned=migrationMatches(row,operational).filter(m=>fold(m.person.firstName)===fold(row.firstName)&&fold(m.person.lastName)===fold(row.lastName))
   if(!assigned.length)return{...row,decision:'create'}
   const found=assigned.length===1?assigned[0]:null
-  if(found&&!found.conflict&&found.person.professionalId===row.professionalId&&found.person.status==='open')return{...row,decision:'operational',assignmentId:found.person.id,assignmentFingerprint:found.person.fingerprint,associationConfirmed:true}
+  if(found&&found.person.professionalId===row.professionalId&&found.person.status==='open')return{...row,decision:'operational',assignmentId:found.person.id,assignmentFingerprint:found.person.fingerprint,associationConfirmed:!found.conflict}
   return{...row,decision:'operational'}
  }
- if(matches.length!==1||matches[0].conflict)return{...row,decision:'link',associationConfirmed:false}
+ if(matches.length!==1)return{...row,decision:'link',associationConfirmed:false}
  const p=matches[0].person,cases=p.cases.filter(c=>(c.status==='open'||['closed','not_taken'].includes(row.preparation?.outcome??'')&&c.status==='closed')&&c.professionalIds.includes(row.professionalId))
- return{...row,decision:'link',patientId:p.id,patientVersion:p.version,caseId:cases.length===1?cases[0].id:'',associationConfirmed:cases.length===1}
+ return{...row,decision:'link',patientId:p.id,patientVersion:p.version,caseId:cases.length===1?cases[0].id:'',associationConfirmed:!matches[0].conflict&&cases.length===1}
 }
 export type MigrationProfessionalService={professionalId:string;service:string;configured:boolean}
 /** Fill known import metadata only; never create a destination or override a manual/file service. */
@@ -66,8 +66,9 @@ export function migrationExistingErrors(rows:MigrationRow[],people:MigrationPers
   if(row.decision==='create'&&sameName.length)return['Ligne '+(i+1)+' : un dossier porte déjà ce nom; vérifiez la correspondance ou ignorez cette ligne avant toute création.']
   const selected=row.decision==='link'?people.find(person=>person.id===row.patientId):row.decision==='operational'?operational.find(person=>person.id===row.assignmentId):undefined
   if(selected&&row.birthDate&&selected.birthDate&&row.birthDate!==selected.birthDate)return['Ligne '+(i+1)+' : la date de naissance saisie diffère de celle du dossier sélectionné. Vérifiez et corrigez la date avant de valider.']
+  if(row.decision==='link'&&!row.patientId)return['Ligne '+(i+1)+' : plusieurs dossiers ou une identité incertaine nécessitent une vérification dans Dossiers clients avant de poursuivre.']
   const existing=people.find(p=>p.id===row.patientId)?.cases.filter(c=>c.status==='open'&&c.professionalIds.includes(row.professionalId))??[]
-  if(row.decision==='link'&&existing.length&&!existing.some(c=>c.id===row.caseId))return['Ligne '+(i+1)+' : sélectionnez le suivi existant du professionnel pour éviter un doublon.']
+  if(row.decision==='link'&&existing.length&&!existing.some(c=>c.id===row.caseId))return['Ligne '+(i+1)+' : plusieurs suivis nécessitent une vérification dans la fiche client avant de poursuivre.']
   return[]
  })
 }
@@ -133,4 +134,17 @@ export function validateMigrationFiles(files:{name:string;size:number}[]):void {
  for(const file of files){const limit=/\.xlsx$/i.test(file.name)?10*1024*1024:/\.pdf$/i.test(file.name)?5*1024*1024:0
  if(!limit||!Number.isSafeInteger(file.size)||file.size<=0||file.size>limit)throw Error('Formats acceptés : Excel .xlsx (10 Mo maximum), PDF (5 Mo maximum).')
  }
+}
+
+export type MigrationProcessedClient={sourceKey:string;patientId:string;caseId:string;professionalId:string;service:string;firstName:string;lastName:string;birthDate:string|null}
+/** Match a prior receipt, never a name alone; an ambiguous destination remains pending. */
+export function processedMigrationClient(row:MigrationRow,records:MigrationProcessedClient[]):MigrationProcessedClient|undefined{
+ const exact=records.filter(record=>record.sourceKey===row.sourceKey&&record.professionalId===row.professionalId)
+ const candidates=exact.length?exact:row.birthDate?records.filter(record=>record.professionalId===row.professionalId&&fold(record.service)===fold(row.service)&&record.birthDate===row.birthDate&&fold(record.firstName)===fold(row.firstName)&&fold(record.lastName)===fold(row.lastName)):[]
+ const destinations=new Set(candidates.map(record=>record.patientId+'/'+record.caseId))
+ return destinations.size===1?candidates[0]:undefined
+}
+export function migrationBirthDateConflict(row:MigrationRow,people:MigrationPerson[],operational:MigrationOperationalPerson[]=[]):boolean{
+ const selected=row.decision==='link'?people.find(person=>person.id===row.patientId):row.decision==='operational'?operational.find(person=>person.id===row.assignmentId):undefined
+ return Boolean(selected&&row.birthDate&&selected.birthDate&&row.birthDate!==selected.birthDate)
 }

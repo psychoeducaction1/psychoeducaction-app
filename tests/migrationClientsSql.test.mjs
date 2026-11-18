@@ -216,6 +216,29 @@ test('migration individuelle : transaction complète, historique, mandat validé
    assert.equal(saved.items[0].result.patientId,pid);assert.equal(saved.items[0].result.caseId,cid)
    assert.equal((await db.query('select count(*)::int n from clinical.patients')).rows[0].n,before)
   })
+  await t.test('dossiers traités : reçus persistants visibles seulement pour leur opérateur',async()=>{
+   await db.exec(`select set_config('request.jwt.claim.sub','${admin}',false)`)
+   const catalogue=(await db.query('select public.clinical_migration_query(null) q')).rows[0].q
+   const first=state.items.find(item=>item.source_key===row.sourceKey).result
+   const receipt=catalogue.processed.find(item=>item.sourceKey===row.sourceKey)
+   assert.equal(receipt.patientId,first.patientId);assert.equal(receipt.professionalId,pro);assert.ok(receipt.caseId)
+   // This explicit fixture removal marker never deletes source receipts.
+   await db.query('insert into clinical.migration_hidden_reports(batch_id,hidden_by) values($1,$2)',[batch,admin])
+   const afterHide=(await db.query('select public.clinical_migration_query(null) q')).rows[0].q
+   assert.ok(afterHide.processed.some(item=>item.sourceKey===row.sourceKey))
+   assert.equal(afterHide.batches.some(item=>item.id===batch),false)
+   const assistant='98300000-0000-4000-8000-000000000005'
+   await db.query('update clinical.migration_operators set enabled=true where profile_id=$1',[assistant])
+   await db.exec(`select set_config('request.jwt.claim.sub','${assistant}',false)`)
+   const other=(await db.query('select public.clinical_migration_query(null) q')).rows[0].q
+   assert.equal(other.processed.some(item=>item.sourceKey===row.sourceKey),false)
+   assert.ok(other.processed.some(item=>item.sourceKey==='fixture-individual:assistant'))
+   await db.exec(`select set_config('request.jwt.claim.sub','${admin}',false)`)
+   await db.query('update clinical.migration_operators set enabled=false where profile_id=$1',[assistant])
+
+   await db.query('delete from clinical.migration_hidden_reports where batch_id=$1',[batch])
+   assert.equal((await db.query(`select has_function_privilege('authenticated','public.clinical_migration_query_960_base(uuid)','execute') allowed`)).rows[0].allowed,false)
+  })
   await t.test('mineur : représentant déjà vérifié conservé, requérant financier sans pouvoir de consentement',async()=>{
    const pid=(await db.query(`select public.clinical_create_patient('Mineur','Représentation fictive','2018-01-01') id`)).rows[0].id
    const ep=(await db.query(`select public.clinical_create_episode($1,null,'Suivi mineur') id`,[pid])).rows[0].id

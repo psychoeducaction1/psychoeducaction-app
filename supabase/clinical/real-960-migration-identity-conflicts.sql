@@ -24,5 +24,27 @@ exception when serialization_failure then
 end $$;
 revoke all on function public.clinical_migration_command(text,uuid,jsonb) from public,anon,service_role;
 grant execute on function public.clinical_migration_command(text,uuid,jsonb) to authenticated;
+
+-- Durable processed-client receipts remain available when a report is hidden.
+-- Metadata only; no import, identity update or new membership is performed.
+alter function public.clinical_migration_query(uuid) rename to clinical_migration_query_960_base;
+revoke all on function public.clinical_migration_query_960_base(uuid) from public,anon,authenticated,service_role;
+create function public.clinical_migration_query(p_batch uuid default null) returns jsonb
+language plpgsql stable security definer set search_path='' set row_security=off as $query$
+declare q jsonb;begin
+ q:=public.clinical_migration_query_960_base(p_batch);
+ if p_batch is not null then return q;end if;
+ return q||jsonb_build_object('processed',(select coalesce(jsonb_agg(jsonb_build_object(
+  'sourceKey',i.source_key,'patientId',i.result->>'patientId','caseId',i.result->>'caseId',
+  'professionalId',i.payload->>'professionalId','service',i.payload->>'service',
+  'firstName',p.first_name,'lastName',p.last_name,'birthDate',p.birth_date) order by b.created_at desc,i.source_key),'[]'::jsonb)
+  from clinical.migration_items i join clinical.migration_batches b on b.id=i.batch_id
+  join clinical.patients p on p.id=(i.result->>'patientId')::uuid
+  join clinical.care_cases c on c.id=(i.result->>'caseId')::uuid
+  join clinical.service_episodes e on e.id=c.episode_id and e.patient_id=p.id
+  where b.owner_id=auth.uid() and i.status='imported'));
+end $query$;
+revoke all on function public.clinical_migration_query(uuid) from public,anon,service_role;
+grant execute on function public.clinical_migration_query(uuid) to authenticated;
 notify pgrst,'reload schema';
 commit;
