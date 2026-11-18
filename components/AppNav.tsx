@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useEffect, useState, type MouseEvent } from 'react'
 import { ProcedureLibraryLink } from '@/components/procedures/ProcedureLibraryLink'
 import Image from 'next/image'
 import Link from 'next/link'
@@ -31,6 +31,7 @@ import {
   isPayrollAuthorized,
 } from '@/lib/payrollAccess'
 import { hasDirectionAccess } from '@/lib/administrativeAccess'
+import { usesUnifiedDirectionNavigation } from '@/lib/directionNavigation'
 import { isSuperAdmin } from '@/lib/superAdmin'
 import { isAdministrativeTaskAuthorized } from '@/lib/administrativeTaskAccess'
 import { loadClinicalCoordinationAccess } from '@/lib/clinicalCoordinationClient'
@@ -44,16 +45,18 @@ type NavLink = {
   icon: LucideIcon
 }
 
-export function AppNav() {
-  return <Suspense fallback={null}><LegacyAppNav /></Suspense>
+type AppNavProps = { beforeNavigate?: () => Promise<boolean> }
+export function AppNav({ beforeNavigate }: AppNavProps = {}) {
+  return <Suspense fallback={null}><LegacyAppNav beforeNavigate={beforeNavigate} /></Suspense>
 }
 
-function LegacyAppNav() {
+function LegacyAppNav({ beforeNavigate }: AppNavProps) {
   const pathname = usePathname()
   const query = useSearchParams()
   const router = useRouter()
   const [coordinationAuthorized, setCoordinationAuthorized] = useState(false)
   const [directionAuthorized, setDirectionAuthorized] = useState(false)
+  const [accountId, setAccountId] = useState<string | null>(null)
   const [role, setRole] = useState<UserRole>(null)
   const [profileName, setProfileName] = useState('')
   const [payrollAuthorized, setPayrollAuthorized] = useState(false)
@@ -83,6 +86,7 @@ function LegacyAppNav() {
         .maybeSingle()
 
       if (cancelled) return
+      setAccountId(user.id)
 
       const resolvedRole: UserRole =
         data?.role === 'direction' ||
@@ -118,6 +122,7 @@ function LegacyAppNav() {
   }, [])
 
   const handleSignOut = async () => {
+    if (beforeNavigate && !await beforeNavigate()) return
     try {
       if (isUnifiedClinicalClient()) await signOutUnifiedSession()
       else await supabase.auth.signOut()
@@ -131,6 +136,13 @@ function LegacyAppNav() {
   const displayProfileName = profileName
   const clinicalReal = process.env.NEXT_PUBLIC_PEA_CLINICAL_REAL === 'true' && clinicalWorkspaceAuthorized
   const importEnabled = process.env.NEXT_PUBLIC_PEA_CLINICAL_IMPORT_ENABLED === 'true'
+  const unifiedDirectionAccount = usesUnifiedDirectionNavigation(accountId, directionAuthorized, clinicalReal)
+  const guardLink = (event: MouseEvent<HTMLAnchorElement>, href: string) => {
+    if (!beforeNavigate || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
+    event.preventDefault()
+    void beforeNavigate().then(allowed => { if (allowed) router.push(href) })
+  }
+  const procedureNavigate = beforeNavigate ? async () => { if (await beforeNavigate()) router.push('/procedures') } : undefined
 
   const navLinks: NavLink[] =
     displayRole === 'direction'
@@ -252,7 +264,7 @@ function LegacyAppNav() {
         : ''
 
   const renderLinks = () =>
-    [...(directionAuthorized && role === 'professionnel' ? [{ href: displayRole === 'direction' ? (clinicalReal ? '/clinique/mon-profil' : '/professionnel') : (clinicalReal ? '/administration' : '/direction'), label: displayRole === 'direction' ? 'Mon espace professionnel' : 'Direction et administration', icon: Users }] : []), ...navLinks].map((link) => {
+    [...(directionAuthorized && role === 'professionnel' ? [{ href: displayRole === 'direction' ? (clinicalReal ? '/clinique/mon-profil' : '/professionnel') : (clinicalReal ? '/administration' : '/direction'), label: displayRole === 'direction' ? 'Mon espace professionnel' : unifiedDirectionAccount ? 'Direction' : 'Direction et administration', icon: Users }] : []), ...navLinks].map((link) => {
       const Icon = link.icon
       const isClinicalLink = link.href.startsWith('/administration/') || link.href.startsWith('/clinique/')
       const isActive = isClinicalLink
@@ -294,6 +306,7 @@ function LegacyAppNav() {
         <Link
           key={link.href}
           href={link.href}
+          onClick={event => guardLink(event, link.href)}
           className={`inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium transition-all duration-200 lg:whitespace-normal ${
             isActive
               ? 'bg-[#efe1d2] text-[#6d3f1f]'
@@ -308,8 +321,8 @@ function LegacyAppNav() {
 
   return (
     <>
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-72 border-r border-[#eadfd2] bg-[#fbf7f1]/95 px-5 py-6 lg:flex lg:flex-col">
-        <Link href={brandHref} className="block">
+      <aside aria-label={displayRole === 'direction' ? 'Espace Direction' : undefined} className="fixed inset-y-0 left-0 z-30 hidden w-72 border-r border-[#eadfd2] bg-[#fbf7f1]/95 px-5 py-6 lg:flex lg:flex-col">
+        <Link href={brandHref} onClick={event => guardLink(event, brandHref)} className="block">
           <span className="flex h-28 w-full items-center justify-start bg-transparent p-0">
             <Image
               src="/psychoeducaction-logo.svg"
@@ -334,7 +347,7 @@ function LegacyAppNav() {
           </div>
         )}
 
-        <nav className="mt-7 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">{renderLinks()}<ProcedureLibraryLink /></nav>
+        <nav className="mt-7 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">{renderLinks()}<ProcedureLibraryLink onNavigate={procedureNavigate} /></nav>
 
         <button type="button" onClick={handleSignOut} className={`${buttonClass('secondary')} mt-4 shrink-0`}>
           Déconnexion
@@ -344,7 +357,7 @@ function LegacyAppNav() {
       <header className="sticky top-0 z-30 border-b border-[#eadfd2] bg-[#fbf7f1]/95 backdrop-blur lg:hidden">
         <div className="flex flex-col gap-3 px-3 py-3 sm:px-4 sm:py-4">
           <div className="flex items-center justify-between gap-3">
-            <Link href={brandHref} className="flex min-w-0 items-center gap-3">
+            <Link href={brandHref} onClick={event => guardLink(event, brandHref)} className="flex min-w-0 items-center gap-3">
               <span className="flex h-12 w-36 shrink-0 items-center justify-start bg-transparent p-0">
                 <Image
                   src="/psychoeducaction-logo.svg"
@@ -368,7 +381,7 @@ function LegacyAppNav() {
           </div>
 
           <nav className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-1 sm:-mx-4 sm:px-4">
-            {renderLinks()}<ProcedureLibraryLink />
+            {renderLinks()}<ProcedureLibraryLink onNavigate={procedureNavigate} />
           </nav>
         </div>
       </header>
