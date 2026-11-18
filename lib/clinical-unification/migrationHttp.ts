@@ -25,7 +25,7 @@ export const handleMigration: UnifiedDomainHandler = async (request, segments, i
   if(request.method!=='POST'||segments.length!==1) return unifiedJson({error:'Requête invalide.'},405)
   if(!/^application\/json(?:;|$)/i.test(request.headers.get('Content-Type')??''))return unifiedJson({error:'JSON requis.'},400)
   const body=await readBoundedJsonObject(request,2*1024*1024)
-  if(Object.keys(body).some(k=>!['action','batchId','data'].includes(k))||!['simulate','confirm','item','preset','file','correct','upload.chunk','prepare','client.defaults','client.save'].includes(String(body.action))||!body.data||typeof body.data!=='object'||Array.isArray(body.data))return unifiedJson({error:'Requête invalide.'},400)
+  if(Object.keys(body).some(k=>!['action','batchId','data'].includes(k))||!['simulate','confirm','item','preset','file','correct','upload.chunk','prepare','client.defaults','client.save','report.hide'].includes(String(body.action))||!body.data||typeof body.data!=='object'||Array.isArray(body.data))return unifiedJson({error:'Requête invalide.'},400)
   if(body.action!=='preset'&&!uuid.test(String(body.batchId)))return unifiedJson({error:'Identifiant de lot invalide.'},400)
   return unifiedJson(await identity.transport.rpc('clinical_migration_command',{p_action:body.action,p_batch:body.batchId??null,p_data:body.data},identity.token))
   } catch(error) { if(error instanceof JsonBodyError)return unifiedJson({error:'Fichier ou requête trop volumineux ou invalide.'},error.status);throw error }

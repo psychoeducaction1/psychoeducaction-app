@@ -25,7 +25,7 @@ test('API : nouveaux appels gardent le contexte, le JWT, les limites et le verro
  const identity={context:'administration' as const,token:'fictional-jwt',transport:{authenticate:async()=>null,rpc:async(...args:unknown[])=>{calls.push(args);return{}}}}
  try{
   process.env.PEA_CONTROLLED_MERGE='true';delete process.env.PEA_CLINICAL_IMPORT_ENABLED
-  for(const action of ['prepare','client.defaults','client.save']){
+  for(const action of ['prepare','client.defaults','client.save','report.hide']){
    const req=()=>new Request('https://example.invalid/api/clinical-workspace/migration',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,batchId:'30000000-0000-4000-8000-000000000001',data:{}})})
    assert.equal((await handleMigration(req(),['migration'],identity))?.status,403)
    process.env.PEA_CLINICAL_IMPORT_ENABLED='true'
@@ -33,7 +33,7 @@ test('API : nouveaux appels gardent le contexte, le JWT, les limites et le verro
    assert.equal((await handleMigration(req(),['migration'],identity))?.status,200)
    delete process.env.PEA_CLINICAL_IMPORT_ENABLED
   }
-  assert.equal(calls.length,3);assert.ok(calls.every(call=>Array.isArray(call)&&call[2]==='fictional-jwt'))
+  assert.equal(calls.length,4);assert.ok(calls.every(call=>Array.isArray(call)&&call[2]==='fictional-jwt'))
  }finally{
   if(previousMerge===undefined)delete process.env.PEA_CONTROLLED_MERGE;else process.env.PEA_CONTROLLED_MERGE=previousMerge
   if(previousImport===undefined)delete process.env.PEA_CLINICAL_IMPORT_ENABLED;else process.env.PEA_CLINICAL_IMPORT_ENABLED=previousImport
