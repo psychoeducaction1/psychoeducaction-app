@@ -125,6 +125,7 @@ export async function handleUnifiedFinanceHttp(originalRequest: Request, segment
     if (segments.join('/') === 'commands' && request.method === 'POST') {
       const b = await body(request), command = { action: b.action, data: b.data }
       if (!exact(b, ['key','action','data']) || !id(b.key) || (!isDurableBillingCommand(command) && !isFeeCommand(command))) throw new Error('INVALID_INPUT')
+      if (command.action === 'invoice.void') return reply({ error: 'L’annulation manuelle des factures n’est pas disponible.' }, 403)
       // The isolated SQL adapter retains the laboratory's simulated-send transitions.
       // No external provider or delivery queue is imported by this handler.
       let data: Record<string, unknown> = command.data

@@ -1,30 +1,35 @@
 'use client'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { buttonClass } from '@/components/Ui'
-import { clinicalCard, inputClass } from './primitives'
-import { money, moneyInput, parseCents } from './model'
+import { inputClass } from './primitives'
+import { money, parseCents } from './model'
 import { clinicalSessionFetch } from '@/lib/clinical-unification/authClient'
+import { useClinicalFormGuard } from '@/components/clinical-workspace/NavigationGuard'
 
 type Card = { hasCard: boolean; brand: string; last4: string; expMonth: number | null; expYear: number | null }
 
-export function SavedCardChargePanel({ invoiceId, patientId, payerId, payerName, expectedVersion, dueCents, disabled, openPayer, refresh }: {
-  invoiceId: string; patientId: string; payerId: string; payerName: string; expectedVersion: number;
-  dueCents: number; disabled: boolean; openPayer: () => void; refresh: () => Promise<void>
-}) {
-  const [card, setCard] = useState<Card | null>(null), [amount, setAmount] = useState(moneyInput(dueCents))
-  const [error, setError] = useState(''), [message, setMessage] = useState(''), [pending, setPending] = useState(false)
-  const key = useRef<string | null>(null)
-  useEffect(() => {
-    let active = true
-    const query = new URLSearchParams({ patientId, payerId })
-    void clinicalSessionFetch('/api/clinical-workspace/billing/stripe/card?' + query, {
-      cache: 'no-store', credentials: 'same-origin', headers: { 'X-Clinical-Context': 'administration' },
-    }).then(async response => {
-      if (!response.ok) throw new Error('La carte du payeur est indisponible.')
-      return response.json() as Promise<Card>
-    }).then(value => { if (active) setCard(value) }).catch(cause => { if (active) setError(cause instanceof Error ? cause.message : 'Carte indisponible.') })
-    return () => { active = false }
-  }, [patientId, payerId])
+export function useSavedPayerCard(patientId:string,payerId:string){
+ const scope=patientId+':'+payerId
+ const [state,setState]=useState<{scope:string;card:Card|null;error:string}>({scope:'',card:null,error:''})
+ useEffect(()=>{
+  const controller=new AbortController();let active=true
+  setState({scope,card:null,error:''})
+  const query=new URLSearchParams({patientId,payerId})
+  void clinicalSessionFetch('/api/clinical-workspace/billing/stripe/card?'+query,{cache:'no-store',credentials:'same-origin',headers:{'X-Clinical-Context':'administration'},signal:controller.signal}).then(async response=>{
+   if(!response.ok)throw Error('Carte indisponible.')
+   const value:unknown=await response.json()
+   if(!value||typeof value!=='object'||typeof (value as Card).hasCard!=='boolean'||(value as Card).hasCard&&(typeof (value as Card).brand!=='string'||!/^\d{4}$/.test((value as Card).last4)))throw Error('Réponse de carte invalide.')
+   if(active)setState({scope,card:value as Card,error:''})
+  }).catch(()=>{if(active)setState({scope,card:null,error:'Carte indisponible.'})})
+  return()=>{active=false;controller.abort()}
+ },[patientId,payerId,scope])
+ return state.scope===scope?state:{scope,card:null,error:''}
+}
+
+export function SavedCardChargePanel({invoiceId,payerName,expectedVersion,dueCents,disabled,refresh,card,amount,setAmount}:{invoiceId:string;payerName:string;expectedVersion:number;dueCents:number;disabled:boolean;refresh:()=>Promise<void>;card:Card;amount:string;setAmount:(value:string)=>void}){
+ const [error,setError]=useState(''),[message,setMessage]=useState(''),[pending,setPending]=useState(false)
+ const key=useRef<string|null>(null)
+ useClinicalFormGuard(false,pending)
   const charge = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (pending || disabled || !card?.hasCard) return
@@ -53,21 +58,19 @@ export function SavedCardChargePanel({ invoiceId, patientId, payerId, payerName,
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Le débit n’a pas été confirmé.') }
     finally { setPending(false) }
   }
-  return <section className={clinicalCard}>
-    <h4 className="font-semibold">Carte de crédit de {payerName}</h4>
+  return <div>
     {card?.hasCard ? <>
       <p className="mt-1 text-sm">{card.brand} •••• {card.last4} · {card.expMonth}/{card.expYear}</p>
       <form className="mt-3 grid gap-3" onSubmit={event => void charge(event)}>
-        <label className="text-sm">Montant — maximum {money(dueCents)}<input className={inputClass} inputMode="decimal" required value={amount}
+        <label className="text-sm">Montant — maximum {money(dueCents)}<input className={inputClass} inputMode="decimal" required disabled={disabled||pending} value={amount}
           onChange={event => { setAmount(event.target.value); key.current = null }} /></label>
         <button type="submit" className={buttonClass('primary')} disabled={disabled || pending || dueCents <= 0}>
           {pending ? 'Confirmation…' : 'Encaisser par carte avec Stripe (test)'}
         </button>
       </form>
-    </> : <div className="mt-2 text-sm"><p>Aucune carte enregistrée pour le payeur de cette facture.</p>
-      <button type="button" className={buttonClass('secondary') + ' mt-2'} onClick={openPayer}>Ouvrir ses requérants et responsables</button></div>}
+    </> : null}
     {message && <p role="status" className="mt-2 text-sm">{message}</p>}
     {error && <p role="alert" className="mt-2 text-sm text-red-800">{error}</p>}
-  </section>
+  </div>
 }
 
