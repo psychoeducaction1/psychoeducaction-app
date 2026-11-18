@@ -1,50 +1,66 @@
-# Correctif préparé — concordance des noms et libellés
+# Migration 970 et lecture des mandats — publication du 18 novembre 2026
 
-Migration 970 appliquée le 18 novembre 2026 avec autorisation explicite. Les empreintes des neuf tables contrôlées sont identiques avant/après. Publication en préparation.
+## Résultat
 
-## Cause vérifiée en lecture seule
+Migration 970 appliquée avec autorisation explicite. Les empreintes de neuf tables
+(dossiers, assignations, mandats, signatures, documents et préparation de migration)
+sont restées identiques pendant l'installation. Aucune importation ni aucun
+courriel lancé ; aucun droit modifié.
 
-Une préparation opérationnelle non importée présente un prénom différent en
-comparaison stricte, mais identique après la normalisation utilisée par l'interface.
-Professionnel, naissance, empreinte de l'assignation et statut ouvert concordent.
-Le serveur 920 refusait cette variation avec OPERATIONAL_ASSOCIATION_CHANGED.
-Aucun nom ni renseignement personnel n'est conservé dans ce diagnostic.
+Version active : dpl_EJXrnVmLQen6fQqLiT42SaHGbd5c sur
+https://app.psychoeducaction.com. Code : 584cb5d puis 9c2964f.
+Retour arrière applicatif avant ce lot : dpl_mnZQW8D9feosMpXTvVaUtrMFHWAt.
+Les 595 fichiers du candidat proviennent de la version précédente vérifiée par
+empreintes, avec seulement cinq fichiers d'exécution modifiés ou ajoutés.
 
-970 aligne uniquement la comparaison des noms du parcours individuel sur la
-normalisation de l'interface (casse, accents et séparateurs). Les verrous, UUID,
-professionnel, naissance, confirmation et empreinte restent contrôlés. La fonction
-de normalisation reste privée. Aucun enregistrement existant n'est mis à jour.
-Le contrôle de baseline provoque un rollback si la fonction attendue a changé.
+## Rattachement à l'assignation
 
-## Présentation
+Une préparation opérationnelle concordait sur le professionnel, la naissance,
+l'empreinte et le statut de l'assignation, mais son prénom n'était identique
+qu'après normalisation. L'interface acceptait accents et séparateurs ; le serveur
+920 refusait ces variations. Aucun renseignement personnel n'est conservé dans
+ce rapport.
 
-Le bloc complémentaire conserve les renseignements mais retire l'avertissement
-générique Excel, les explications financières techniques et les termes d'export.
-Les droits de consentement et les données restent inchangés.
+970 aligne uniquement les noms sur le comparateur existant de l'interface. Les
+verrous, UUID, confirmation, professionnel, naissance, statut et empreinte restent
+contrôlés. Le helper SQL reste privé. Aucun ancien enregistrement n'est modifié.
+La définition antérieure de clinical_migration_command_930_base est conservée
+localement dans output/unification-pilot/output/migration-970-function-before.sql
+pour un retour arrière autorisé. Un contrôle de baseline fait échouer la migration
+si la fonction attendue a changé.
 
-Un échec de lecture dans un dossier fermé indique que le mandat archivé n'a pas
-pu être chargé, sans confondre fermeture et indisponibilité de tout le service.
-Les refus d'accès et les autres messages précis restent conservés. La fermeture
-ne constitue pas, à elle seule, une explication de la panne réelle de lecture.
+## Mandat archivé
 
-## Vérifications
+Les journaux anonymisés distinguaient une liste réussie et un détail en échec.
+Le diagnostic fixe ajouté au lecteur a localisé l'échec au rendu des signatures
+automatiques. Les documents possédaient leurs références Storage ; les noms de
+signature étaient présents. La fermeture du dossier n'était pas une panne.
 
-- TypeScript global sans émission : réussi.
-- Test du message contextualisé : réussi.
-- 16 tests SQL sur base PGlite jetable : réussis, dont import sans accent,
-  refus d'identité distincte / naissance différente / empreinte modifiée,
-  absence de doublons et lecture d'un mandat dans un dossier fermé.
-- Pas de recette navigateur authentifiée, pas d'import réel, pas de courriel.
-- Le lecteur SQL distant ne permet pas d'exécuter les RPC privés/authentifiés ;
-  la cause exacte de l'échec d'affichage du mandat réel n'est pas établie.
+La police SignatureCursive.ttf n'était incluse que pour une sous-route mandats,
+alors que Next.js sert cette API avec [[...segments]]. La configuration inclut
+maintenant cette police dans la route API clinique commune, comme le logo existant.
+Après cette seule correction supplémentaire, la consultation authentifiée du
+mandat archivé concerné aboutit : convention affichée, statut fermé conservé,
+aucun message d'indisponibilité. Les anciennes conventions et les consentements
+n'ont pas été édités. Le lecteur existant peut achever l'archivage technique des
+preuves de signature en attente pendant cette consultation.
 
-## Activation et retour arrière
+Les erreurs futures indiquent si le mandat archivé ne peut pas être chargé sans
+présenter la fermeture comme une panne générale. Les traces serveur ne conservent
+que l'étape et un code fixe autorisé, jamais l'URL, un nom ou un message SQL brut.
 
-Accord explicite requis pour appliquer 970 et publier l'interface. Ne pas lancer
-d'import pendant la publication. Conserver la définition précédente de
-public.clinical_migration_command_930_base(text,uuid,jsonb) dans la sauvegarde
-technique autorisée avant application. Le retour arrière restaure cette définition
-et le déploiement précédent ; aucun dossier, date, mandat ou document ne doit être
-supprimé. Le nouveau helper SQL peut rester privé et inutilisé.
+## Présentation et contrôles
 
-Le diagnostic Vercel distingue maintenant une liste réussie et un détail en échec (503). Quatre preuves attendent le rendu dans les mandats archivés contrôlés ; aucun document ne manque de contenu ou de référence Storage. Les traces ajoutées au lecteur exposent uniquement une étape fixe et un code autorisé, jamais une URL, un nom, une donnée clinique ou une erreur brute.
+- Avertissement générique sur l'Excel et explications financières techniques retirés.
+  Renseignements conservés sous Renseignements complémentaires, libellés simplifiés.
+  Aucune autorité de consentement n'est attribuée par ce changement d'affichage.
+- TypeScript global, lint ciblé, contrôle du diff et test du message : réussis.
+- 16 tests SQL en base PGlite jetable : réussis, dont accents, refus des véritables
+  divergences d'identité/naissance/empreinte, absence de doublons et lecture archivée.
+- Deux builds Vercel READY ; promotion finale réussie.
+- API migration et mandats anonymes avec contexte : 401.
+- Consultation réelle limitée au défaut du mandat ; pas de campagne de tests
+  fonctionnels ni de tentative d'import. L'utilisateur réalise sa recette.
+
+Manifestes et preuves : output/unification-pilot/docs/migration/
+MIGRATION_970_RELEASE.json et MIGRATION_970_LIVE_PROMOTED.json.
