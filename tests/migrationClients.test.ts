@@ -101,3 +101,24 @@ test('liste à traiter : seule une confirmation importée masque le client, y co
  assert.deepEqual(preparation.pendingMigrationEntries(rows,items).map(e=>e.row.sourceKey),['fixture:two','fixture:three'])
  assert.equal(rows.length,3)
 })
+
+test('requérants : seuil de 14 ans, identité du client et conservation des autres personnes',()=>{
+ const row={...emptyMigrationRow('fictional:age'),firstName:'Alex',lastName:'Exemple',birthDate:'2012-11-17',email:'alex@example.invalid'}
+ const base=preparation.preparationFromSource(row)
+ const original={...base,requesters:[{key:'requester-1',fullName:'Alex Exemple',email:row.email,phone:'',address:'',relationship:'je suis le parent'},{key:'requester-2',fullName:'Parent Exemple',email:'parent@example.invalid',phone:'',address:'',relationship:'Parent'}],payers:[{key:'requester-1',basisPoints:3000},{key:'requester-2',basisPoints:7000}]}
+ const fourteen=preparation.normalizeMigrationRequesters(row,original,'2026-11-17')
+ assert.equal(fourteen.requesters.length,2)
+ assert.equal(fourteen.requesters[0].key,'client')
+ assert.equal(fourteen.requesters[0].relationship,'Lui-même')
+ assert.equal(fourteen.requesters[1].relationship,'Parent')
+ assert.deepEqual(fourteen.payers,[{key:'client',basisPoints:3000},{key:'requester-2',basisPoints:7000}])
+ assert.deepEqual(preparation.normalizeMigrationRequesters(row,fourteen,'2026-11-17'),fourteen)
+ const thirteen=preparation.normalizeMigrationRequesters(row,original,'2026-11-16')
+ assert.deepEqual(thirteen.requesters.map(person=>person.fullName),['Parent Exemple'])
+ assert.equal(thirteen.payers.reduce((sum,payer)=>sum+payer.basisPoints,0),10000)
+ const unknown=preparation.normalizeMigrationRequesters({...row,birthDate:''},{...base,requesters:[]},'2026-11-17')
+ assert.deepEqual(unknown.requesters,[])
+ const added=preparation.normalizeMigrationRequesters(row,{...base,requesters:[original.requesters[1]]},'2026-11-17')
+ assert.equal(added.requesters[0].relationship,'Lui-même')
+ assert.equal(added.requesters[0].email,row.email)
+})
