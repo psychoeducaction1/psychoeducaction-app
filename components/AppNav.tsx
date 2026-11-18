@@ -124,7 +124,7 @@ function LegacyAppNav({ beforeNavigate }: AppNavProps) {
   const handleSignOut = async () => {
     if (beforeNavigate && !await beforeNavigate()) return
     try {
-      if (isUnifiedClinicalClient()) await signOutUnifiedSession()
+      if (isUnifiedClinicalClient() && clinicalReal) await signOutUnifiedSession()
       else await supabase.auth.signOut()
       router.push('/login')
     } catch {

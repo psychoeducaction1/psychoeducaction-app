@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { RequestHistoryCard } from '@/components/RequestHistoryCard'
 import { AppNav } from '@/components/AppNav'
+import { useClinicalAssignmentAccess } from '@/lib/clinical-real/useClinicalAssignmentAccess'
 import { buttonClass, EmptyState, PageHeader } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
 import {
@@ -164,6 +165,7 @@ function getEstimatedCompletionDate(
 }
 
 export default function ProfessionnelHistoriquePage() {
+  const clinicalAccess = useClinicalAssignmentAccess()
   const router = useRouter()
   const [currentUserId, setCurrentUserId] = useState('')
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null)
@@ -653,7 +655,7 @@ export default function ProfessionnelHistoriquePage() {
                   const isExpanded = expandedRequestIds[card.request.id] === true
 
                   return (
-                    <RequestHistoryCard key={card.request.id} card={card} isExpanded={isExpanded} onToggle={() => toggleRequest(card.request.id)}>
+                    <RequestHistoryCard legacyPresentation={!clinicalAccess} key={card.request.id} card={card} isExpanded={isExpanded} onToggle={() => toggleRequest(card.request.id)}>
                       {isExpanded && (
                         <div className="mt-4 rounded-2xl border border-[#eadfd2] bg-white p-4">
                           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

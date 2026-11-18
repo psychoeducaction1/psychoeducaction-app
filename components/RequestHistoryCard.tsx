@@ -12,7 +12,7 @@ function formatDate(value: Date | string | null) {
  const date = new Date(value)
  return Number.isNaN(date.getTime()) ? '—' : new Intl.DateTimeFormat('fr-CA', {dateStyle:'medium', timeZone:'America/Toronto'}).format(date)
 }
-export function RequestHistoryCard({card, isExpanded, onToggle, children}: {card: RequestHistoryCardData; isExpanded: boolean; onToggle: () => void; children: ReactNode}) {
+export function RequestHistoryCard({card, isExpanded, onToggle, children, legacyPresentation = false}: {legacyPresentation?: boolean; card: RequestHistoryCardData; isExpanded: boolean; onToggle: () => void; children: ReactNode}) {
  const requestedCount = card.request.requested_count ?? 0, isCompleted = card.status === 'Completee'
  return (
                     <article
@@ -104,7 +104,7 @@ export function RequestHistoryCard({card, isExpanded, onToggle, children}: {card
                           <p className="text-xs font-medium uppercase text-[#8a6f5d]">
                             Commentaire
                           </p>
-                          <AssignmentRequestComment comment={card.request.request_comment ?? ''} />
+                          {legacyPresentation ? <p className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">{card.request.request_comment?.trim() || '-'}</p> : <AssignmentRequestComment comment={card.request.request_comment ?? ''} />}
                         </div>
                       </div>
 
