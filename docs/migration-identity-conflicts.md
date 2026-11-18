@@ -24,3 +24,13 @@ Conflit de naissance : champ rouge avec aria-invalid et message immédiatement a
 Dossiers traités : la lecture autorisée du centre retourne les reçus de migration réussis appartenant à l'opérateur. Le même fichier est reconnu par sa source, les nouveaux exports par nom + naissance + professionnel + service lorsque la destination est unique. Les cas incertains restent à vérifier. Les lignes traitées ne sont pas ajoutées au nouveau lot et apparaissent dans une section consultable avec accès à la fiche normale pour modification. Le retrait d'un rapport n'efface pas ces reçus. Aucune identité, date, donnée clinique ou autorisation n'est modifiée à l'installation.
 
 Tests complétés : douze tests UI/API/modèle et seize vérifications PostgreSQL fictives passent, notamment reprise d'export, homonymes, autre professionnel/service, reçu conservé après retrait de rapport et isolation des reçus entre deux opérateurs.
+
+## Publication autorisée — 18 novembre 2026
+
+960 appliquée atomiquement après accord utilisateur, puis interface publiée. Les vérifications portent sur 30 tables protégées (clients, dates, contacts, documents de mandat, archives, Storage, droits, facturation) et quatre fonctions ordinaires inchangées. Aucun import, changement de naissance, changement de rôle ou courriel. La lecture des reçus de migration a été complétée avec les empreintes des PDF pour qu'un nouveau PDF reste à vérifier, même si son client a déjà été traité. Cette lecture ne modifie aucun document.
+
+Reçus : MIGRATION_960_APPLIED.json et MIGRATION_960_FINAL_METADATA_APPLIED.json. Candidat final : MIGRATION_960_RELEASE.json / MIGRATION_960_FINAL_RELEASE.json, 591 fichiers vérifiés ; source fonctionnelle df9b4d7. La première publication 960 est conservée dans MIGRATION_960_INITIAL_RELEASE.json.
+
+Le contrôle agrégé de la correspondance de naissance contradictoire trouve un dossier clinique et une assignation non rattachée, pas deux dossiers cliniques. Aucun rapprochement réel n'a été exécuté par l'agent. L'opérateur doit vérifier la bonne date et corriger sa préparation ou la fiche autorisée ; aucune date n'a été choisie automatiquement.
+
+Version finale active : dpl_Gw3Ay4JneJYN76xYn5mW9CRDAUqK (READY et alias vérifiés), source df9b4d7. Reçu MIGRATION_960_FINAL_LIVE_PROMOTED.json ; référence finale MIGRATION_960_RELEASE.json. Compilation Vercel réussie. La recette authentifiée et les imports restent à l'utilisateur. Aucun import, changement de naissance ou courriel exécuté durant cette mise en service. Retour arrière applicatif de référence avant 960 : dpl_BEW4YWsi3Q7UDxVqxcj911DrKTLy ; définitions et ACL antérieures sauvegardées en zone privée, procédure de retour arrière préparée et non exécutée.
