@@ -61,7 +61,9 @@ test('fiche réelle : champs facultatifs, parts multiples, montant modifiable et
  row={...row,preparation:{...preparation.preparationFromSource(row),requesters:[{key:'requester-1',fullName:'Parent Fictif',email:'',phone:'',address:'',relationship:''}]}}
  let saved=0
  const render=(locked=false)=>(exports.MigrationClientPreparation as (props:Record<string,unknown>)=>ReactNode)({row,disabled:false,saved:locked,onChange:(value:preparation.MigrationPreparation)=>{row={...row,preparation:value}},onDefaults(){},onSave(){saved++}})
- assert.match(renderToStaticMarkup(render()),/Date de contact|Motif de consultation|Conditions et modalités administratives/)
+ const markup=renderToStaticMarkup(render())
+ assert.match(markup,/Motif de consultation/)
+ assert.doesNotMatch(markup,/Autres courriels|Autres téléphones|Contenu clinique de la nouvelle convention|Conditions et modalités administratives|Charger le contenu depuis les paramètres/)
  let checks=elements(render()).filter(node=>node.type==='input'&&node.props.type==='checkbox')
  ;(checks[0].props.onChange as (e:unknown)=>void)({target:{checked:true}})
  checks=elements(render()).filter(node=>node.type==='input'&&node.props.type==='checkbox')
@@ -72,4 +74,30 @@ test('fiche réelle : champs facultatifs, parts multiples, montant modifiable et
  const button=elements(render()).find(node=>node.type==='button'&&node.props.children==='Enregistrer et valider ce client')!
  assert.equal(button.props.disabled,false);(button.props.onClick as()=>void)();assert.equal(saved,1)
  assert.equal(elements(render(true)).find(node=>node.type==='button'&&node.props.children==='Client enregistré et validé')?.props.disabled,true)
+})
+
+test('préparation : coordonnées associées au requérant nommé, sans doublon ni attribution à un inconnu',()=>{
+ const row=emptyMigrationRow('fixture:requesters')
+ row.intake={initialCallDate:'',firstAppointmentDate:'',consultationReason:'',referredBy:'',originalMandates:[],clientele:'',sourceActive:'',billingResponsible:'',interlocutor:'',relationship:'',requesters:[{fullName:'Parent Fictif',email:'parent@example.invalid',city:'',postalCode:''}]}
+ const p=preparation.preparationFromSource(row,['Nom requérant 1','Courriel correspondance 1','Téléphone requérant 1','Nom requérant 3','Courriel correspondance 3','Téléphone 3'],['Parent Fictif','parent@example.invalid','555-0101','Autre Fictif','autre@example.invalid','555-0103'])
+ assert.equal(p.requesters.length,2)
+ assert.equal(p.requesters[0].phone,'555-0101')
+ assert.equal(p.requesters[1].email,'autre@example.invalid')
+ assert.equal(p.requesters[1].phone,'555-0103')
+ assert.equal(new Set(p.requesters.map(r=>r.key)).size,2)
+ const unknown=preparation.preparationFromSource(emptyMigrationRow('fixture:unknown'),['Courriel correspondance 1'],['unknown@example.invalid'])
+ assert.equal(unknown.requesters.length,0)
+ const ambiguous={...row,intake:{...row.intake!,requesters:[{fullName:'Parent Fictif',email:'first@example.invalid',city:'',postalCode:''},{fullName:'Parent Fictif',email:'second@example.invalid',city:'',postalCode:''}]}}
+ const kept=preparation.preparationFromSource(ambiguous,['Nom requérant 1','Téléphone 1'],['Parent Fictif','555-0199'])
+ assert.deepEqual(kept.requesters.map(person=>person.email),['first@example.invalid','second@example.invalid'])
+ assert.ok(kept.requesters.every(person=>!person.phone))
+})
+
+test('liste à traiter : seule une confirmation importée masque le client, y compris après reprise',()=>{
+ const rows=['one','two','three'].map(key=>emptyMigrationRow('fixture:'+key))
+ assert.deepEqual(preparation.pendingMigrationEntries(rows).map(e=>e.index),[0,1,2])
+ const items=[{source_key:rows[0].sourceKey,status:'imported'},{source_key:rows[1].sourceKey,status:'error'},{source_key:rows[2].sourceKey,status:'pending'}]
+ assert.deepEqual(preparation.pendingMigrationEntries(rows,items).map(e=>e.index),[1,2])
+ assert.deepEqual(preparation.pendingMigrationEntries(rows,items).map(e=>e.row.sourceKey),['fixture:two','fixture:three'])
+ assert.equal(rows.length,3)
 })

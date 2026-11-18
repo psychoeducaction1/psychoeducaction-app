@@ -360,3 +360,9 @@ Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workfl
 - Fichier prioritaire pour le tarif; valeurs par défaut135$ psychoéducation/100$ intervention psychoéducative, ajustables avant validation. Payeurs facultatifs à la migration, parts totalisant100% si renseignées; compléter les destinataires financiers avant facturation.
 - Mandats préparés/versionnés et conventions antérieures conservées. Acceptation professionnelle datée séparément de l’ajout graphique; aucun consentement du client ni pouvoir de représentation inventé.
 - Opérateurs explicites requis; aucune extension des rôles globaux ou des droits de gestion des accès des adjointes.
+
+## Migration individuelle — formulaire simplifié (préparé)
+- Détection automatique des colonnes et de la première feuille reconnue; aucun réglage de feuille/en-têtes/identifiants ni correspondance technique dans l’écran. Un export non reconnu est refusé avec une explication plutôt qu’une association inventée.
+- Les coordonnées supplémentaires des requérants nommés sont reprises dans leur fiche; les contacts ambigus ne sont pas attribués par hypothèse. Les propriétés historiques non affichées restent compatibles avec920.
+- La préparation montre les informations utiles et le tarif; textes cliniques/conditions repris automatiquement depuis les paramètres du service à chaque validation, sans édition dans ce formulaire.
+- Seule une réponse serveur confirmant imported retire la fiche de la liste à traiter. Les erreurs restent visibles et les fiches réussies restent au rapport du lot; aucune suppression de client ou de PDF.

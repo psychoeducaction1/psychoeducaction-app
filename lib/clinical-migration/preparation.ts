@@ -30,9 +30,22 @@ export function preparationFromSource(row: MigrationRow, headers: string[] = [],
   const contactDate = date(value('date de contact', "date d'appel initial")) || date(row.intake?.initialCallDate)
   const dates = [contactDate, date(row.intake?.firstAppointmentDate), ...row.dates].filter(Boolean).sort()
   const requesters = (row.intake?.requesters ?? []).map((p,i) => ({ key: 'requester-' + (i+1), fullName: p.fullName, email: p.email, phone: '', address: [p.city,p.postalCode].filter(Boolean).join(' '), relationship: row.intake?.relationship ?? '' }))
-  for (const i of [1,2]) {
+  for (const i of [1,2,3]) {
     const name = text('requérant ' + i, 'nom requérant ' + i)
-    if (name && !requesters.some(p => fold(p.fullName) === fold(name))) requesters.push({ key: 'requester-' + i, fullName: name, email: text('courriel correspondance ' + i), phone: text('téléphone ' + i), address: '', relationship: '' })
+    if (!name) continue
+    const matches = requesters.filter(person => fold(person.fullName) === fold(name))
+    const email = text('courriel correspondance ' + i, 'courriel requérant ' + i)
+    const emailMatches = email ? matches.filter(person => person.email.toLocaleLowerCase() === email.toLocaleLowerCase()) : []
+    const existing = emailMatches.length === 1 ? emailMatches[0] : matches.length === 1 ? matches[0] : undefined
+    if (matches.length > 1 && !existing) continue
+    const phone = text('téléphone requérant ' + i, 'téléphone ' + i)
+    const address = text('adresse requérant ' + i, 'adresse ' + i)
+    if (existing) { existing.email = email || existing.email; existing.phone = phone || existing.phone; existing.address = address || existing.address }
+    else {
+      let key = 'requester-' + i
+      for (let suffix = 1; requesters.some(person => person.key === key); suffix++) key = 'requester-' + i + '-' + suffix
+      requesters.push({ key, fullName: name, email, phone, address, relationship: '' })
+    }
   }
   const amount=importedAmount(value('tarif','taux horaire','montant','honoraires'))
   return { contactDate, startDate: dates[0] ?? '', outcome: 'active', additionalEmails: row.email.split(/[;,\n]+/).slice(1).map(value=>value.trim()).filter(Boolean).join('; '), additionalPhones: row.phone.split(/[;\n]+/).slice(1).map(value=>value.trim()).filter(Boolean).join('; '), consultationReason: row.intake?.consultationReason??'', modalities: text('modalités de rencontre', 'modalités'), availability: text('préférences horaires', 'disponibilités'), comments: text('commentaires', 'notes internes'), requesters, payers: [], rateCents: amount, rateSource: amount===null?'default':'file', clinicalText: '', administrativeText: '', settingsFingerprint: '', validated: false }
@@ -46,4 +59,10 @@ export function preparationErrors(p: MigrationPreparation): string[] {
   if (new Set(p.payers.map(x => x.key)).size !== p.payers.length) errors.push('Un responsable est sélectionné plusieurs fois.')
   if ([...p.additionalEmails.split(/[;,\n]+/),...p.requesters.map(person=>person.email)].some(email=>email.trim()&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()))) errors.push('Vérifiez les courriels renseignés.')
   return errors
+}
+
+/** Only a server-confirmed import leaves the preparation list; original indices stay stable. */
+export function pendingMigrationEntries(rows: MigrationRow[], items: { source_key: string; status: string }[] = []): { row: MigrationRow; index: number }[] {
+  const imported = new Set(items.filter(item => item.status === 'imported').map(item => item.source_key))
+  return rows.flatMap((row, index) => imported.has(row.sourceKey) ? [] : [{ row, index }])
 }
