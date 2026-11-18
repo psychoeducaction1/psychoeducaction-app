@@ -372,3 +372,7 @@ Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workfl
 ## Publication requérants — 17 novembre 2026
 
 Correctif 1c47659 : âge de 14 ans inclus, client identifié Lui-même, absence du client parmi les requérants avant 14 ans. Publié sur app.psychoeducaction.com : dpl_6xkFnKEWkqnB2GwMEPZm5tc519T5 (READY et alias vérifiés). Aucun import, migration SQL, courriel ou changement des dossiers existants exécuté. Recette utilisateur différée. Manifeste de référence suivant : output/unification-pilot/docs/migration/REQUESTER_AGE_RELEASE.json ; précédent déploiement conservé pour retour arrière dpl_GU2kGCe7iAtiVRpkTjqbsWyTEZgJ.
+
+## Retour de validation migration — publication du 17 novembre 2026
+
+Correctif 926f408 publié : dpl_9iVW6mXikroyGDrtj3uKz4uXHwn5 READY et domaine vérifié. Confirmation explicite du statut imported, message visible et focalisé, bilan replié pour les lots individuels, conservation de la fiche en erreur. Aucun import ni courriel exécuté ; recette utilisateur différée. Référence du prochain candidat : output/unification-pilot/docs/migration/CLIENT_SAVE_FEEDBACK_RELEASE.json ; retour arrière dpl_6xkFnKEWkqnB2GwMEPZm5tc519T5.
