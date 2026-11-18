@@ -376,3 +376,9 @@ Correctif 1c47659 : âge de 14 ans inclus, client identifié Lui-même, absence 
 ## Retour de validation migration — publication du 17 novembre 2026
 
 Correctif 926f408 publié : dpl_9iVW6mXikroyGDrtj3uKz4uXHwn5 READY et domaine vérifié. Confirmation explicite du statut imported, message visible et focalisé, bilan replié pour les lots individuels, conservation de la fiche en erreur. Aucun import ni courriel exécuté ; recette utilisateur différée. Référence du prochain candidat : output/unification-pilot/docs/migration/CLIENT_SAVE_FEEDBACK_RELEASE.json ; retour arrière dpl_6xkFnKEWkqnB2GwMEPZm5tc519T5.
+
+## Retrait des rapports de migration et diagnostic — 17 novembre 2026
+
+930 retire les rapports de l'historique affiché sans supprimer les clients, mandats, PDF, originaux, traces protégées ou références anti-doublon. Action réservée côté serveur au compte Hicham vérifié, actif, super_admin et opérateur de migration activé ; contrôle de version, verrou et confirmation utilisateur. Aucun retrait à l'installation. 940 conserve uniquement les codes métier contrôlés, sans exposer les messages SQL contenant des valeurs.
+
+Autorisation utilisateur obtenue pour 930/940 et publication, sans import ni courriel. Commit 76f59ba, déploiement dpl_99T5qZsLFc3sra7YYFPphRtF6J2Q READY et domaine vérifié. Les empreintes de 24 tables protégées sont restées inchangées lors de l'installation atomique ; zéro rapport retiré, zéro import, zéro courriel, aucun rôle changé. Manifeste suivant : output/unification-pilot/docs/migration/MIGRATION_930_940_RELEASE.json. Retour arrière applicatif : dpl_9iVW6mXikroyGDrtj3uKz4uXHwn5. Diagnostic du refus réel encore attendu lors du prochain essai manuel ; aucune résolution de l'erreur métier n'est affirmée.
