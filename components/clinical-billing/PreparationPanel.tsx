@@ -4,7 +4,7 @@ import { Badge, buttonClass } from '@/components/Ui'
 import type { DurableBillingCommand } from '@/lib/clinical-finance/durableTypes'
 import type { BillingUi } from './InvoiceDetail'
 import { BillingForm, Fold, clinicalCard } from './primitives'
-import { blockReasonLabel, dateLabel, money } from './model'
+import { dateLabel, money } from './model'
 import { localDateTime } from '@/lib/clinical-calendar/time'
 
 export function PreparationPanel({ ui }: { ui: BillingUi }) {
@@ -19,8 +19,5 @@ export function PreparationPanel({ ui }: { ui: BillingUi }) {
       </article>)}{!candidates.length && <p className="text-sm">Aucun premier rendez-vous à confirmer dans cette projection.</p>}</div>
     </Fold>}
     {current.mode === 'isolated_unified' && <section className={clinicalCard}><h3 className="font-semibold">Frais d’ouverture</h3><p className="mt-2 text-sm">Les frais d’ouverture sont ajoutés une seule fois à la première rencontre facturée d’un nouveau dossier, selon la décision enregistrée dans sa fiche. Pour un dossier existant ou migré, vérifiez cette décision avant de facturer afin de ne pas refacturer une ancienne ouverture.</p></section>}
-    <Fold title={'Rencontres terminées et facturation (' + current.eligibleActivities.length + ')'}>
-      <div className="grid gap-3">{current.eligibleActivities.map(activity => <article key={activity.id} className="rounded-xl border border-[#eadfd2] p-3"><div className="flex flex-wrap justify-between gap-2"><strong>{activity.clientName}</strong><Badge tone={activity.prepared ? 'success' : activity.blockedReason ? 'warning' : 'neutral'}>{activity.prepared ? 'Préparée' : activity.blockedReason === 'J_PLUS_ONE_PENDING' ? 'Préparation dès le lendemain' : activity.blockedReason ? 'À vérifier' : 'En attente de préparation'}</Badge></div><p className="mt-2 text-sm">{dateLabel(activity.serviceDate)} · {activity.actualMinutes} min · {activity.professionalName}</p>{activity.travelKilometers !== '0' && <p className="mt-1 text-xs">Déplacement : {activity.travelKilometers} km</p>}{activity.blockedReason && <p className="mt-2 text-sm text-amber-900">{blockReasonLabel(activity.blockedReason)}</p>}<div className="mt-3 flex flex-wrap gap-2"><button className={buttonClass('secondary')} onClick={() => void ui.openModule('calendar', { client: activity.clientId, scope: 'client', view: 'day', day: activity.serviceDate, appointment: activity.appointmentId })}>Ouvrir l’activité</button><button className={buttonClass('ghost')} onClick={() => void ui.openModule('mandates', { client: activity.clientId, episode: activity.episodeId })}>Vérifier le mandat de cet épisode</button><button className={buttonClass('ghost')} onClick={() => void ui.select({ billingTab: 'fees', feePro: activity.professionalId, statement: null, feeStatus: null, feePage: null })}>Honoraires du professionnel</button>{activity.prepared && <button className={buttonClass('secondary')} onClick={() => void ui.select({ billingTab: 'invoices', client: activity.clientId, activity: activity.id, invoiceId: null, page: null, search: null, status: 'all' })}>Voir les factures de cette activité</button>}</div></article>)}{!current.eligibleActivities.length && <p className="text-sm">Aucune rencontre terminée à facturer.</p>}</div>
-    </Fold>
   </div>
 }
