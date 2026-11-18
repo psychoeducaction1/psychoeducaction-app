@@ -20,9 +20,12 @@ test('migration individuelle : transaction complète, historique, mandat validé
   // fixture. Its operator capability column is represented below, without grants.
   const extra=(await readdir(new URL('../supabase/clinical/',import.meta.url))).filter(n=>/^real-(4[6-9]\d|[5-8]\d\d)-.*\.sql$/.test(n)&&!n.startsWith('real-820-')).sort()
   extra.splice(extra.indexOf('real-530-unified-mandates.sql'),0,extra.splice(extra.indexOf('real-535-unified-pdf-renderers.sql'),1)[0])
-  for(const name of [...initial,...extra,'real-910-mandate-date-guards.sql','real-920-individual-client-migration.sql']) {
+  for(const name of [...initial,...extra,'real-910-mandate-date-guards.sql','real-920-individual-client-migration.sql','real-930-migration-report-removal.sql','real-940-migration-safe-errors.sql','real-950-migration-selected-historical-rate.sql']) {
    if(name==='real-920-individual-client-migration.sql')await db.exec('alter table clinical.migration_operators add column can_import boolean not null default true')
+   const canonical=`select p.oid::regprocedure::text identity,pg_get_functiondef(p.oid) definition from pg_proc p where p.oid in('clinical.ensure_mandate_for_case(uuid)'::regprocedure,'clinical.mandate_case_after_insert()'::regprocedure,'public.clinical_link_existing_assignment(uuid,uuid)'::regprocedure,'clinical.migration_link_assignment(uuid,uuid)'::regprocedure) order by 1`
+   const before=name.startsWith('real-950-')?(await db.query(canonical)).rows:null
    try {await db.exec(await source('supabase/clinical/'+name))} catch(error){throw new Error('Fixture migration '+name+': '+error.message,{cause:error})}
+   if(before)assert.deepEqual((await db.query(canonical)).rows,before,'ordinary assignment and case-trigger routines unchanged')
   }
   const admin='98300000-0000-4000-8000-000000000001',pro='98300000-0000-4000-8000-000000000002'
   await db.exec('create table auth.users(id uuid primary key,email text,aud text,role text)')
@@ -164,13 +167,35 @@ test('migration individuelle : transaction complète, historique, mandat validé
    const wid=randomUUID(),aid=randomUUID()
    await db.query(`insert into public.waiting_list_clients(id,status,priority_level,service_requested,client_name,birth_date,consultation_reason) values($1,'assigned','normal','Psychoéducation','Opérationnel Fictif','2000-01-01','Motif fictif')`,[wid])
    await db.query(`insert into public.assigned_clients(id,professional_id,waiting_list_client_id,first_name,last_name,email,contacted,is_active,dossier_closed) values($1,$2,$3,'Opérationnel','Fictif','',true,true,false)`,[aid,pro,wid])
+   // Historical assignment predates the first catalogue rate. It must not
+   // create an intermediate mandate before the individually selected rate.
+   await db.query("update public.assigned_clients set created_at='2001-01-01T12:00:00Z' where id=$1",[aid])
    const fingerprint=(await db.query("select encode(sha256(convert_to(to_jsonb(a)::text,'UTF8')),'hex') f from public.assigned_clients a where id=$1",[aid])).rows[0].f
    const before=(await db.query('select count(*)::int n from public.assigned_clients')).rows[0].n
-   const answer=await saveFresh({...row,sourceKey:'fixture-individual:operational',firstName:'Opérationnel',lastName:'Fictif',birthDate:'2000-01-01',decision:'operational',assignmentId:aid,assignmentFingerprint:fingerprint,associationConfirmed:true})
+   const answer=await saveFresh({...row,sourceKey:'fixture-individual:operational',firstName:'Opérationnel',lastName:'Fictif',birthDate:'2000-01-01',supervisorId:'98300000-0000-4000-8000-000000000003',preparation:{...preparation,startDate:'2002-02-03',contactDate:'2001-01-02',outcome:'closed',rateCents:14750,rateSource:'manual'},decision:'operational',assignmentId:aid,assignmentFingerprint:fingerprint,associationConfirmed:true})
    assert.equal(answer.items[0].status,'imported',answer.items[0].error_code)
    assert.equal((await db.query('select count(*)::int n from public.assigned_clients')).rows[0].n,before)
    const result=answer.items[0].result
    assert.equal((await db.query("select source_id from clinical.legacy_assignment_links where patient_id=$1 and source_table='assigned_clients'",[result.patientId])).rows[0].source_id,aid)
+   const revisions=(await db.query('select r.rate_cents,r.unified_draft,r.status from clinical.mandate_revisions r where r.mandate_id=$1',[result.mandateId])).rows
+   assert.equal(revisions.length,1,'no intermediate mandate revision')
+   assert.equal(revisions[0].rate_cents,14750)
+   assert.equal(revisions[0].unified_draft.serviceDate,'2002-02-03')
+   assert.equal(revisions[0].unified_draft.supervisorId,'98300000-0000-4000-8000-000000000003')
+   const documents=(await db.query('select id,sha256 from clinical.mandate_documents where revision_id=(select current_revision_id from clinical.mandates where id=$1) order by id',[result.mandateId])).rows
+   const patientsBeforeRetry=(await db.query('select count(*)::int n from clinical.patients')).rows[0].n
+   const confirmed=answer.items[0]
+   const replay=await command('client.save',answer.batch.id,{sourceKey:confirmed.source_key,expectedVersion:answer.batch.version,payload:confirmed.payload,documents:[],staged:true})
+   assert.equal(replay.items[0].result.patientId,result.patientId)
+   assert.equal(replay.items[0].result.caseId,result.caseId)
+   assert.equal((await db.query('select count(*)::int n from clinical.patients')).rows[0].n,patientsBeforeRetry)
+   assert.equal((await db.query('select count(*)::int n from clinical.mandate_revisions where mandate_id=$1',[result.mandateId])).rows[0].n,1)
+   assert.deepEqual((await db.query('select id,sha256 from clinical.mandate_documents where revision_id=(select current_revision_id from clinical.mandates where id=$1) order by id',[result.mandateId])).rows,documents)
+
+   assert.equal((await db.query('select created_at from public.assigned_clients where id=$1',[aid])).rows[0].created_at.toISOString(),'2001-01-01T12:00:00.000Z')
+   assert.equal((await db.query('select status from clinical.care_cases where id=$1',[result.caseId])).rows[0].status,'closed')
+   assert.equal((await db.query("select has_function_privilege('authenticated','clinical.migration_link_assignment_individual(uuid,uuid)','execute') allowed")).rows[0].allowed,false)
+
   })
   await t.test('mineur : représentant déjà vérifié conservé, requérant financier sans pouvoir de consentement',async()=>{
    const pid=(await db.query(`select public.clinical_create_patient('Mineur','Représentation fictive','2018-01-01') id`)).rows[0].id
