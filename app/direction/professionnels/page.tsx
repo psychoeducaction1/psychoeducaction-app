@@ -1073,6 +1073,7 @@ export default function DirectionProfessionnelsPage() {
                                 {row.fullName}
                               </Link>
                               {civilitySelect(row)}
+                              <Link href={`/direction/professionnels/${row.id}/apercu`} prefetch={false} className="mt-2 block text-sm font-medium text-[#6d3f1f] underline">Voir l’espace professionnel</Link>
                             </td>
                             <td className={tableCellClass}>{row.email}</td>
                             <td className={tableCellClass}>
@@ -1226,6 +1227,7 @@ export default function DirectionProfessionnelsPage() {
                                 {row.fullName}
                               </Link>
                               {civilitySelect(row)}
+                              <Link href={`/direction/professionnels/${row.id}/apercu`} prefetch={false} className="mt-2 block text-sm font-medium text-[#6d3f1f] underline">Voir l’espace professionnel</Link>
                             </td>
                             <td className={tableCellClass}>{row.email}</td>
                             <td className={tableCellClass}>
