@@ -1,5 +1,6 @@
 'use client'
 import { usesUnifiedDirectionNavigation } from '@/lib/directionNavigation'
+import type { MouseEvent } from 'react'
 
 import { hasDirectionAccess } from '@/lib/administrativeAccess'
 
@@ -98,6 +99,13 @@ export default function DirectionProfessionnelsPage() {
   const router = useRouter()
   const [auditActor, setAuditActor] = useState<AuditActor | null>(null)
   const professionalFileBase = usesUnifiedDirectionNavigation(auditActor?.id, !!auditActor, process.env.NEXT_PUBLIC_PEA_CLINICAL_REAL === 'true') ? '/administration/professionnels' : '/professionnel'
+  const professionalFileHref = (id: string) => `${professionalFileBase}/${id}${professionalFileBase === '/administration/professionnels' ? '?tab=requests' : ''}`
+  const openProfessionalFile = (event: MouseEvent<HTMLAnchorElement>, id: string) => {
+    if (professionalFileBase !== '/administration/professionnels' || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return
+    // Dispose the legacy router before entering the clinical history-based shell.
+    event.preventDefault()
+    window.location.assign(professionalFileHref(id))
+  }
   const [rows, setRows] = useState<ProfessionalRow[]>([])
   const [archivedRows, setArchivedRows] = useState<ProfessionalRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -1057,7 +1065,9 @@ export default function DirectionProfessionnelsPage() {
                           <tr key={row.id} className={tableRowClass}>
                             <td className="px-4 py-3 align-top text-[#332820]">
                               <Link
-                                href={`${professionalFileBase}/${row.id}`}
+                                href={professionalFileHref(row.id)}
+                                onClick={event => openProfessionalFile(event, row.id)}
+                                prefetch={professionalFileBase === '/administration/professionnels' ? false : undefined}
                                 className="font-medium text-[#6d3f1f] underline decoration-[#d9b591] underline-offset-2 hover:decoration-[#9b6a3d]"
                               >
                                 {row.fullName}
@@ -1208,7 +1218,9 @@ export default function DirectionProfessionnelsPage() {
                           <tr key={row.id} className={tableRowClass}>
                             <td className="px-4 py-3 align-top text-[#332820]">
                               <Link
-                                href={`${professionalFileBase}/${row.id}`}
+                                href={professionalFileHref(row.id)}
+                                onClick={event => openProfessionalFile(event, row.id)}
+                                prefetch={professionalFileBase === '/administration/professionnels' ? false : undefined}
                                 className="font-medium text-[#6d3f1f] underline decoration-[#d9b591] underline-offset-2 hover:decoration-[#9b6a3d]"
                               >
                                 {row.fullName}
