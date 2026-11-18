@@ -20,7 +20,7 @@ test('migration individuelle : transaction complète, historique, mandat validé
   // fixture. Its operator capability column is represented below, without grants.
   const extra=(await readdir(new URL('../supabase/clinical/',import.meta.url))).filter(n=>/^real-(4[6-9]\d|[5-8]\d\d)-.*\.sql$/.test(n)&&!n.startsWith('real-820-')).sort()
   extra.splice(extra.indexOf('real-530-unified-mandates.sql'),0,extra.splice(extra.indexOf('real-535-unified-pdf-renderers.sql'),1)[0])
-  for(const name of [...initial,...extra,'real-910-mandate-date-guards.sql','real-920-individual-client-migration.sql','real-930-migration-report-removal.sql','real-940-migration-safe-errors.sql','real-950-migration-selected-historical-rate.sql']) {
+  for(const name of [...initial,...extra,'real-910-mandate-date-guards.sql','real-920-individual-client-migration.sql','real-930-migration-report-removal.sql','real-940-migration-safe-errors.sql','real-950-migration-selected-historical-rate.sql','real-960-migration-identity-conflicts.sql']) {
    if(name==='real-920-individual-client-migration.sql')await db.exec('alter table clinical.migration_operators add column can_import boolean not null default true')
    const canonical=`select p.oid::regprocedure::text identity,pg_get_functiondef(p.oid) definition from pg_proc p where p.oid in('clinical.ensure_mandate_for_case(uuid)'::regprocedure,'clinical.mandate_case_after_insert()'::regprocedure,'public.clinical_link_existing_assignment(uuid,uuid)'::regprocedure,'clinical.migration_link_assignment(uuid,uuid)'::regprocedure) order by 1`
    const before=name.startsWith('real-950-')?(await db.query(canonical)).rows:null
@@ -196,6 +196,25 @@ test('migration individuelle : transaction complète, historique, mandat validé
    assert.equal((await db.query('select status from clinical.care_cases where id=$1',[result.caseId])).rows[0].status,'closed')
    assert.equal((await db.query("select has_function_privilege('authenticated','clinical.migration_link_assignment_individual(uuid,uuid)','execute') allowed")).rows[0].allowed,false)
 
+  })
+  await t.test('naissance contradictoire : refus explicite sans mutation ; reprise corrigée sur le même dossier',async()=>{
+   await db.exec(`select set_config('request.jwt.claim.sub','${admin}',false)`)
+   const pid=(await db.query("select public.clinical_create_patient('Identité','Fictive','2000-01-01') id")).rows[0].id
+   const ep=(await db.query("select public.clinical_create_episode($1,null,'Contrôle fictif') id",[pid])).rows[0].id
+   const cid=(await db.query(`select public.clinical_create_case($1,'Dossier fictif',jsonb_build_array(jsonb_build_object('actorId',$2::uuid,'canRead',true,'canWrite',true,'canCosign',false,'requiresCosignature',false,'supervisorId',null))) id`,[ep,pro])).rows[0].id
+   const v=(await db.query('select version from clinical.patients where id=$1',[pid])).rows[0].version
+   const candidate={...row,sourceKey:'fixture-identity:date',firstName:'Identité',lastName:'Fictive',birthDate:'2000-01-02',decision:'link',patientId:pid,patientVersion:v,caseId:cid,associationConfirmed:true}
+   const bid=randomUUID();const prepared=await command('prepare',bid,{label:'Contrôle fictif',clientByClient:true,files:[],items:[candidate]})
+   const send=payload=>command('client.save',bid,{expectedVersion:prepared.batch.version,sourceKey:payload.sourceKey,payload,documents:[],staged:true})
+   const before=(await db.query('select count(*)::int n from clinical.patients')).rows[0].n
+   await assert.rejects(send(candidate),e=>e.code==='22023'&&e.message==='MIGRATION_BIRTH_DATE_MISMATCH')
+   const unchanged=(await db.query('select birth_date::text birth,version from clinical.patients where id=$1',[pid])).rows[0]
+   assert.equal(unchanged.birth,'2000-01-01');assert.equal(unchanged.version,v)
+   await assert.rejects(send({...candidate,birthDate:'2000-01-01',patientVersion:v+1}),e=>e.code==='PT409'&&e.message==='PATIENT_CHANGED')
+   const saved=await send({...candidate,birthDate:'2000-01-01'})
+   assert.equal(saved.items[0].status,'imported',saved.items[0].error_code)
+   assert.equal(saved.items[0].result.patientId,pid);assert.equal(saved.items[0].result.caseId,cid)
+   assert.equal((await db.query('select count(*)::int n from clinical.patients')).rows[0].n,before)
   })
   await t.test('mineur : représentant déjà vérifié conservé, requérant financier sans pouvoir de consentement',async()=>{
    const pid=(await db.query(`select public.clinical_create_patient('Mineur','Représentation fictive','2018-01-01') id`)).rows[0].id

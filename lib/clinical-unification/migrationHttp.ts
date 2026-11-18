@@ -1,3 +1,4 @@
+import { migrationRpcFailure } from '../clinical-migration/errors.ts'
 import { JsonBodyError, readBoundedJsonObject } from '../boundedJsonBody.ts'
 import { unifiedJson, type UnifiedDomainHandler } from './http.ts'
 export const handleMigration: UnifiedDomainHandler = async (request, segments, identity) => {
@@ -28,5 +29,5 @@ export const handleMigration: UnifiedDomainHandler = async (request, segments, i
   if(Object.keys(body).some(k=>!['action','batchId','data'].includes(k))||!['simulate','confirm','item','preset','file','correct','upload.chunk','prepare','client.defaults','client.save','report.hide'].includes(String(body.action))||!body.data||typeof body.data!=='object'||Array.isArray(body.data))return unifiedJson({error:'Requête invalide.'},400)
   if(body.action!=='preset'&&!uuid.test(String(body.batchId)))return unifiedJson({error:'Identifiant de lot invalide.'},400)
   return unifiedJson(await identity.transport.rpc('clinical_migration_command',{p_action:body.action,p_batch:body.batchId??null,p_data:body.data},identity.token))
-  } catch(error) { if(error instanceof JsonBodyError)return unifiedJson({error:'Fichier ou requête trop volumineux ou invalide.'},error.status);throw error }
+  } catch(error) { const failure=migrationRpcFailure(error);if(failure)return unifiedJson({error:failure.message,code:failure.code},failure.status);if(error instanceof JsonBodyError)return unifiedJson({error:'Fichier ou requête trop volumineux ou invalide.'},error.status);throw error }
 }

@@ -64,6 +64,8 @@ export function migrationExistingErrors(rows:MigrationRow[],people:MigrationPers
   if(row.decision==='skip')return[]
   const sameName=migrationMatches(row,[...people,...operational]).filter(m=>fold(m.person.firstName)===fold(row.firstName)&&fold(m.person.lastName)===fold(row.lastName))
   if(row.decision==='create'&&sameName.length)return['Ligne '+(i+1)+' : un dossier porte déjà ce nom; vérifiez la correspondance ou ignorez cette ligne avant toute création.']
+  const selected=row.decision==='link'?people.find(person=>person.id===row.patientId):row.decision==='operational'?operational.find(person=>person.id===row.assignmentId):undefined
+  if(selected&&row.birthDate&&selected.birthDate&&row.birthDate!==selected.birthDate)return['Ligne '+(i+1)+' : la date de naissance saisie diffère de celle du dossier sélectionné. Vérifiez et corrigez la date avant de valider.']
   const existing=people.find(p=>p.id===row.patientId)?.cases.filter(c=>c.status==='open'&&c.professionalIds.includes(row.professionalId))??[]
   if(row.decision==='link'&&existing.length&&!existing.some(c=>c.id===row.caseId))return['Ligne '+(i+1)+' : sélectionnez le suivi existant du professionnel pour éviter un doublon.']
   return[]

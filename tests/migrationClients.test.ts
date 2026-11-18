@@ -60,7 +60,7 @@ test('fiche réelle : champs facultatifs, parts multiples, montant modifiable et
  let row={...emptyMigrationRow('fixture:ui'),firstName:'Client',lastName:'Fictif',decision:'create' as const}
  row={...row,preparation:{...preparation.preparationFromSource(row),requesters:[{key:'requester-1',fullName:'Parent Fictif',email:'',phone:'',address:'',relationship:''}]}}
  let saved=0
- const render=(locked=false)=>(exports.MigrationClientPreparation as (props:Record<string,unknown>)=>ReactNode)({row,disabled:false,saved:locked,onChange:(value:preparation.MigrationPreparation)=>{row={...row,preparation:value}},onDefaults(){},onSave(){saved++}})
+ const render=(locked=false,identityErrors:string[]=[])=>(exports.MigrationClientPreparation as (props:Record<string,unknown>)=>ReactNode)({row,identityErrors,disabled:false,saved:locked,onChange:(value:preparation.MigrationPreparation)=>{row={...row,preparation:value}},onDefaults(){},onSave(){saved++}})
  const markup=renderToStaticMarkup(render())
  assert.match(markup,/Motif de consultation/)
  assert.doesNotMatch(markup,/Autres courriels|Autres téléphones|Contenu clinique de la nouvelle convention|Conditions et modalités administratives|Charger le contenu depuis les paramètres/)
@@ -73,6 +73,8 @@ test('fiche réelle : champs facultatifs, parts multiples, montant modifiable et
  for(const label of labels){const input=elements(render()).find(node=>node.type==='input'&&node.props['aria-label']===label)!;(input.props.onChange as(e:unknown)=>void)({target:{value:'50'}})}
  const button=elements(render()).find(node=>node.type==='button'&&node.props.children==='Enregistrer et valider ce client')!
  assert.equal(button.props.disabled,false);(button.props.onClick as()=>void)();assert.equal(saved,1)
+ const blocked=elements(render(false,['La date de naissance diffère.'])).find(node=>node.type==='button'&&node.props.children==='Enregistrer et valider ce client')!
+ assert.equal(blocked.props.disabled,true);assert.match(renderToStaticMarkup(render(false,['La date de naissance diffère.'])),/date de naissance diffère/)
  assert.equal(elements(render(true)).find(node=>node.type==='button'&&node.props.children==='Client enregistré et validé')?.props.disabled,true)
 })
 

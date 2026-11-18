@@ -1,3 +1,4 @@
+import { migrationRpcFailure } from '../clinical-migration/errors.ts'
 import { mandateDateFailure } from '../clinical-mandates/dateErrors.ts'
 import { financialFailureCode, isFinancialRpcRejection } from '../clinical-finance/errors.ts'
 import { calendarFailure } from '../clinical-calendar/errors.ts'
@@ -28,14 +29,15 @@ export function realClinicalTransport() {
         body: JSON.stringify(args) })
       const value: unknown = await response.json().catch(() => null)
       if (!response.ok) {
+        const migration = name === 'clinical_migration_command' ? migrationRpcFailure(value) : null
         const prerequisite = mandateDefaultFailure(value)
         const mandateDate = mandateDateFailure(value)
         const financialCode = name === 'clinical_unified_finance_command' || name === 'clinical_unified_fee_quote' ? financialFailureCode(value) ?? (isFinancialRpcRejection(value) ? 'FINANCE_RPC_REJECTED' : null) : null
         const transcriptCode = name === 'clinical_unified_encounter_transcript' && value && typeof value === 'object' && 'message' in value && typeof value.message === 'string' && ['TRANSCRIPT_VERSION_CONFLICT','TRANSCRIPT_SIGNED_NOTE_LOCKED','TRANSCRIPT_OPERATION_CONFLICT','TRANSCRIPT_INVALID'].includes(value.message) ? value.message : null
         const calendar = name.startsWith('clinical_unified_calendar_') || name.startsWith('clinical_unified_encounter_') ? calendarFailure(value, 'clinical') : null
-        const error = new Error(prerequisite?.code ?? 'REAL_CLINICAL_RPC_FAILED') as Error & { code?: string; mandateStartDate?: string }
+        const error = new Error(migration?.code ?? prerequisite?.code ?? 'REAL_CLINICAL_RPC_FAILED') as Error & { code?: string; mandateStartDate?: string }
         if (mandateDate) error.mandateStartDate = mandateDate.startDate
-        error.code = mandateDate?.code ?? financialCode ?? transcriptCode ?? calendar?.code ?? (value && typeof value === 'object' && 'code' in value && typeof value.code === 'string' ? value.code : undefined)
+        error.code = migration?.code ?? mandateDate?.code ?? financialCode ?? transcriptCode ?? calendar?.code ?? (value && typeof value === 'object' && 'code' in value && typeof value.code === 'string' ? value.code : undefined)
         throw error
       }
       return finishDocumentRpc(value, url, operation, name)
