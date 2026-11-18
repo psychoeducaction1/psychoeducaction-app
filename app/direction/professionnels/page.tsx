@@ -1,4 +1,5 @@
 'use client'
+import { usesUnifiedDirectionNavigation } from '@/lib/directionNavigation'
 
 import { hasDirectionAccess } from '@/lib/administrativeAccess'
 
@@ -96,6 +97,7 @@ type AuditActor = {
 export default function DirectionProfessionnelsPage() {
   const router = useRouter()
   const [auditActor, setAuditActor] = useState<AuditActor | null>(null)
+  const professionalFileBase = usesUnifiedDirectionNavigation(auditActor?.id, !!auditActor, process.env.NEXT_PUBLIC_PEA_CLINICAL_REAL === 'true') ? '/administration/professionnels' : '/professionnel'
   const [rows, setRows] = useState<ProfessionalRow[]>([])
   const [archivedRows, setArchivedRows] = useState<ProfessionalRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -1055,7 +1057,7 @@ export default function DirectionProfessionnelsPage() {
                           <tr key={row.id} className={tableRowClass}>
                             <td className="px-4 py-3 align-top text-[#332820]">
                               <Link
-                                href={`/professionnel/${row.id}`}
+                                href={`${professionalFileBase}/${row.id}`}
                                 className="font-medium text-[#6d3f1f] underline decoration-[#d9b591] underline-offset-2 hover:decoration-[#9b6a3d]"
                               >
                                 {row.fullName}
@@ -1206,7 +1208,7 @@ export default function DirectionProfessionnelsPage() {
                           <tr key={row.id} className={tableRowClass}>
                             <td className="px-4 py-3 align-top text-[#332820]">
                               <Link
-                                href={`/professionnel/${row.id}`}
+                                href={`${professionalFileBase}/${row.id}`}
                                 className="font-medium text-[#6d3f1f] underline decoration-[#d9b591] underline-offset-2 hover:decoration-[#9b6a3d]"
                               >
                                 {row.fullName}

@@ -14,11 +14,11 @@ function harness(file,fetcher,confirm=()=>true){
  const hooks={useState(v){const i=cursor++;if(!(i in states))states[i]=typeof v==='function'?v():v;return[states[i],v=>states[i]=typeof v==='function'?v(states[i]):v]},useRef(v){const i=refCursor++;return refs[i]??={current:v}},useEffect(fn){effects.push(fn)},useCallback(fn){return fn}}
  class ApiError extends Error{constructor(message,status){super(message);this.status=status}}
  const exports={},code=ts.transpileModule(readFileSync(new URL('../components/clinical-admission/'+file,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText
- runInNewContext(code,{exports,Error,URLSearchParams,crypto:{randomUUID:()=>id},window:{confirm},require(name){
+ runInNewContext(code,{exports,Error,URLSearchParams,crypto:{randomUUID:()=>id},window:{confirm},fetch:fetcher,Headers,require(name){
   if(name==='react')return hooks;if(name==='react/jsx-runtime')return require(name)
   if(name==='@/components/Ui')return{buttonClass:()=>'',Badge:({children})=>children}
   if(name==='@/components/clinical-workspace/NavigationGuard')return{useClinicalNavigation:()=>({canLeave:async()=>true}),useClinicalFormGuard(){}}
-  if(name==='@/lib/clinical-unification/authClient')return{clinicalSessionFetch:fetcher}
+  if(name==='@/lib/clinical-unification/authClient')return{clinicalSessionHeaders:async()=>({Authorization:'Bearer fictitious-token'})}
   if(name==='@/lib/clinical-workspace/api')return{ClinicalApiError:ApiError}
   if(name==='@/lib/assignmentRequestComment')return{assignmentRequestComment:v=>({notes:[v]})}
   if(name==='./shared')return{panelClass:'',text:v=>String(v??''),ActionForm:props=>{forms.push(props);return createElement('form',null,createElement('button',null,props.submitLabel))}}
@@ -50,6 +50,6 @@ test('toutes les demandes administratives sont modifiables ; suppression confirm
  approved=true;tree=h.render('AdministrativeCapacityPanel',props);nodes(tree).find(n=>n.type==='button'&&n.props.children==='Supprimer la demande').props.onClick();await tick()
  tree=h.render('AdministrativeCapacityPanel',props);nodes(tree).find(n=>n.type==='button'&&n.props.children==='Supprimer la demande').props.onClick();await tick()
  const deletes=calls.filter(c=>c.options.method==='DELETE');assert.equal(deletes.length,2)
- assert.equal(deletes[0].options.headers['Idempotency-Key'],deletes[1].options.headers['Idempotency-Key']);assert.equal(deletes[0].options.headers['If-Match'],'4')
+ assert.equal(deletes[0].options.headers.get('Idempotency-Key'),deletes[1].options.headers.get('Idempotency-Key'));assert.equal(deletes[0].options.headers.get('If-Match'),'4')
  assert.ok(calls.every(c=>c.url.startsWith('/api/direction/assignment-requests/')))
 })

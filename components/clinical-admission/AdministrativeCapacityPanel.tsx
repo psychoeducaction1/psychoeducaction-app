@@ -2,7 +2,7 @@
 import {useEffect,useRef,useState,type ReactNode} from 'react'
 import {buttonClass} from '@/components/Ui'
 import {useClinicalFormGuard,useClinicalNavigation} from '@/components/clinical-workspace/NavigationGuard'
-import {clinicalSessionFetch} from '@/lib/clinical-unification/authClient'
+import {clinicalSessionHeaders} from '@/lib/clinical-unification/authClient'
 import {ClinicalApiError} from '@/lib/clinical-workspace/api'
 import type {ProfessionalCapacityRequest} from '@/lib/clinical-admission/types'
 import {assignmentRequestComment} from '@/lib/assignmentRequestComment'
@@ -10,13 +10,13 @@ import {ActionForm,panelClass,text,type AdmissionUi} from './shared'
 type Summary={linkedClients:number;serviceTaken:number;serviceNotTaken:number;pending:number}
 type Intent={key:string;version:number;summary:Summary}
 const comment=(r:ProfessionalCapacityRequest)=>r.offerSlots.length?assignmentRequestComment(r.comment).notes.join('\n'):r.comment
-async function json<T>(id:string,init?:RequestInit):Promise<T>{const r=await clinicalSessionFetch('/api/direction/assignment-requests/'+id,init);const value=await r.json().catch(()=>null);if(!r.ok)throw new ClinicalApiError(value?.error??'La demande ne peut pas être vérifiée.',r.status);return value as T}
+async function json<T>(id:string,init?:RequestInit):Promise<T>{if(!/^[a-f0-9-]{36}$/i.test(id))throw new ClinicalApiError('Identifiant de demande invalide.',400);const headers=new Headers(init?.headers);for(const [key,value]of Object.entries(await clinicalSessionHeaders()))headers.set(key,value);const r=await fetch('/api/direction/assignment-requests/'+id,{...init,headers,credentials:'same-origin',cache:'no-store',redirect:'error'});const value=await r.json().catch(()=>null);if(!r.ok)throw new ClinicalApiError(value?.error??'La demande ne peut pas être vérifiée.',r.status);return value as T}
 export function AdministrativeCapacityPanel({ui,professionalId,requests,renderSummary}:{ui:AdmissionUi;professionalId:string;requests:ProfessionalCapacityRequest[];renderSummary:(r:ProfessionalCapacityRequest)=>ReactNode}){
  const [canDelete,setCanDelete]=useState(false),[deleting,setDeleting]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[deleted,setDeleted]=useState<string[]>([])
  const intents=useRef(new Map<string,Intent>()),pending=useRef(false),navigation=useClinicalNavigation()
  useClinicalFormGuard(false,deleting)
  const first=requests[0]?.id
- useEffect(()=>{setCanDelete(false);if(!first)return;let current=true;void json<{canDelete:boolean}>(first).then(v=>{if(current)setCanDelete(v.canDelete===true)}).catch(()=>{});return()=>{current=false}},[first,ui.data.actorId])
+ useEffect(()=>{setCanDelete(false);if(!first)return;let current=true;void json<{canDelete:boolean}>(first).then(v=>{if(current)setCanDelete(v.canDelete===true)}).catch(cause=>{if(current&&(!(cause instanceof ClinicalApiError)||cause.status!==403))setError('La vérification du droit de suppression a échoué. Actualisez la fiche pour réessayer.')});return()=>{current=false}},[first,ui.data.actorId])
  const remove=async(r:ProfessionalCapacityRequest)=>{
   if(pending.current||ui.busy||!canDelete||!await navigation.canLeave())return
   pending.current=true;setDeleting(true);setError('');setNotice('')
