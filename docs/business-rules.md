@@ -353,3 +353,10 @@ Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workfl
 - Éditions versionnées avec refus des écrasements concurrents; les documents de procédure ne modifient aucune règle métier.
 - PDF privés versionnés, 3 Mo par fichier, contrôle d’accès à chaque requête, aucune URL publique permanente. Pièces jointes en base: leurs versions consomment le quota PostgreSQL; elles ne remplacent pas le moteur Storage des documents cliniques.
 - Migrations001/002/003 et cinq adhésions explicitement autorisées et appliquées; les déploiements ultérieurs n’activent aucun nouveau membre automatiquement.
+
+## Migration individuelle — 920 intégrée localement, activation en attente
+- Professionnel choisi avant dépôt; chaque validation traite un seul client, sans consommer de capacité ni générer de rencontre/facture/courriel historique.
+- Association fiable ou création, reprise idempotente; champs renseignés remplacent, blancs conservent. États actif/non pris/terminé distincts.
+- Fichier prioritaire pour le tarif; valeurs par défaut135$ psychoéducation/100$ intervention psychoéducative, ajustables avant validation. Payeurs facultatifs à la migration, parts totalisant100% si renseignées; compléter les destinataires financiers avant facturation.
+- Mandats préparés/versionnés et conventions antérieures conservées. Acceptation professionnelle datée séparément de l’ajout graphique; aucun consentement du client ni pouvoir de représentation inventé.
+- Opérateurs explicites requis; aucune extension des rôles globaux ou des droits de gestion des accès des adjointes.
