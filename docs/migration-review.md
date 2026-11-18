@@ -27,3 +27,7 @@ Conservés : validation manuelle client par client ; contrôles d'identité/perm
 19 tests ciblés fictifs passent (modèle, reprise, transferts, refus d'accès, réponse perdue et rendu/événements du composant réel de sélection), TypeScript global sans émission et ESLint ciblé passent, diff vérifié. Les contrôles PostgreSQL de 960 sont réutilisés : aucune modification SQL/API/permission. Pas de nouveau build complet ni recette navigateur authentifiée ; à faire lors de la publication autorisée et de la recette utilisateur. Aucun import, donnée réelle lue/modifiée, courriel, appel IA, abonnement ou déploiement.
 
 Le lot est préparé localement ; publication distincte à autoriser. Aucun script SQL à appliquer. Le prochain candidat doit partir du manifeste MIGRATION_960_RELEASE.json et superposer uniquement les composants/helpers de ce lot.
+
+## Publication autorisée — 18 novembre 2026
+
+Lot fonctionnel ae6c449 publié sur le projet existant : dpl_mnZQW8D9feosMpXTvVaUtrMFHWAt, READY et alias app.psychoeducaction.com vérifiés. Manifeste MIGRATION_REVIEW_RELEASE.json : 594 fichiers vérifiés depuis la version 960 ; reçu MIGRATION_REVIEW_LIVE_PROMOTED.json. Compilation Vercel réussie. API anonyme refusée (401, privé/no-store). Aucun script SQL exécuté, données/droits/configurations inchangés, aucun import ni courriel. Recette authentifiée et essais utilisateur non exécutés. Retour arrière applicatif : dpl_Gw3Ay4JneJYN76xYn5mW9CRDAUqK.
