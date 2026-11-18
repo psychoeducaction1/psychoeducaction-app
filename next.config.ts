@@ -39,8 +39,8 @@ const nextConfig: NextConfig = {
   },
   outputFileTracingExcludes: { '/*': ['./.local-clinical/**', './.pilot-private/**', './.env*', './output/**'] },
   outputFileTracingIncludes: {
-    '/api/clinical-workspace/mandates/**': ['./public/fonts/SignatureCursive.ttf'],
-    '/api/clinical-workspace/**': ['./public/psychoeducaction-email-logo.png'],
+    // App Router serves mandates through [[...segments]], not a mandates route file.
+    '/api/clinical-workspace/**': ['./public/psychoeducaction-email-logo.png', './public/fonts/SignatureCursive.ttf'],
   },
   ...(local || staging || real ? {
     headers: async () => controlled ? ['/clinique/:path*', '/administration/:path*', '/signature-convention', '/api/clinical-workspace/:path*', '/procedures/:path*', '/api/procedures/:path*'].map(source => ({ source, headers: controlledClinicalHeaders(process.env) })) : [{ source: '/:path*', headers: real ? unificationSecurityHeaders() : staging ? stagingSecurityHeaders() : developmentSecurityHeaders(process.env.NODE_ENV === 'production') }],
