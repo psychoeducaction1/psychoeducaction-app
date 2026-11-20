@@ -455,8 +455,8 @@ export default function DirectionPaiePage() {
 
     try {
       const { record } = await prepareInvoice(professionalResult)
-      const subject = `Facture ${record.number} — version ${record.version} - Clinique PsychoÉducAction`
-      const message = buildPayrollEmailMessage(professionalResult, period, `${record.number} — version ${record.version}`)
+      const subject = `Facture ${record.number} - Clinique PsychoÉducAction`
+      const message = buildPayrollEmailMessage(professionalResult, period, record.number)
       const response = await fetch('/api/direction/payroll-invoice-email', {
         method: 'POST',
         headers: {
