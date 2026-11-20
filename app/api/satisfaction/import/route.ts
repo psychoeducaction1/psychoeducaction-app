@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSuperAdminContext } from '@/lib/superAdminServer'
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
+import { JsonBodyError, readBoundedJsonObject } from '@/lib/boundedJsonBody'
 import {
   buildEligibleList,
   detectEncounterPeriod,
@@ -100,9 +101,9 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    body = (await request.json()) as typeof body
-  } catch {
-    return jsonResponse({ error: 'Body JSON invalide.' }, 400)
+    body = await readBoundedJsonObject(request, 4 * 1024 * 1024)
+  } catch (error) {
+    return jsonResponse({ error: error instanceof JsonBodyError ? error.message : 'Body JSON invalide.' }, error instanceof JsonBodyError ? error.status : 400)
   }
 
   const encounters = validateSatisfactionEncounters(body.encounters)
@@ -433,9 +434,9 @@ export async function PATCH(request: NextRequest) {
   let body: { eligibleId?: unknown; statut?: unknown; destinataireEmail?: unknown }
 
   try {
-    body = (await request.json()) as typeof body
-  } catch {
-    return jsonResponse({ error: 'Body JSON invalide.' }, 400)
+    body = await readBoundedJsonObject(request, 16 * 1024)
+  } catch (error) {
+    return jsonResponse({ error: error instanceof JsonBodyError ? error.message : 'Body JSON invalide.' }, error instanceof JsonBodyError ? error.status : 400)
   }
 
   const eligibleId = normalizeText(body.eligibleId)

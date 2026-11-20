@@ -1,14 +1,19 @@
 'use client'
 
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useState, useSyncExternalStore } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { buttonClass } from '@/components/Ui'
 import { supabase } from '@/lib/supabaseClient'
 
 const savedEmailKey = 'assignations-login-email'
+const subscribeToHydration = () => () => {}
+const hydratedSnapshot = () => true
+const serverSnapshot = () => false
 
 export default function LoginPage() {
+  // Never submit credentials through the browser's default GET before hydration.
+  const hydrated = useSyncExternalStore(subscribeToHydration, hydratedSnapshot, serverSnapshot)
   const [email, setEmail] = useState(() =>
     typeof window === 'undefined'
       ? ''
@@ -70,7 +75,7 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <form onSubmit={handleLogin} autoComplete="on" className="space-y-4">
+        <form method="post" onSubmit={handleLogin} autoComplete="on" className="space-y-4">
           <label htmlFor="email" className="block text-sm font-medium text-[#5d4a3d]">
             Courriel
             <input
@@ -131,7 +136,7 @@ export default function LoginPage() {
           <div className="flex justify-center pt-2">
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !hydrated}
               className={`${buttonClass('primary')} !w-full max-w-xs p-3 disabled:cursor-not-allowed disabled:opacity-70 sm:!w-48`}
             >
               {loading ? 'Connexion...' : 'Connexion'}

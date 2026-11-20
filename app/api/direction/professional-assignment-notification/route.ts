@@ -1,5 +1,7 @@
+import { hasDirectionAccess } from '@/lib/administrativeAccess'
 ﻿import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { hasPlatformAccess } from '@/lib/platformAccess'
 import { buildProfessionalAssignmentEmailTemplate } from '@/lib/assignmentEmailTemplates'
 
 type NotificationBody = {
@@ -140,7 +142,7 @@ export async function POST(request: NextRequest) {
   const { data: currentProfile, error: currentProfileError } =
     await supabaseServer
       .from('profiles')
-      .select('role')
+      .select('role, platform_access_enabled, administrative_access')
       .eq('id', user.id)
       .limit(1)
       .maybeSingle()
@@ -149,7 +151,7 @@ export async function POST(request: NextRequest) {
     return jsonResponse({ error: currentProfileError.message }, 500)
   }
 
-  if (currentProfile?.role !== 'direction') {
+  if (!hasPlatformAccess(currentProfile) || !hasDirectionAccess(currentProfile)) {
     return jsonResponse({ error: 'AccÃ¨s rÃ©servÃ© Ã  la direction.' }, 403)
   }
 
@@ -214,7 +216,7 @@ export async function POST(request: NextRequest) {
     await supabaseServer
       .from('profiles')
       .select(
-        'full_name, email, role, platform_access_enabled, last_professional_assignment_notification_sent_at'
+        'full_name, email, role, platform_access_enabled, last_professional_assignment_notification_sent_at, administrative_access'
       )
       .eq('id', professionalId)
       .limit(1)

@@ -1,6 +1,7 @@
 'use client'
 
 import { Plus, Trash2 } from 'lucide-react'
+import { readProfessionalExclusions, writeProfessionalExclusions } from '@/lib/professionalExclusions'
 import {
   clientGroupOptions,
   languageOptions,
@@ -59,6 +60,8 @@ export function ProfessionalPreferencesEditor({ value, onChange }: Props) {
     field: K,
     nextValue: ProfessionalStructuredPreferences[K]
   ) => onChange({ ...value, [field]: nextValue })
+
+  const exclusions = readProfessionalExclusions(value.pref_exclusions)
 
   const hasOtherLanguage = value.pref_languages.some((language) =>
     language.startsWith('Autre :')
@@ -190,11 +193,15 @@ export function ProfessionalPreferencesEditor({ value, onChange }: Props) {
         <CheckboxGroup title="Motifs et champs d’intérêt" options={motifOptions} values={value.pref_motifs} onChange={(values) => update('pref_motifs', values)} />
       </div>
 
+      <div className="md:col-span-2">
+        <CheckboxGroup title="Motifs non pris en charge" options={motifOptions} values={exclusions.motifs} onChange={motifs => update('pref_exclusions', writeProfessionalExclusions(motifs, exclusions.comment))} />
+      </div>
+
       <label className="block text-sm font-medium text-[#5d4a3d]">
-        Exclusions ou limites cliniques
+        Exclusions ou limites cliniques — commentaire (facultatif)
         <textarea
-          value={value.pref_exclusions}
-          onChange={(event) => update('pref_exclusions', event.target.value)}
+          value={exclusions.comment}
+          onChange={(event) => update('pref_exclusions', writeProfessionalExclusions(exclusions.motifs, event.target.value))}
           rows={5}
           placeholder="Ex. aucun dossier IVAC, ne prend pas les dossiers DI-TSA..."
           className="mt-2 w-full rounded-lg border border-[#dfd0bf] bg-white p-3 text-sm text-[#332820] outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]"

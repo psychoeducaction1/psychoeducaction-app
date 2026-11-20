@@ -9,15 +9,15 @@ export const CLINICAL_NOTE_TEMPLATES = [
     headings: { objectif: 'Motif et objectif de l’évaluation', informations: 'Contexte et informations recueillies', interventions: 'Démarches d’évaluation réalisées', observations: 'Observations documentées', plan: 'Suite de l’évaluation', aVerifier: 'À vérifier ou à compléter' },
   },
   {
-    id: 'evaluation_2', label: 'Évaluation — rencontre 2',
+    id: 'evaluation_2', label: 'Évaluation — anamnèse approfondie (rencontre 2 ou plus)',
     description: 'Poursuite de la collecte et éléments complémentaires documentés.',
-    instructions: 'Organise une rencontre de poursuite d’evaluation. Distingue les informations complementaires, les demarches realisees et les constats explicitement documentes. Aucune note de rencontre 1 n’est fournie: n’en invente pas le contenu et ne deduis aucun changement.',
+    instructions: 'Organise une rencontre de poursuite d’evaluation, qui peut avoir lieu a partir de la deuxieme rencontre. Distingue les informations complementaires, les demarches realisees et les constats explicitement documentes. N’invente aucun contenu des rencontres anterieures qui n’est pas fourni et ne deduis aucun changement.',
     headings: { objectif: 'Objectif de la poursuite de l’évaluation', informations: 'Informations complémentaires recueillies', interventions: 'Démarches et outils utilisés', observations: 'Constats documentés et limites', plan: 'Prochaines étapes de l’évaluation', aVerifier: 'À vérifier ou à compléter' },
   },
   {
-    id: 'evaluation_3', label: 'Évaluation — rencontre 3',
+    id: 'evaluation_3', label: 'Évaluation — intégration clinique (rencontre 3 ou plus)',
     description: 'Synthèse et restitution, uniquement selon les éléments présents dans la source.',
-    instructions: 'Organise une troisieme rencontre d’evaluation. Presente uniquement les syntheses, conclusions ou restitutions explicitement formulees dans la source. Les rencontres precedentes ne sont pas fournies. Le numero 3 ne signifie pas que l’evaluation est terminee; n’invente aucune conclusion clinique.',
+    instructions: 'Organise une rencontre d’integration clinique, qui peut avoir lieu a la troisieme rencontre ou plus tard. Presente uniquement les syntheses, conclusions ou restitutions explicitement formulees dans la source. Ne suppose pas le contenu des rencontres precedentes si leur contexte n’est pas fourni. Ce gabarit ne signifie pas que l’evaluation est terminee; n’invente aucune conclusion clinique.',
     headings: { objectif: 'Objectif de la rencontre d’évaluation', informations: 'Synthèse des informations disponibles', interventions: 'Démarches et restitution réalisées', observations: 'Synthèse clinique explicitement formulée', plan: 'Orientations et suites convenues', aVerifier: 'À vérifier ou à compléter' },
   },
   {

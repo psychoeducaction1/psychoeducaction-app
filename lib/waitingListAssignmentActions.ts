@@ -1,8 +1,11 @@
 import { buildServiceAppointment, type ServiceOfficeAddresses } from '@/lib/serviceAppointment'
+import { mandateDefaultFailure } from './clinical-mandates/defaultErrors.ts'
 
 type Authorization = { actorId: string } | { error: string; status: number }
 type Dependencies = {
   officeAddresses?: () => ServiceOfficeAddresses
+  /** Active seulement apres installation et recette du RPC clinique transactionnel. */
+  linkClinicalAssignment?: boolean
   authorize: () => Promise<Authorization>
   rpc: (name: string, args: Record<string, unknown>) => PromiseLike<{
     data: unknown
@@ -25,6 +28,14 @@ const errors: Record<string, { status: number; message: string }> = {
   IDEMPOTENCY_CONFLICT: { status: 409, message: 'Cette tentative correspond à une autre opération. Actualisez la fiche.' },
   ASSIGNMENT_RETIRED: { status: 409, message: 'Cette assignation a été annulée ou supprimée. Actualisez la fiche avant une nouvelle opération.' },
   SERVICE_APPOINTMENT_REQUIRED: { status: 400, message: 'La date, l’heure et la modalité du rendez-vous sont obligatoires avant de confirmer le service pris.' },
+  CLINICAL_ASSIGNMENT_SLOT_UNAVAILABLE: { status: 409, message: 'Le professionnel ou les bureaux autorisés sont occupés sur cette plage. Choisissez une autre heure ou vérifiez les bureaux autorisés.' },
+  CLINICAL_BRIDGE_FORBIDDEN: { status: 403, message: 'Le raccordement au dossier clinique n’est pas autorisé pour ce compte.' },
+  CLINICAL_BRIDGE_SOURCE_MISMATCH: { status: 409, message: 'La demande et l’assignation ne correspondent plus. Actualisez la fiche.' },
+  CLINICAL_BRIDGE_PATIENT_CONFLICT: { status: 409, message: 'Deux identités de dossier ne correspondent pas. Une vérification administrative est nécessaire.' },
+  CLINICAL_BRIDGE_IDENTITY_REQUIRED: { status: 409, message: 'Complétez le prénom et le nom du client avant de l’assigner.' },
+  CLINICAL_BRIDGE_SERVICE_REQUIRED: { status: 409, message: 'Complétez le service demandé avant de l’assigner.' },
+  CLINICAL_BRIDGE_IDENTITY_OR_SERVICE_REQUIRED: { status: 409, message: 'Complétez l’identité et le service demandé avant de l’assigner.' },
+  CLINICAL_BRIDGE_IDENTITY_REVIEW_REQUIRED: { status: 409, message: 'Les identités liées à cette demande doivent être vérifiées avant de l’assigner.' },
 }
 
 export async function runWaitingListAssignmentAction(
@@ -44,7 +55,7 @@ export async function runWaitingListAssignmentAction(
       || (input.assignmentProcessId != null && (typeof input.assignmentProcessId !== 'string' || !uuid.test(input.assignmentProcessId)))) {
       return { status: 400, body: { error: 'Les paramètres de l’assignation sont invalides.' } }
     }
-    name = 'create_waiting_list_assignment'
+    name = dependencies.linkClinicalAssignment ? 'clinical_assign_waiting_client' : 'create_waiting_list_assignment'
     args = {
       p_waiting_list_client_id: clientId, p_professional_id: input.professionalId,
       p_outcome: input.outcome, p_idempotency_key: input.idempotencyKey,
@@ -56,7 +67,8 @@ export async function runWaitingListAssignmentAction(
       } catch (error) {
         return { status: 400, body: { error: error instanceof Error ? error.message : 'Rendez-vous invalide.' } }
       }
-      name = 'create_scheduled_waiting_list_assignment'
+      name = dependencies.linkClinicalAssignment
+        ? 'clinical_assign_scheduled_waiting_client' : 'create_scheduled_waiting_list_assignment'
     } else if (input.appointment != null) {
       return { status: 400, body: { error: 'Un rendez-vous confirmé exige le statut service pris.' } }
     }
@@ -66,6 +78,8 @@ export async function runWaitingListAssignmentAction(
   }
   const { data, error } = await dependencies.rpc(name, args)
   if (error) {
+    const prerequisite = dependencies.linkClinicalAssignment ? mandateDefaultFailure(error) : null
+    if (prerequisite) return { status: prerequisite.status, body: { error: prerequisite.message } }
     const failure = errors[error.message]
     if (failure) return { status: failure.status, body: { error: failure.message } }
     // Une ancienne base échoue sans reprendre les écritures navigateur non atomiques.
@@ -75,5 +89,9 @@ export async function runWaitingListAssignmentAction(
       : 'L’opération n’a pas pu être confirmée. Actualisez la fiche avant de réessayer.' } }
   }
   if (!data || typeof data !== 'object') return { status: 500, body: { error: 'Le résultat de l’opération est introuvable. Actualisez la fiche.' } }
+  if (action === 'assign' && dependencies.linkClinicalAssignment
+    && (Array.isArray(data) || !('clinicalLinked' in data) || data.clinicalLinked !== true)) {
+    return { status: 500, body: { error: 'Le lien au dossier clinique n’a pas pu être confirmé. Actualisez la fiche avant toute nouvelle action.' } }
+  }
   return { status: 200, body: data }
 }

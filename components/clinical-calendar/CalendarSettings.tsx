@@ -1,0 +1,42 @@
+'use client'
+
+import { officeDisplayName } from './officeModel'
+import { useState } from 'react'
+import { useClinicalNavigation } from '@/components/clinical-workspace/NavigationGuard'
+import { CalendarForm, Field, Fold, inputClass, readString, type CalendarUi } from './primitives'
+import { minutesLabel } from './model'
+
+const weekdays = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche']
+export function CalendarSettings({ ui, day, professionalId }: { ui: CalendarUi; day: string; professionalId: string }) {
+  const navigation = useClinicalNavigation()
+  const [professional, setProfessional] = useState(professionalId || ui.data.professionals[0]?.id || '')
+  const pro = ui.data.professionals.some(item => item.id === professional) ? professional : ui.data.professionals[0]?.id || ''
+  const windows = ui.data.availability.filter(window => window.professionalId === pro)
+  const grants = ui.data.officeGrants.filter(grant => grant.professionalId === pro)
+  const replaceWindows = (next: typeof windows) => ui.command({ action: 'availability.set', id: pro, data: { expectedRevision: ui.data.availabilityRevisions[pro] ?? 0, windows: next.map(({ weekday, startMinute, endMinute, validFrom, validTo }) => ({ weekday, startMinute, endMinute, validFrom, validTo })) } })
+  return <div className="grid gap-4">
+    <Fold title="Disponibilités et bureaux autorisés">
+      <p className="mb-3 text-sm text-[#795f4d]">Plages facultatives pour indiquer vos préférences. Vous pouvez créer une rencontre à toute heure, sans plage enregistrée; les conflits restent vérifiés.</p>
+      {ui.administrative && <Field label="Professionnel à configurer"><select className={inputClass} value={pro} onChange={event => { const value = event.target.value; void navigation.canLeave().then(allowed => { if (allowed) setProfessional(value) }) }}>{ui.data.professionals.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>}
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <section><h3 className="mb-3 font-semibold">Plages disponibles</h3><ul className="mb-4 grid gap-2 text-sm">{windows.map(window => <li key={window.id} className="rounded-lg border p-3"><p>{weekdays[window.weekday - 1]} · {minutesLabel(window.startMinute)}–{minutesLabel(window.endMinute)}</p><p className="mt-1 text-xs">Du {window.validFrom} {window.validTo ? 'au ' + window.validTo : 'sans date de fin'}</p><CalendarForm submitLabel="Retirer cette plage" disabled={ui.busy} onSave={async () => { if (!globalThis.confirm('Retirer cette disponibilité sans déplacer les rendez-vous existants ?')) throw new Error('Retrait annulé.'); await replaceWindows(windows.filter(item => item.id !== window.id)) }}><p className="text-xs">Retirer cette plage ne modifie pas les rencontres déjà planifiées.</p></CalendarForm></li>)}{!windows.length && <li>Aucune disponibilité configurée.</li>}</ul>
+          <CalendarForm key={pro + ':availability:' + (ui.data.availabilityRevisions[pro] ?? 0)} submitLabel="Ajouter une disponibilité" disabled={ui.busy || !pro} onSave={async form => {
+            const minute = (value: string) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3))
+            const start = minute(readString(form, 'start')), end = minute(readString(form, 'end'))
+            if (start >= end) throw new Error('La fin doit suivre le début.')
+            await replaceWindows([...windows, { id: '', professionalId: pro, weekday: Number(readString(form, 'weekday')), startMinute: start, endMinute: end, validFrom: readString(form, 'validFrom'), validTo: readString(form, 'validTo') || null }])
+          }}><div className="grid gap-3 sm:grid-cols-2"><Field label="Jour"><select required name="weekday" className={inputClass}>{weekdays.map((label, index) => <option key={label} value={index + 1}>{label}</option>)}</select></Field><Field label="Début"><input required name="start" type="time" defaultValue="08:00" className={inputClass} /></Field><Field label="Fin"><input required name="end" type="time" defaultValue="18:00" className={inputClass} /></Field><Field label="Valide à partir du"><input required name="validFrom" type="date" defaultValue={day} className={inputClass} /></Field><Field label="Dernier jour inclus (facultatif)"><input name="validTo" type="date" min={day} className={inputClass} /></Field></div></CalendarForm>
+        </section>
+        <section><h3 className="mb-3 font-semibold">Bureaux attribués</h3><ul className="mb-4 grid gap-2 text-sm">{grants.map(grant => <li key={grant.officeId + ':' + grant.validFrom} className="rounded-lg border p-3"><p>{officeDisplayName(ui.data.offices.find(office => office.id === grant.officeId) ?? { id: grant.officeId, name: 'Bureau' })}</p><p className="mt-1 text-xs">Du {grant.validFrom} {grant.validTo ? 'au ' + grant.validTo : 'sans date de fin'}</p>{ui.administrative && <CalendarForm submitLabel="Retirer cette attribution" disabled={ui.busy} onSave={async () => { if (!globalThis.confirm('Retirer cette attribution sans supprimer l’historique ?')) throw new Error('Retrait annulé.'); await ui.command({ action: 'office-grants.set', id: pro, data: { expectedRevision: ui.data.officeGrantRevisions[pro] ?? 0, grants: grants.filter(item => item !== grant).map(({ officeId, validFrom, validTo }) => ({ officeId, validFrom, validTo })) } }) }}><p className="text-xs">Les réservations existantes restent conservées et contrôlées.</p></CalendarForm>}</li>)}{!grants.length && <li>Aucun bureau attribué.</li>}</ul>
+          {ui.administrative && <CalendarForm key={pro + ':grants:' + (ui.data.officeGrantRevisions[pro] ?? 0)} submitLabel="Attribuer un bureau" disabled={ui.busy || !pro} onSave={async form => { await ui.command({ action: 'office-grants.set', id: pro, data: { expectedRevision: ui.data.officeGrantRevisions[pro] ?? 0, grants: [...grants.map(({ officeId, validFrom, validTo }) => ({ officeId, validFrom, validTo })), { officeId: readString(form, 'officeId'), validFrom: readString(form, 'validFrom'), validTo: readString(form, 'validTo') || null }] } }) }}><Field label="Bureau actif"><select name="officeId" required className={inputClass}><option value="">Choisir…</option>{ui.data.offices.filter(office => office.active).map(office => <option key={office.id} value={office.id}>{officeDisplayName(office)}</option>)}</select></Field><Field label="Début de l’attribution"><input name="validFrom" type="date" required defaultValue={day} className={inputClass} /></Field><Field label="Fin incluse (facultatif)"><input name="validTo" type="date" min={day} className={inputClass} /></Field></CalendarForm>}
+          {!ui.administrative && <p className="text-xs text-[#8a6f5d]">L’administration gère vos droits de réservation des bureaux.</p>}
+        </section>
+      </div>
+    </Fold>
+    {ui.administrative && <Fold title="Administrer les bureaux et leurs couleurs"><div className="grid gap-5 lg:grid-cols-2">
+      <CalendarForm submitLabel="Créer un bureau fictif" disabled={ui.busy} onSave={async form => { await ui.command({ action: 'offices.create', id: null, data: { name: readString(form, 'name'), color: readString(form, 'color') } }) }}><h3 className="font-semibold">Nouveau bureau</h3><Field label="Nom du bureau"><input name="name" required maxLength={120} className={inputClass} /></Field><Field label="Couleur"><input name="color" type="color" defaultValue="#8a5633" className={inputClass + ' h-12'} /></Field></CalendarForm>
+      {ui.data.offices.map(office => <CalendarForm key={office.id + ':' + office.version} submitLabel="Enregistrer ce bureau" disabled={ui.busy} onSave={async form => { await ui.command({ action: 'offices.update', id: office.id, data: { expectedVersion: office.version, name: readString(form, 'name'), color: readString(form, 'color'), active: new FormData(form).has('active') } }) }}><Field label="Nom"><input name="name" required maxLength={120} defaultValue={office.name} className={inputClass} /></Field><Field label="Couleur"><input name="color" type="color" defaultValue={office.color} className={inputClass + ' h-12'} /></Field><label className="flex items-center gap-2 text-sm"><input name="active" type="checkbox" defaultChecked={office.active} />Bureau disponible pour de nouvelles réservations</label></CalendarForm>)}
+    </div></Fold>}
+    <p className="text-xs text-[#8a6f5d]">Les disponibilités et attributions sont protégées par révision. Un changement concurrent doit être relu ; il n’est jamais écrasé.</p>
+  </div>
+}

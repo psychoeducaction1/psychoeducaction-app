@@ -23,6 +23,10 @@ type EmailComposerModalProps = {
   sending?: boolean
   recipientsReadOnly?: boolean
   submissionError?: string
+  externalError?: string
+  title?: string
+  description?: string
+  sendLabel?: string
   onCancel: () => void
   onSend: (drafts: EmailComposerDrafts) => void
 }
@@ -139,6 +143,10 @@ export function EmailComposerModal({
   sending = false,
   recipientsReadOnly = false,
   submissionError,
+  externalError,
+  title = 'Envoyer les courriels d’assignation',
+  description = 'L’assignation a été créée. Vous pouvez maintenant envoyer les courriels ou fermer cette fenêtre sans envoi.',
+  sendLabel = 'Envoyer',
   onCancel,
   onSend,
 }: EmailComposerModalProps) {
@@ -188,11 +196,10 @@ export function EmailComposerModal({
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h2 className="text-xl font-semibold text-[#332820]">
-              Envoyer les courriels d’assignation
+              {title}
             </h2>
             <p className="mt-2 text-sm text-[#6c5a4d]">
-              L’assignation a été créée. Vous pouvez maintenant envoyer les
-              courriels ou fermer cette fenêtre sans envoi.
+              {description}
             </p>
           </div>
           <button
@@ -205,9 +212,9 @@ export function EmailComposerModal({
           </button>
         </div>
 
-        {(error || submissionError) && (
+        {(error || submissionError || externalError) && (
           <p className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-            {error || submissionError}
+            {error || submissionError || externalError}
           </p>
         )}
 
@@ -247,7 +254,7 @@ export function EmailComposerModal({
             onClick={validateAndSend}
             disabled={sending}
           >
-            {sending ? 'Envoi...' : 'Envoyer'}
+            {sending ? 'Envoi...' : sendLabel}
           </button>
         </div>
       </div>

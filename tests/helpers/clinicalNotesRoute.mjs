@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
 import { CLINICAL_NOTES_PILOT_USER_ID } from '../../lib/clinicalNotesAccess.ts'
+import { CLINICAL_CONTEXT_MAX_CHARS } from '../../lib/clinicalNoteEngine.ts'
 import { SUPER_ADMIN_EMAIL } from '../../lib/superAdmin.ts'
 
 let scenario
@@ -26,7 +27,7 @@ globalThis.__clinicalNotesClient = (url, key, options) => {
       assert.ok(scenario.user)
       profileReads++
       return {
-        select(fields) { assert.equal(fields, 'role'); return this },
+        select(fields) { assert.equal(fields, 'role, platform_access_enabled, administrative_access'); return this },
         eq(field, value) { assert.equal(field, 'id'); assert.equal(value, scenario.user.id); return this },
         limit() { return this },
         async maybeSingle() {
@@ -146,6 +147,11 @@ globalThis.fetch = async (url, options) => {
       const text = engineScenario === 'omission_with_alert' ? 'À 09 h 12, le jeune s’écarte du groupe.' : engineFact().text
       return structured({ sections: [{ id: expectedNoteType === 'fermeture' ? 'demande' : expectedNoteType === 'observation' ? 'description' : expectedNoteType === 'evaluation_2' ? 'autres' : expectedNoteType === 'evaluation_3' ? 'synthese' : 'objectif', paragraphs: [{ text, factIds: [engineScenario === 'bad_ref' ? 'missing' : 'f1'] }], rows: [] }], alerts: engineAlerts('draft') })
     }
+    if (name === 'clinical_fidelity_fact_recovery') return structured({ facts: [], alerts: [] })
+    if (name === 'clinical_targeted_revision') {
+      const { initialDraft } = JSON.parse(body.input[1].content)
+      return structured({ sections: initialDraft.sections.filter(section => section.paragraphs.length || section.rows.length), alerts: initialDraft.alerts })
+    }
     assert.equal(name, 'clinical_fidelity_review')
     const review = JSON.parse(body.input[1].content)
     assert.deepEqual(review.sources, engineSources, 'Le contrôle revoit les sources originales, pas seulement la reformulation')
@@ -229,7 +235,7 @@ const engineBody = { formatVersion: 2, fictional: true, transcript: 'Père ficti
 let beforeEngine = providerCalls
 for (const changes of [
   { formatVersion: 3 }, { history: 'Une ancienne note fictive.' }, { metadata: 'Une date fictive.' },
-  { history: false }, { history: 'a'.repeat(8001), sameFictionalCase: true }, { metadata: 'a'.repeat(2001), metadataConfirmed: true },
+  { history: false }, { history: 'a'.repeat(CLINICAL_CONTEXT_MAX_CHARS + 1), sameFictionalCase: true }, { metadata: 'a'.repeat(2001), metadataConfirmed: true },
 ]) assert.equal((await postJson({ ...engineBody, ...changes })).status, 400)
 assert.equal(providerCalls, beforeEngine, 'Contexte non confirmé refusé avant appel payant')
 for (const identity of [
@@ -255,7 +261,7 @@ for (const template of CLINICAL_NOTE_TEMPLATES) {
   assert.equal((await postJson({ ...engineBody, noteType: template.id, history: 'Contexte fictif ancien.', sameFictionalCase: true, metadata: 'Milieu fictif confirmé.', metadataConfirmed: true })).status, 200)
 }
 expectedNoteType = 'evolution'
-for (const [mode, status, count] of [['bad_quote', 502, 1], ['bad_ref', 502, 2], ['unfaithful', 422, 3], ['incomplete', 502, 1], ['refusal', 422, 1]]) {
+for (const [mode, status, count] of [['bad_quote', 502, 1], ['bad_ref', 502, 2], ['unfaithful', 422, 5], ['incomplete', 502, 1], ['refusal', 422, 1]]) {
   engineScenario = mode
   beforeEngine = providerCalls
   const response = await postJson(engineBody)
@@ -280,7 +286,7 @@ beforeEngine = providerCalls
 const omittedLimit = await postJson({ ...engineBody, noteType: 'observation', transcript: 'DONNÉES FICTIVES. À 09 h 12, le jeune s’écarte du groupe. Le professionnel n’a observé ni l’antécédent ni la conséquence.' })
 assert.equal(omittedLimit.status, 422, 'Une omission repérée par le contrôle reste bloquante même accompagnée d’une alerte')
 assert.equal((await omittedLimit.json()).draft, undefined, 'L’alerte ne répare pas le texte et ne permet pas de retourner un nouveau brouillon')
-assert.equal(providerCalls, beforeEngine + 3, 'Aucune réécriture ou relance payante après un contrôle négatif')
+assert.equal(providerCalls, beforeEngine + 6, 'Une récupération ciblée, une révision et un second contrôle avant le refus définitif')
 expectedNoteType = 'evolution'
 engineScenario = 'success'
 engineAbort = new AbortController()

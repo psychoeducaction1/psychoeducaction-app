@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { hasPlatformAccess } from '@/lib/platformAccess'
 import {
   clientGroupOptions,
   getOptionLabels,
@@ -19,6 +20,7 @@ type AssignmentRequestRow = {
 }
 
 type ProfileRow = {
+  platform_access_enabled?: boolean | null
   full_name: string | null
   email: string | null
   role: string | null
@@ -133,6 +135,18 @@ export async function POST(request: NextRequest) {
     return jsonResponse({ error: 'Utilisateur connecté introuvable.' }, 401)
   }
 
+  const { data: profile, error: profileError } = await supabaseServer
+    .from('profiles')
+    .select('full_name, email, role, pref_client_groups, pref_meeting_modes, platform_access_enabled, administrative_access')
+    .eq('id', user.id)
+    .limit(1)
+    .maybeSingle()
+  if (profileError) return jsonResponse({ error: profileError.message }, 500)
+  const profileRow = profile as ProfileRow | null
+  if (!hasPlatformAccess(profileRow) || (profileRow?.role !== 'professionnel' && profileRow?.role !== 'direction')) {
+    return jsonResponse({ error: 'Accès non autorisé.' }, 403)
+  }
+
   let body: NotificationBody
 
   try {
@@ -163,23 +177,6 @@ export async function POST(request: NextRequest) {
 
   if (!requestRow || requestRow.professional_id !== user.id) {
     return jsonResponse({ error: 'Demande introuvable.' }, 404)
-  }
-
-  const { data: profile, error: profileError } = await supabaseServer
-    .from('profiles')
-    .select('full_name, email, role, pref_client_groups, pref_meeting_modes')
-    .eq('id', user.id)
-    .limit(1)
-    .maybeSingle()
-
-  if (profileError) {
-    return jsonResponse({ error: profileError.message }, 500)
-  }
-
-  const profileRow = profile as ProfileRow | null
-
-  if (profileRow?.role !== 'professionnel' && profileRow?.role !== 'direction') {
-    return jsonResponse({ error: 'Accès non autorisé.' }, 403)
   }
 
   const professionalName =

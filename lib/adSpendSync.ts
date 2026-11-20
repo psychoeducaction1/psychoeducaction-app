@@ -4,7 +4,7 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
 import {
   cleanAdsAccountId,
   getAdSpendRange,
-  monthKeysBetween,
+  validateSpendReplacement,
   roundCurrency,
   type AdPlatform,
   type AdSpendRow,
@@ -32,12 +32,28 @@ function requireEnv(name: string) {
 async function responseJson(response: Response, provider: string) {
   const text = await response.text()
   if (!response.ok) {
-    throw new Error(`${provider} a répondu ${response.status}: ${text.slice(0, 500)}`)
+    throw new Error(`${provider} a répondu ${response.status}. La synchronisation est interrompue.`)
   }
-  return text ? JSON.parse(text) as unknown : null
+  try { return text ? JSON.parse(text) as unknown : null } catch {
+    throw new Error(`${provider} a retourné une réponse illisible.`)
+  }
 }
 
-async function fetchGoogleSpend(from: string, to: string): Promise<AdSpendRow[]> {
+type FetchedSpend = { rows: AdSpendRow[]; currency: string }
+
+type GoogleReportBatch<T> = { results?: T[]; fieldMask?: string; requestId?: string; error?: unknown }
+function googleReportRows<T>(value: unknown): T[] {
+  if (!Array.isArray(value) || value.some((batch: GoogleReportBatch<T> | null) =>
+    !batch || batch.error !== undefined || (!Array.isArray(batch.results) && !(
+      // Protobuf peut omettre la collection vide; le serveur doit alors accuser
+      // explicitement le rapport avec ses métadonnées, jamais un simple objet {}.
+      batch.results === undefined && typeof batch.fieldMask === 'string' && batch.fieldMask.trim()
+      && typeof batch.requestId === 'string' && batch.requestId.trim()
+    )))) throw new Error('Rapport Google Ads incomplet ou invalide.')
+  return (value as GoogleReportBatch<T>[]).flatMap(batch => batch.results ?? [])
+}
+
+async function fetchGoogleSpend(from: string, to: string): Promise<FetchedSpend> {
   const customerId = cleanAdsAccountId(requireEnv('GOOGLE_ADS_CUSTOMER_ID'))
   const clientId = requireEnv('GOOGLE_ADS_CLIENT_ID')
   const clientSecret = requireEnv('GOOGLE_ADS_CLIENT_SECRET')
@@ -97,11 +113,11 @@ async function fetchGoogleSpend(from: string, to: string): Promise<AdSpendRow[]>
     }>
   }>
 
-  return (batches ?? []).flatMap((batch) => batch.results ?? []).flatMap((row) => {
+  const rows = googleReportRows<NonNullable<typeof batches[number]['results']>[number]>(batches).flatMap((row) => {
     const spendDate = row.segments?.date ?? ''
     const campaignId = String(row.campaign?.id ?? '')
     const amount = Number(row.metrics?.costMicros ?? 0) / 1_000_000
-    if (!spendDate || !campaignId || !Number.isFinite(amount) || amount <= 0) return []
+    if (!spendDate || !campaignId || !Number.isFinite(amount) || amount < 0) throw new Error('Rapport Google Ads invalide.')
     return [{
       platform: 'google_ads' as const,
       accountId: customerId,
@@ -112,9 +128,19 @@ async function fetchGoogleSpend(from: string, to: string): Promise<AdSpendRow[]>
       currency: row.customer?.currencyCode?.trim().toUpperCase() || 'UNKNOWN',
     }]
   })
+  // Le rapport vide doit aussi confirmer la devise, avant de remplacer les anciens chiffres.
+  const currencyResponse = await fetch(
+    `https://googleads.googleapis.com/${apiVersion}/customers/${customerId}/googleAds:searchStream`,
+    { method: 'POST', headers, body: JSON.stringify({ query: 'SELECT customer.currency_code FROM customer' }), cache: 'no-store' },
+  )
+  const currencyBatches = await responseJson(currencyResponse, 'Google Ads') as Array<{ results?: Array<{ customer?: { currencyCode?: string } }> }>
+  const currencies = [...new Set(googleReportRows<{ customer?: { currencyCode?: string } }>(currencyBatches)
+    .map(row => row.customer?.currencyCode?.trim().toUpperCase()))]
+  return { rows, currency: currencies.length === 1 ? currencies[0] ?? 'UNKNOWN' : 'UNKNOWN' }
+
 }
 
-async function fetchMetaSpend(from: string, to: string): Promise<AdSpendRow[]> {
+async function fetchMetaSpend(from: string, to: string): Promise<FetchedSpend> {
   const rawAccountId = requireEnv('META_AD_ACCOUNT_ID')
   const accountId = cleanAdsAccountId(rawAccountId)
   const accessToken = requireEnv('META_ADS_ACCESS_TOKEN')
@@ -141,6 +167,8 @@ async function fetchMetaSpend(from: string, to: string): Promise<AdSpendRow[]> {
   })}`
 
   for (let page = 0; nextUrl && page < 50; page += 1) {
+    const pageUrl = new URL(nextUrl)
+    if (pageUrl.protocol !== 'https:' || pageUrl.hostname !== 'graph.facebook.com') throw new Error('Pagination Meta invalide.')
     const response = await fetch(nextUrl, { cache: 'no-store' })
     const payload = await responseJson(response, 'Meta Ads') as {
       data?: Array<{
@@ -151,9 +179,10 @@ async function fetchMetaSpend(from: string, to: string): Promise<AdSpendRow[]> {
       }>
       paging?: { next?: string }
     }
-    for (const item of payload.data ?? []) {
+    if (!payload || !Array.isArray(payload.data)) throw new Error('Rapport Meta incomplet ou invalide.')
+    for (const item of payload.data) {
       const amount = Number(item.spend ?? 0)
-      if (!item.date_start || !item.campaign_id || !Number.isFinite(amount) || amount <= 0) continue
+      if (!item.date_start || !item.campaign_id || !Number.isFinite(amount) || amount < 0) throw new Error('Rapport Meta invalide.')
       rows.push({
         platform: 'meta_ads',
         accountId,
@@ -164,86 +193,25 @@ async function fetchMetaSpend(from: string, to: string): Promise<AdSpendRow[]> {
         currency: accountCurrency,
       })
     }
+    if (payload.paging?.next !== undefined && (typeof payload.paging.next !== 'string' || !payload.paging.next.trim())) {
+      throw new Error('Pagination Meta invalide.')
+    }
     nextUrl = payload.paging?.next ?? null
   }
-  return rows
+  if (nextUrl) throw new Error('Rapport Meta incomplet : limite de pagination atteinte. Réduisez la période.')
+  return { rows, currency: accountCurrency }
 }
 
-async function replaceSpendRows(platform: AdPlatform, accountId: string, from: string, to: string, rows: AdSpendRow[]) {
-  const supabase = getSupabaseAdmin()
-  const { error: deleteError } = await supabase
-    .from('ad_spend_daily')
-    .delete()
-    .eq('platform', platform)
-    .eq('account_id', accountId)
-    .gte('spend_date', from)
-    .lte('spend_date', to)
-  if (deleteError) throw deleteError
-
-  if (rows.length > 0) {
-    const { error: insertError } = await supabase.from('ad_spend_daily').insert(
-      rows.map((row) => ({
-        platform: row.platform,
-        account_id: row.accountId,
-        spend_date: row.spendDate,
-        campaign_id: row.campaignId,
-        campaign_name: row.campaignName,
-        amount: row.amount,
-        currency: row.currency,
-        synced_at: new Date().toISOString(),
-      }))
-    )
-    if (insertError) throw insertError
-  }
-}
-
-async function refreshMonthlyBudget(platform: AdPlatform, from: string, to: string) {
-  const supabase = getSupabaseAdmin()
-  const label = platform === 'google_ads' ? 'Google Ads' : 'Meta Ads'
-
-  for (const month of monthKeysBetween(from, to)) {
-    const monthStart = `${month}-01`
-    const nextMonth = new Date(`${monthStart}T12:00:00Z`)
-    nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1)
-    const nextMonthStart = nextMonth.toISOString().slice(0, 10)
-    const { data: spendRows, error: spendError } = await supabase
-      .from('ad_spend_daily')
-      .select('amount, currency')
-      .eq('platform', platform)
-      .gte('spend_date', monthStart)
-      .lt('spend_date', nextMonthStart)
-    if (spendError) throw spendError
-
-    const currencies = new Set((spendRows ?? []).map((row) => row.currency))
-    if ([...currencies].some((currency) => currency !== 'CAD')) {
-      throw new Error(`${label}: le compte publicitaire doit être facturé en CAD.`)
-    }
-    const amount = roundCurrency(
-      (spendRows ?? []).reduce((sum, row) => sum + Number(row.amount ?? 0), 0)
-    )
-    const values = {
-      name: `Publicité ${label} – ${month}`,
-      category: 'Publicité numérique',
-      amount,
-      expense_date: monthStart,
-      expense_month: monthStart,
-      ad_platform: platform,
-      notes: `Synchronisé automatiquement depuis ${label}.`,
-      updated_at: new Date().toISOString(),
-    }
-    const { data: existing, error: lookupError } = await supabase
-      .from('budget_variable_expenses')
-      .select('id')
-      .eq('ad_platform', platform)
-      .eq('expense_month', monthStart)
-      .maybeSingle()
-    if (lookupError) throw lookupError
-    const query = existing
-      ? supabase.from('budget_variable_expenses').update(values).eq('id', existing.id)
-      : supabase.from('budget_variable_expenses').insert(values)
-    const { error } = await query
-    if (error) throw error
-  }
+async function replaceSpendRows(platform: AdPlatform, accountId: string, from: string, to: string, currency: string, rows: AdSpendRow[]) {
+  validateSpendReplacement(platform, accountId, from, to, currency, rows)
+  // Une seule transaction remplace les lignes, recalcule le budget et confirme la couverture.
+  // Si la migration manque ou échoue, aucune suppression de secours n'est permise.
+  const { error } = await getSupabaseAdmin().rpc('replace_ad_spend', {
+    p_platform: platform, p_account_id: accountId, p_from: from, p_to: to, p_currency: currency,
+    p_rows: rows.map(row => ({ spend_date: row.spendDate, campaign_id: row.campaignId,
+      campaign_name: row.campaignName, amount: row.amount })),
+  })
+  if (error) throw new Error('La sauvegarde transactionnelle des dépenses a échoué. Les données précédentes sont conservées.')
 }
 
 export async function ingestGoogleAdsSpend(input: {
@@ -254,7 +222,6 @@ export async function ingestGoogleAdsSpend(input: {
   rows: Array<{ date: string; campaignId: string; campaignName: string; amount: number }>
 }) {
   const rows: AdSpendRow[] = input.rows
-    .filter((row) => row.amount > 0)
     .map((row) => ({
       platform: 'google_ads',
       accountId: input.accountId,
@@ -265,8 +232,7 @@ export async function ingestGoogleAdsSpend(input: {
       currency: input.currency,
     }))
 
-  await replaceSpendRows('google_ads', input.accountId, input.from, input.to, rows)
-  await refreshMonthlyBudget('google_ads', input.from, input.to)
+  await replaceSpendRows('google_ads', input.accountId, input.from, input.to, input.currency, rows)
 
   const result: SyncResult = {
     platform: 'google_ads',
@@ -276,12 +242,6 @@ export async function ingestGoogleAdsSpend(input: {
     currency: input.currency,
     message: `${rows.length} ligne(s) synchronisée(s) par Google Ads Script.`,
   }
-  await getSupabaseAdmin().from('ad_spend_sync_runs').insert({
-    range_start: input.from,
-    range_end: input.to,
-    status: 'success',
-    details: [result],
-  })
   return result
 }
 
@@ -304,7 +264,7 @@ export async function syncAdSpend(lookbackDays = 45, includeToday = false) {
   const providers: Array<{
     platform: AdPlatform
     ready: boolean
-    fetcher: (from: string, to: string) => Promise<AdSpendRow[]>
+    fetcher: (from: string, to: string) => Promise<FetchedSpend>
     accountEnv: string
   }> = [
     { platform: 'google_ads', ready: isGoogleConfigured(), fetcher: fetchGoogleSpend, accountEnv: 'GOOGLE_ADS_CUSTOMER_ID' },
@@ -318,17 +278,15 @@ export async function syncAdSpend(lookbackDays = 45, includeToday = false) {
       continue
     }
     try {
-      const rows = await provider.fetcher(range.from, range.to)
+      const { rows, currency } = await provider.fetcher(range.from, range.to)
       const accountId = cleanAdsAccountId(requireEnv(provider.accountEnv))
-      await replaceSpendRows(provider.platform, accountId, range.from, range.to, rows)
-      await refreshMonthlyBudget(provider.platform, range.from, range.to)
-      const currencies = [...new Set(rows.map((row) => row.currency))]
+      await replaceSpendRows(provider.platform, accountId, range.from, range.to, currency, rows)
       results.push({
         platform: provider.platform,
         status: 'success',
         rows: rows.length,
         amount: roundCurrency(rows.reduce((sum, row) => sum + row.amount, 0)),
-        currency: currencies.length === 1 ? currencies[0] : null,
+        currency,
         message: `${rows.length} ligne(s) synchronisée(s).`,
       })
     } catch (error) {
@@ -342,14 +300,6 @@ export async function syncAdSpend(lookbackDays = 45, includeToday = false) {
       })
     }
   }
-
-  const supabase = getSupabaseAdmin()
-  await supabase.from('ad_spend_sync_runs').insert({
-    range_start: range.from,
-    range_end: range.to,
-    status: results.some((result) => result.status === 'error') ? 'partial_error' : 'success',
-    details: results,
-  })
 
   return { range, results }
 }

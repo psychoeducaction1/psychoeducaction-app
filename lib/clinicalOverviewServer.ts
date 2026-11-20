@@ -1,3 +1,4 @@
+import { hasDirectionAccess } from '@/lib/administrativeAccess'
 import 'server-only'
 import { createClient } from '@supabase/supabase-js'
 import type { NextRequest } from 'next/server'
@@ -14,12 +15,12 @@ export async function getClinicalOverviewContext(request: NextRequest) {
   const db = createClient(url, key, { global: { headers: { Authorization: `Bearer ${token}` } }, auth: { persistSession: false, autoRefreshToken: false } })
   const { data: { user }, error } = await db.auth.getUser()
   if (error || !user) return { error: 'Session invalide.', status: 401 } as const
-  const { data: profile, error: profileError } = await db.from('profiles').select('role, platform_access_enabled').eq('id', user.id).maybeSingle()
+  const { data: profile, error: profileError } = await db.from('profiles').select('role, platform_access_enabled, administrative_access').eq('id', user.id).maybeSingle()
   if (profileError) return { error: 'Vérification des accès impossible.', status: 503 } as const
   if (!profile || !hasPlatformAccess(profile)) return { error: 'Accès refusé.', status: 403 } as const
   // Les comptes direction conservent leur consultation habituelle. Aucun rôle
   // direction n'est attribué à la coordinatrice et aucune API de mutation ouverte.
-  if (profile.role === 'direction') return { context: { db } } as const
+  if (hasDirectionAccess(profile)) return { context: { db } } as const
   if (profile.role !== 'professionnel') return { error: 'Accès refusé.', status: 403 } as const
   const { data: staff, error: staffError } = await db.from('clinical_coordination_staff')
     .select('id, profile_id, full_name, email, is_active').eq('profile_id', user.id).eq('is_active', true).maybeSingle()

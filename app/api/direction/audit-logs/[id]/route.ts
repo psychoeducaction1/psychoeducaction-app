@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
 import { getSuperAdminContext } from '@/lib/superAdminServer'
 
 function jsonResponse(body: object, status: number) {
@@ -30,15 +29,6 @@ export async function DELETE(
     return jsonResponse({ error: "L'identifiant de l'entrée est requis." }, 400)
   }
 
-  const supabaseAdmin = getSupabaseAdmin()
-  const { error: deleteError } = await supabaseAdmin
-    .from('audit_logs')
-    .delete()
-    .eq('id', auditLogId)
-
-  if (deleteError) {
-    return jsonResponse({ error: deleteError.message }, 500)
-  }
-
-  return jsonResponse({ success: true }, 200)
+  // Compatibilité avec les anciens onglets : aucune suppression, même privilégiée.
+  return jsonResponse({ error: 'Les entrées du journal sont conservées et ne peuvent plus être supprimées.' }, 410)
 }

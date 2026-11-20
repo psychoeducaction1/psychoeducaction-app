@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { parseGoogleAdsIngestPayload } from '@/lib/adSpend'
 import { ingestGoogleAdsSpend } from '@/lib/adSpendSync'
+import { JsonBodyError, readBoundedJsonObject } from '@/lib/boundedJsonBody'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -15,7 +16,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const payload = parseGoogleAdsIngestPayload(await request.json())
+    const payload = parseGoogleAdsIngestPayload(await readBoundedJsonObject(request, 4 * 1024 * 1024))
     const expectedAccountId = (process.env.GOOGLE_ADS_CUSTOMER_ID ?? '').replace(/[^0-9]/g, '')
     if (!expectedAccountId || payload.accountId !== expectedAccountId) {
       return NextResponse.json({ error: 'Compte Google Ads inattendu.' }, { status: 403 })
@@ -25,6 +26,6 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     return NextResponse.json({
       error: error instanceof Error ? error.message : 'Synchronisation Google Ads impossible.',
-    }, { status: 400 })
+    }, { status: error instanceof JsonBodyError ? error.status : 400 })
   }
 }

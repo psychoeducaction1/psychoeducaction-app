@@ -1,5 +1,8 @@
 'use client'
 
+import { hasDirectionAccess } from '@/lib/administrativeAccess'
+
+
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -93,7 +96,7 @@ export default function AdministrativeTasksPage() {
     }
     const { data: profile } = await supabase
       .from('profiles')
-      .select('role, full_name, email')
+      .select('role, full_name, email, administrative_access')
       .eq('id', user.id)
       .limit(1)
       .maybeSingle()
@@ -105,7 +108,7 @@ export default function AdministrativeTasksPage() {
     const { data: taskData, error: taskError } = await supabase
       .from('administrative_tasks')
       .select('*')
-      .order('due_at', { ascending: true, nullsFirst: false })
+      .order('due_at', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
     if (taskError) {
       setError(taskError.message)
@@ -129,10 +132,10 @@ export default function AdministrativeTasksPage() {
 
     setTasks(loadedTasks)
     setNotes((noteResponse.data ?? []) as TaskNote[])
-    setCanCreate(profile?.role === 'direction')
+    setCanCreate(hasDirectionAccess(profile))
     setCurrentName(profile?.full_name ?? profile?.email ?? user.email ?? 'Utilisateur')
     setVisibleAssignees(
-      profile?.role === 'direction'
+      hasDirectionAccess(profile)
         ? ['hajar', 'fatima', 'both']
         : getAdministrativeTaskAssigneesForEmail(user.email)
     )

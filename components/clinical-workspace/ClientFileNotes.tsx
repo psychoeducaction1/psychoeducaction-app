@@ -1,0 +1,39 @@
+'use client'
+
+import { useRef, useState } from 'react'
+import { FilePenLine, LockKeyhole } from 'lucide-react'
+import { buttonClass } from '@/components/Ui'
+import { ProspectDialog } from '@/components/intake/ProspectDialog'
+import { CalendarForm, Field, inputClass, type CalendarFormHandle } from '@/components/clinical-calendar/primitives'
+import type { ClientOverview, ClientLifecycle } from '@/lib/clinical-workspace/clientDetails'
+import type { WorkspaceView } from '@/lib/clinical-core/types'
+import { clientFileMutation } from './clientFileApi'
+import { useClinicalNavigation } from './NavigationGuard'
+import { clientFileRecords } from './clientFileModel'
+import { ClinicalRecordPanel } from './ClinicalRecordPanel'
+
+export function ClientNotesSection({ clientId, workspace, recordId, noteId, appointmentId, onBackToFile, onUpdated }: { clientId: string; workspace: WorkspaceView; recordId: string | null; noteId?: string | null; appointmentId?: string | null; onBackToFile: () => void; onUpdated: () => Promise<void> }) {
+  const records = clientFileRecords(workspace, clientId), record = records.find(item => item.id === recordId)
+  if (workspace.context !== 'clinical') return <p role="alert">Les notes sont réservées à l’espace Clinique et aux dossiers autorisés.</p>
+  if (recordId) return record ? <ClinicalRecordPanel embedded showBack={false} showRecordLabel={records.length > 1} key={record.id + ':' + (noteId ?? '') + ':' + (appointmentId ?? '')} record={record} workspace={workspace} onBack={onBackToFile} onUpdated={onUpdated} initialNoteId={noteId} initialAppointmentId={appointmentId} /> : <p role="alert" className="text-sm text-red-800">Ce dossier clinique n’est pas autorisé ou n’est plus disponible.</p>
+  return <section className="grid gap-5"><h3 className="flex items-center gap-2 font-semibold"><FilePenLine size={18} />Notes cliniques</h3>{records.map(item => <ClinicalRecordPanel embedded showBack={false} showRecordLabel={records.length > 1} key={item.id} record={item} workspace={workspace} onBack={onBackToFile} onUpdated={onUpdated} />)}{!records.length && <p className="flex items-start gap-2 rounded-xl bg-[#f7f1e9] p-4 text-sm"><LockKeyhole size={18} className="shrink-0" />Aucun dossier clinique accessible pour ce client. Vérifiez son assignation auprès de la direction.</p>}</section>
+}
+export function ClientLifecycleSection({ overview, workspace, onCommitted, onAccessDenied, embedded = false }: { overview: ClientOverview; workspace: WorkspaceView; onCommitted: () => Promise<void>; onAccessDenied: (cause: unknown) => void; embedded?: boolean }) {
+  const [choice, setChoice] = useState<{ item: ClientLifecycle; action: 'close' | 'reopen-request' | 'reopen' } | null>(null), [reason, setReason] = useState('')
+  const [closureMode, setClosureMode] = useState<'no_encounter' | 'note'>('note'), [closureNote, setClosureNote] = useState(''), [closureAttested, setClosureAttested] = useState(false)
+  const form = useRef<CalendarFormHandle>(null), navigation = useClinicalNavigation()
+  if (!overview.lifecycle.length) return null
+  return <div className="mt-4 rounded-xl border border-[#eadfd2] bg-[#fffdf9] p-4"><h3 className="text-sm font-semibold">{embedded ? 'Statut du dossier' : 'Statut et conservation du dossier'}</h3><div className="mt-3 grid gap-3">{overview.lifecycle.map(item => <div key={item.recordId} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[#f7f1e9] p-3 text-sm"><div><strong>{item.label}</strong><p className="mt-1 text-xs text-[#8a6f5d]">{item.status === 'open' ? 'En cours' : 'Fermé · archives conservées'}{item.reopenRequested ? ' · Réactivation demandée' : ''}</p></div><div className="flex flex-wrap gap-2">{item.canClose && <button type="button" className={buttonClass('secondary')} onClick={() => { setReason(''); setClosureNote(''); setClosureAttested(false); setClosureMode('note'); setChoice({ item, action: 'close' }) }}>Fermer ce dossier</button>}{item.canRequestReopen && !item.reopenRequested && <button type="button" className={buttonClass('secondary')} onClick={() => { setReason(''); setChoice({ item, action: 'reopen-request' }) }}>Demander une réactivation</button>}{item.canReopen && item.reopenRequested && <button type="button" className={buttonClass('secondary')} onClick={() => { setReason(''); setChoice({ item, action: 'reopen' }) }}>Confirmer la réactivation</button>}</div></div>)}</div>{choice && <ProspectDialog compactHeader title={choice.action === 'close' ? 'Fermer ce dossier' : choice.action === 'reopen' ? 'Confirmer la réactivation' : 'Demander une réactivation'} onClose={() => form.current?.requestCancel()}><CalendarForm submitLabel={choice.action === 'close' ? 'Confirmer la fermeture' : choice.action === 'reopen' ? 'Réactiver le dossier' : 'Enregistrer la demande'} formRef={form} onCancel={() => setChoice(null)} onSave={async () => {
+    if (!await navigation.canLeave({ ignoreForms: true })) throw new Error('Terminez la sauvegarde de la note avant de modifier le statut du dossier.')
+    const professionalClose = choice.action === 'close' && workspace.context === 'clinical'
+    const payload = professionalClose ? closureMode === 'note'
+      ? { expectedVersion: choice.item.version, closureMode, noteText: closureNote.trim(), attested: closureAttested }
+      : { expectedVersion: choice.item.version, closureMode, reason: reason.trim() }
+      : { expectedVersion: choice.item.version, reason: reason.trim() }
+    await clientFileMutation({ actorId: workspace.actor.id, context: workspace.context }, `/records/${choice.item.recordId}/${choice.action}`, payload, 'POST', onAccessDenied)
+    return async () => { setChoice(null); await onCommitted() }
+  }}><p className="text-sm">{choice.action === 'close' ? 'Le dossier et son suivi seront fermés. Les autres suivis de ce client ne sont pas modifiés et les archives restent conservées.' : choice.action === 'reopen-request' ? 'Cette demande ne réactive pas automatiquement le dossier. Les accès cliniques seront toujours vérifiés.' : 'Cette confirmation est réservée aux personnes autorisées. Elle ne crée aucun accès clinique supplémentaire.'}</p>
+  {choice.action === 'close' && workspace.context === 'clinical' && <div className="grid gap-2 text-sm"><label className="flex gap-2"><input type="radio" name="closureMode" checked={closureMode === 'no_encounter'} onChange={() => setClosureMode('no_encounter')} />Aucune rencontre n’a été effectuée dans ce dossier</label><label className="flex gap-2"><input type="radio" name="closureMode" checked={closureMode === 'note'} onChange={() => setClosureMode('note')} />Note de fermeture de dossier</label></div>}
+  {choice.action === 'close' && workspace.context === 'clinical' && closureMode === 'note' ? <><Field label="Note de fermeture de dossier"><div className="grid gap-2"><button type="button" className={buttonClass('secondary')} onClick={() => { if (!closureNote.trim()) setClosureNote('Motif de la fermeture :\n\nBilan du suivi :\n\nRecommandations et suite convenue :') }}>Utiliser le gabarit de fermeture</button><textarea className={inputClass} required maxLength={24000} rows={8} value={closureNote} onChange={event => setClosureNote(event.target.value)} /></div></Field><label className="flex items-start gap-2 text-sm"><input type="checkbox" required checked={closureAttested} onChange={event => setClosureAttested(event.target.checked)} />J’ai relu cette note et j’en confirme le contenu sous ma responsabilité professionnelle.</label><p className="text-xs text-[#8a6f5d]">La fermeture créera aussi une activité non facturable dans votre calendrier.</p></> : <Field label={choice.action === 'close' && workspace.context === 'clinical' ? 'Motif de fermeture' : 'Motif'}><textarea className={inputClass} required maxLength={1000} rows={3} value={reason} onChange={event => setReason(event.target.value)} /></Field>}
+  </CalendarForm></ProspectDialog>}</div>
+}

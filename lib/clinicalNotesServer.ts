@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getBearerToken } from '@/lib/superAdminServer'
 import { canAccessClinicalNotes } from '@/lib/clinicalNotesAccess'
+import { hasPlatformAccess } from '@/lib/platformAccess'
 
 export async function getClinicalNotesContext(request: NextRequest) {
   const token = getBearerToken(request)
@@ -18,8 +19,9 @@ export async function getClinicalNotesContext(request: NextRequest) {
     const { data: { user }, error } = await db.auth.getUser()
     if (error || !user) return { error: { message: 'Session invalide. Reconnectez-vous.', status: 401 } } as const
     const { data: profile, error: profileError } = await db.from('profiles')
-      .select('role').eq('id', user.id).limit(1).maybeSingle()
+      .select('role, platform_access_enabled, administrative_access').eq('id', user.id).limit(1).maybeSingle()
     if (profileError) return { error: { message: 'Impossible de vérifier les droits.', status: 500 } } as const
+    if (profile && !hasPlatformAccess(profile)) return { error: { message: 'Votre accès à la plateforme est désactivé.', status: 403 } } as const
     if (!canAccessClinicalNotes(user, profile)) {
       return { error: { message: 'Cette section est réservée aux deux comptes du pilote.', status: 403 } } as const
     }

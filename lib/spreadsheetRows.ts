@@ -14,14 +14,14 @@ export function parseSpreadsheetRows(buffer: ArrayBuffer, options: SpreadsheetRe
   let workbook: XLSX.WorkBook
   try {
     workbook = XLSX.read(buffer, {
-      type: 'array', sheets: 0, sheetRows: MAX_SPREADSHEET_ROWS + 1,
+      type: 'array', sheets: options.sheetName ?? 0, sheetRows: MAX_SPREADSHEET_ROWS + 1,
       cellDates: options.cellDates === true, cellHTML: false, cellStyles: false,
       cellFormula: false, bookVBA: false,
     })
   } catch {
     throw new Error('Le classeur Excel ne peut pas être lu. Vérifiez son format et sa validité.')
   }
-  const sheet = workbook.Sheets[workbook.SheetNames[0]]
+  const sheet = workbook.Sheets[options.sheetName ?? workbook.SheetNames[0]]
   const reference = sheet?.['!fullref'] ?? sheet?.['!ref']
   if (!sheet || !reference) throw new Error('La première feuille du classeur est vide.')
   const range = XLSX.utils.decode_range(reference)
@@ -34,4 +34,14 @@ export function parseSpreadsheetRows(buffer: ArrayBuffer, options: SpreadsheetRe
     throw new Error('Une cellule dépasse la limite de 5 000 caractères.')
   }
   return rows
+}
+
+/** Metadata only; bounded ZIP input, no formula/HTML evaluation. */
+export function spreadsheetSheetNames(buffer: ArrayBuffer): string[] {
+  if (!buffer.byteLength || buffer.byteLength > MAX_SPREADSHEET_BYTES) throw new Error('Classeur trop volumineux.')
+  const signature = new Uint8Array(buffer)
+  if (signature[0] !== 0x50 || signature[1] !== 0x4b) throw new Error('Un fichier .xlsx est requis.')
+  const workbook = XLSX.read(buffer, { type: 'array', bookSheets: true, cellFormula: false, cellHTML: false, bookVBA: false })
+  if (!workbook.SheetNames.length || workbook.SheetNames.length > 100) throw new Error('Nombre de feuilles invalide.')
+  return workbook.SheetNames
 }

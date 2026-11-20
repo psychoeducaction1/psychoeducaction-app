@@ -7,6 +7,11 @@
     {
       "path": "/api/cron/ad-spend-sync",
       "schedule": "30 11 * * *"
+    },
+    {
+      "path": "/api/cron/clinical-real-billing",
+      "schedule": "*/5 * * * *"
     }
-  ]
+  ],
+  "buildCommand": "npm run build -- --webpack"
 }

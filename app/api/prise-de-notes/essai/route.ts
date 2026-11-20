@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getClinicalNotesContext } from '@/lib/clinicalNotesServer'
+import { controlledClinicalAccess } from '@/lib/clinical-unification/controlledMergeProfile'
 import { CLINICAL_AUDIO_MAX_BYTES, CLINICAL_TRANSCRIPT_MAX_CHARS } from '@/lib/clinicalNotesAi'
 import { ClinicalNotesAiError, generateClinicalDemo, isClinicalNotesAiEnabled, readClinicalNotesBody, transcribeClinicalDemo } from '@/lib/clinicalNotesAiServer'
 import { resolveClinicalNoteType } from '@/lib/clinicalNoteTemplates'
@@ -14,6 +15,8 @@ export async function POST(request: NextRequest) {
   const reply = (body: unknown, status = 200) => NextResponse.json(body, { status, headers })
   const context = await getClinicalNotesContext(request)
   if (context.error) return reply({ error: context.error.message }, context.error.status)
+  if (process.env.PEA_CONTROLLED_MERGE === 'true' && !controlledClinicalAccess(process.env, context.user.id, 'ai'))
+    return reply({ error: 'L’IA n’est pas activée pour ce compte.' }, 403)
   if (!isClinicalNotesAiEnabled()) return reply({ error: 'L’essai IA n’est pas encore activé côté serveur.' }, 503)
   try {
     const contentType = request.headers.get('content-type') ?? ''

@@ -1,4 +1,6 @@
-﻿'use client'
+'use client'
+
+import { hasDirectionAccess } from '@/lib/administrativeAccess'
 
 import { type FormEvent, type RefObject, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -554,12 +556,12 @@ export function DirectionWaitingList({ readOnly = false }: { readOnly?: boolean 
 
       const { data: currentProfile, error: currentProfileError } = await supabase
         .from('profiles')
-        .select('role, full_name, email')
+        .select('role, full_name, email, administrative_access')
         .eq('id', user.id)
         .limit(1)
         .maybeSingle()
 
-      if (currentProfileError || currentProfile?.role !== 'direction') {
+      if (currentProfileError || !hasDirectionAccess(currentProfile)) {
         router.push('/')
         return
       }

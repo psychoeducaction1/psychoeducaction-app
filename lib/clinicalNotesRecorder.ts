@@ -1,6 +1,5 @@
-import { CLINICAL_AUDIO_MAX_BYTES } from '@/lib/clinicalNotesAi'
-
-export const CLINICAL_RECORDING_MAX_SECONDS = 120
+export const CLINICAL_RECORDING_MAX_SECONDS = 7_200
+export const CLINICAL_RECORDING_MAX_BYTES = 160_000_000
 export type ClinicalRecordingMode = 'teams' | 'presentiel'
 type DisplayOptions = DisplayMediaStreamOptions & { systemAudio: 'include'; windowAudio: 'window'; selfBrowserSurface: 'exclude'; surfaceSwitching: 'exclude' }
 export type RecordingProgress = { seconds: number; microphone: number; teams: number }
@@ -42,6 +41,7 @@ export async function startClinicalRecording(options: {
   onProgress: (progress: RecordingProgress) => void
   onComplete: (file: File, reason: string) => void
   onError: (message: string) => void
+  onAudioChunk?: (samples: Float32Array, sampleRate: number, offsetMs: number) => void
 }, environment?: ClinicalRecordingEnvironment): Promise<ClinicalRecording> {
   const mode = options.mode ?? 'teams'
   if (mode !== 'teams' && mode !== 'presentiel') throw new Error('Choisissez Présentiel ou Teams.')
@@ -59,6 +59,7 @@ export async function startClinicalRecording(options: {
   let finished = false
   let stopping = false
   let reason = 'Enregistrement arrêté.'
+  let flushAudio: (() => void) | undefined
   const stopTracks = () => {
     for (const remove of listeners.splice(0)) remove()
     for (const stream of streams) for (const track of stream.getTracks()) track.stop()
@@ -71,6 +72,7 @@ export async function startClinicalRecording(options: {
   const stop = () => {
     if (stopping || finished) return
     stopping = true
+    if (!discarded) flushAudio?.()
     // Le dernier chunk est produit par stop; on attend onstop avant d'assembler.
     if (recorder?.state !== 'inactive' && recorder) recorder.stop()
     stopTracks()
@@ -128,6 +130,44 @@ export async function startClinicalRecording(options: {
     }
     const microphoneMeter = attach(microphone)
     const teamsMeter = display ? attach(display) : null
+    if (options.onAudioChunk) {
+      // Feed only the mixed PCM to the browser worker. The gain is zero: no audio is played.
+      const tap = context.createMediaStreamSource(output.stream)
+      const processor = context.createScriptProcessor(4096, 1, 1)
+      const silent = context.createGain()
+      silent.gain.value = 0
+      tap.connect(processor); processor.connect(silent); silent.connect(context.destination)
+      nodes.push(tap, processor, silent)
+      const sampleRate = context.sampleRate
+      const chunkSamples = sampleRate * 30
+      let pieces: Float32Array[] = []
+      let buffered = 0
+      let sent = 0
+      const flush = (final: boolean) => {
+        if (discarded || !buffered || (!final && buffered < chunkSamples)) return
+        const all = new Float32Array(buffered)
+        let at = 0
+        for (const piece of pieces) { all.set(piece, at); at += piece.length }
+        let emitted = 0
+        while (all.length - emitted >= chunkSamples || (final && emitted < all.length)) {
+          const end = Math.min(emitted + chunkSamples, all.length)
+          const part = all.slice(emitted, end)
+          options.onAudioChunk?.(part, sampleRate, Math.round((sent + emitted) / sampleRate * 1000))
+          emitted = end
+        }
+        sent += emitted
+        const remainder = all.slice(emitted)
+        pieces = remainder.length ? [remainder] : []
+        buffered = remainder.length
+      }
+      flushAudio = () => flush(true)
+      processor.onaudioprocess = event => {
+        if (discarded || stopping) return
+        const copy = new Float32Array(event.inputBuffer.getChannelData(0))
+        pieces.push(copy); buffered += copy.length
+        flush(false)
+      }
+    }
     const level = (analyser: AnalyserNode) => {
       const samples = new Uint8Array(analyser.fftSize)
       analyser.getByteTimeDomainData(samples)
@@ -137,7 +177,7 @@ export async function startClinicalRecording(options: {
     recorder.ondataavailable = event => {
       if (discarded || finished || !event.data.size) return
       bytes += event.data.size
-      if (bytes > CLINICAL_AUDIO_MAX_BYTES) {
+      if (bytes > CLINICAL_RECORDING_MAX_BYTES) {
         discarded = true; chunks = []; stop(); dispose()
         options.onError('Extrait trop volumineux. Il a été écarté ; recommencez un essai plus court.')
       } else chunks.push(event.data)
@@ -156,9 +196,9 @@ export async function startClinicalRecording(options: {
       options.onComplete(file, reason)
     }
     const started = env.now()
-    recorder.start(250)
+    recorder.start(1_000)
     interval = setInterval(() => options.onProgress({ seconds: Math.min(CLINICAL_RECORDING_MAX_SECONDS, Math.floor((env.now() - started) / 1000)), microphone: level(microphoneMeter), teams: teamsMeter ? level(teamsMeter) : 0 }), 250)
-    deadline = setTimeout(() => { reason = 'Limite de deux minutes atteinte. L’enregistrement a été arrêté.'; stop() }, CLINICAL_RECORDING_MAX_SECONDS * 1000)
+    deadline = setTimeout(() => { reason = 'Limite de deux heures atteinte. L’enregistrement a été arrêté.'; stop() }, CLINICAL_RECORDING_MAX_SECONDS * 1000)
     return { stop, discard }
   } catch (error) {
     discard()

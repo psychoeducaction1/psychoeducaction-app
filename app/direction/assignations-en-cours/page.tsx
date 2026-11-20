@@ -1,8 +1,12 @@
 'use client'
 
+import { hasDirectionAccess } from '@/lib/administrativeAccess'
+
+
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppNav } from '@/components/AppNav'
+import { ClinicalLegacyLinkStatus } from '@/components/ClinicalLegacyLinkStatus'
 import { Badge, buttonClass, EmptyState } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
 import { createAssignmentFromWaitingListClient } from '@/lib/waitingListAssignment'
@@ -236,12 +240,12 @@ export default function AssignmentProcessesPage() {
 
     const { data: currentProfile } = await supabase
       .from('profiles')
-      .select('id, role, full_name, email')
+      .select('id, role, full_name, email, administrative_access')
       .eq('id', user.id)
       .limit(1)
       .maybeSingle()
 
-    if (currentProfile?.role !== 'direction') {
+    if (!hasDirectionAccess(currentProfile)) {
       router.push('/')
       return
     }
@@ -259,7 +263,7 @@ export default function AssignmentProcessesPage() {
         .order('started_at', { ascending: false }),
       supabase
         .from('profiles')
-        .select('id, full_name, email, role')
+        .select('id, full_name, email, role, administrative_access')
         .in('role', ['direction', 'professionnel'])
         .eq('is_active', true)
         .order('full_name'),
@@ -1068,6 +1072,7 @@ export default function AssignmentProcessesPage() {
                           <h2 className="text-lg font-semibold text-[#332820]">{client?.client_name ?? 'Client introuvable'}</h2>
                           <Badge tone={statusTones[process.status]}>{statusLabels[process.status]}</Badge>
                         </div>
+                        <ClinicalLegacyLinkStatus sourceTable="waiting_list_clients" sourceId={process.waiting_list_client_id} />
                         <div className="mt-2 space-y-1 text-sm text-[#7a6859]">
                           <p>
                             Premier contact : {formatDateTime(client?.contact_date ?? client?.created_at)}

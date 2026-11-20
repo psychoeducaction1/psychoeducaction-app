@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
+import { clinicalHomeDestination } from '@/lib/clinical-real/homeDestination'
 
 const SESSION_RETRY_DELAY_MS = 150
 const PROFILE_RETRY_DELAY_MS = 200
@@ -19,6 +20,11 @@ export default function HomePage() {
   const [errorMessage, setErrorMessage] = useState('')
 
   useEffect(() => {
+    const clinicalReal = process.env.NEXT_PUBLIC_PEA_CLINICAL_REAL === 'true'
+    if (!clinicalReal && process.env.NEXT_PUBLIC_PEA_ISOLATED_DEVELOPMENT === 'true') {
+      router.replace('/clinique')
+      return
+    }
     let cancelled = false
 
     const checkUser = async () => {
@@ -29,9 +35,6 @@ export default function HomePage() {
         const {
           data: { user },
         } = await supabase.auth.getUser()
-
-        console.log('[HomePage auth] user.id:', user?.id)
-        console.log('[HomePage auth] user.email:', user?.email)
 
         if (!user) {
           router.replace('/login')
@@ -55,7 +58,7 @@ export default function HomePage() {
         for (let attempt = 0; attempt < 2; attempt += 1) {
           const { data, error } = await supabase
             .from('profiles')
-            .select('role, platform_access_enabled')
+            .select('role, platform_access_enabled, administrative_access')
             .eq('id', user.id)
             .maybeSingle()
 
@@ -69,9 +72,6 @@ export default function HomePage() {
           await wait(PROFILE_RETRY_DELAY_MS)
         }
 
-        console.log('[HomePage auth] profile:', profile)
-        console.log('[HomePage auth] profile error:', profileError)
-
         if (profileError) {
           setErrorMessage(profileError.message)
           return
@@ -84,19 +84,16 @@ export default function HomePage() {
           return
         }
 
-        if (profile.role === 'direction') {
-          router.replace('/direction')
+        if (profile.platform_access_enabled === false) {
+          setErrorMessage('Votre accès à la plateforme est désactivé. Veuillez communiquer avec la direction.')
+          return
+        }
+
+        const destination = clinicalHomeDestination(profile.role, clinicalReal)
+        if (destination) {
+          router.replace(destination)
         } else if (profile.role === 'marketing') {
           setErrorMessage('Cet espace a été fermé. Veuillez communiquer avec la direction.')
-        } else if (profile.role === 'professionnel') {
-          if (profile.platform_access_enabled === false) {
-            setErrorMessage(
-              "Votre accès à la plateforme est désactivé. Veuillez communiquer avec la direction."
-            )
-            return
-          }
-
-          router.replace('/professionnel')
         } else {
           setErrorMessage("Le role de ce profil n'est pas reconnu.")
         }

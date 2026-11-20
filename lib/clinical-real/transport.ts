@@ -1,0 +1,48 @@
+import { migrationRpcFailure } from '../clinical-migration/errors.ts'
+import { mandateDateFailure } from '../clinical-mandates/dateErrors.ts'
+import { financialFailureCode, isFinancialRpcRejection } from '../clinical-finance/errors.ts'
+import { calendarFailure } from '../clinical-calendar/errors.ts'
+import { realClinicalConfiguration } from './mandateTransport.ts'
+import { mandateDefaultFailure } from '../clinical-mandates/defaultErrors.ts'
+import { documentStorageOperation, finishDocumentRpc } from './documentStorage.ts'
+
+/** JWT utilisateur et clé publique uniquement; les droits demeurent dans les RPC. */
+export function realClinicalTransport() {
+  const { url, anonKey } = realClinicalConfiguration()
+  return {
+    async authenticate(request: Request): Promise<string | null> {
+      const match = /^Bearer ([A-Za-z0-9._~-]{1,8192})$/.exec(request.headers.get('authorization') ?? '')
+      if (!match) return null
+      const token = match[1]
+      const response = await fetch(`${url}/auth/v1/user`, { cache: 'no-store', redirect: 'error',
+        signal: AbortSignal.timeout(15_000), headers: { apikey: anonKey, Authorization: `Bearer ${token}` } })
+      if (!response.ok) return null
+      const user: unknown = await response.json().catch(() => null)
+      return user && typeof user === 'object' && 'id' in user && typeof user.id === 'string' ? token : null
+    },
+    async rpc(name: string, args: Record<string, unknown>, token: string): Promise<unknown> {
+      // The calendar introduced a four-digit version. Keep other RPC names under the existing guard.
+      if (name !== 'clinical_unified_calendar_query_1060' && !/^clinical_[a-z_]{1,80}(?:_[0-9]{1,3})?$/.test(name))
+        throw new Error('REAL_CLINICAL_RPC_REFUSED')
+      const operation = documentStorageOperation()
+      const response = await fetch(`${url}/rest/v1/rpc/${name}`, { method: 'POST', cache: 'no-store',
+        redirect: 'error', signal: AbortSignal.timeout(15_000),
+        headers: { apikey: anonKey, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(operation ? { 'x-clinical-pdf-operation': operation } : {}) },
+        body: JSON.stringify(args) })
+      const value: unknown = await response.json().catch(() => null)
+      if (!response.ok) {
+        const migration = name === 'clinical_migration_command' ? migrationRpcFailure(value) : null
+        const prerequisite = mandateDefaultFailure(value)
+        const mandateDate = mandateDateFailure(value)
+        const financialCode = name === 'clinical_unified_finance_command' || name === 'clinical_unified_fee_quote' ? financialFailureCode(value) ?? (isFinancialRpcRejection(value) ? 'FINANCE_RPC_REJECTED' : null) : null
+        const transcriptCode = name === 'clinical_unified_encounter_transcript' && value && typeof value === 'object' && 'message' in value && typeof value.message === 'string' && ['TRANSCRIPT_VERSION_CONFLICT','TRANSCRIPT_SIGNED_NOTE_LOCKED','TRANSCRIPT_OPERATION_CONFLICT','TRANSCRIPT_INVALID'].includes(value.message) ? value.message : null
+        const calendar = name.startsWith('clinical_unified_calendar_') || name.startsWith('clinical_unified_encounter_') ? calendarFailure(value, 'clinical') : null
+        const error = new Error(migration?.code ?? prerequisite?.code ?? 'REAL_CLINICAL_RPC_FAILED') as Error & { code?: string; mandateStartDate?: string }
+        if (mandateDate) error.mandateStartDate = mandateDate.startDate
+        error.code = migration?.code ?? mandateDate?.code ?? financialCode ?? transcriptCode ?? calendar?.code ?? (value && typeof value === 'object' && 'code' in value && typeof value.code === 'string' ? value.code : undefined)
+        throw error
+      }
+      return finishDocumentRpc(value, url, operation, name)
+    },
+  }
+}

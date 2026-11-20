@@ -15,7 +15,7 @@ export async function getClinicalCoordinationContext(request: NextRequest) {
   const db = createClient(url, key, { global: { headers: { Authorization: `Bearer ${token}` } }, auth: { persistSession: false, autoRefreshToken: false } })
   const { data: { user }, error: authError } = await db.auth.getUser()
   if (!user || authError) return { error: 'Session invalide.', status: 401 } as const
-  const { data: profile, error: profileError } = await db.from('profiles').select('role, full_name, platform_access_enabled').eq('id', user.id).maybeSingle()
+  const { data: profile, error: profileError } = await db.from('profiles').select('role, full_name, platform_access_enabled, administrative_access').eq('id', user.id).maybeSingle()
   if (profileError) return { error: 'Vérification des accès impossible.', status: 503 } as const
   if (!profile || !hasPlatformAccess(profile)) return { error: 'Accès refusé.', status: 403 } as const
   const isManager = isClinicalCoordinationManager(user, profile)

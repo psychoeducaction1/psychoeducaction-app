@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import { buttonClass } from '@/components/ui/index'
-import { buildIntakeSlots, dateKeyInToronto, dateTimeInputToUtcInToronto, dateTimeInputValueInToronto } from '@/lib/publicIntakeSchedule'
+import { torontoLocalInstant } from '@/lib/clinical-calendar/time'
+import { buildIntakeSlots, dateKeyInToronto, dateTimeInputValueInToronto } from '@/lib/publicIntakeSchedule'
 
 export function ProspectFollowupForm({ prospectId, appointmentId, outcomeReason, authenticatedFetch, saving, onSavingChange, onCreated, onCancel }: {
   prospectId: string
@@ -26,7 +27,7 @@ export function ProspectFollowupForm({ prospectId, appointmentId, outcomeReason,
     try {
       const response = await authenticatedFetch(`/api/direction/prospects/${prospectId}/appointments`, {
         method: 'POST', body: JSON.stringify({
-          startAt: dateTimeInputToUtcInToronto(submittedStartAt).toISOString(),
+          startAt: torontoLocalInstant(submittedStartAt),
           appointmentId, outcomeReason, idempotencyKey,
         }),
       })

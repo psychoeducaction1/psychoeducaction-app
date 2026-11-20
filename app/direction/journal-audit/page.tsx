@@ -1,7 +1,11 @@
 'use client'
 
+import { hasDirectionAccess } from '@/lib/administrativeAccess'
+
+
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { AppNav } from '@/components/AppNav'
 import {
   Badge,
@@ -18,8 +22,9 @@ import {
 } from '@/components/ui/index'
 import { buttonClass } from '@/components/Ui'
 import { supabase } from '@/lib/supabaseClient'
-import { isSuperAdmin } from '@/lib/superAdmin'
-import { excludeSatisfactionAuditEvents, isVisibleInAuditJournal } from '@/lib/auditJournal'
+import { excludeSatisfactionAuditEvents, excludeTemporaryActorAuditEvents, isActorEventVisibleInJournal, isVisibleInAuditJournal } from '@/lib/auditJournal'
+import { auditActionLabel, auditDescription, isBusinessAuditEvent } from '@/lib/auditJournalPresentation'
+import { clinicalAuditRow, type ClinicalAuditEvent } from '@/lib/clinical-real/auditJournal'
 import {
   getAssignedClientStatusMeta,
   type AssignedClientStatus,
@@ -63,35 +68,14 @@ function formatText(value: string | null | undefined): string {
 
 function formatRole(value: string | null): string {
   if (value === 'direction') return 'Direction'
-  if (value === 'professionnel') return 'Professionnel'
+  if (value === 'professionnel' || value === 'professional') return 'Professionnel'
+  if (value === 'admin') return 'Administration'
+  if (value === 'assistant') return 'Adjointe administrative'
+  if (value === 'supervisor') return 'Superviseur'
   return formatText(value)
 }
 
-function formatAction(value: string | null): string {
-  const labels: Record<string, string> = {
-    assignment_created: 'Assignation créée',
-    professional_notification_sent: 'Courriel professionnel envoyé',
-    professional_notification_failed: 'Courriel professionnel échoué',
-    professional_notification_not_sent: 'Courriel professionnel non envoyé',
-    client_notification_sent: 'Courriel client envoyé',
-    client_notification_failed: 'Courriel client échoué',
-    client_notification_not_sent: 'Courriel client non envoyé',
-    assignment_status_changed: 'Statut modifié',
-    professional_created: 'Professionnel créé',
-    platform_access_enabled: 'Accès plateforme activé',
-    platform_access_disabled: 'Accès plateforme désactivé',
-    professional_access_resent: 'Invitation renvoyée',
-    waiting_list_client_created: 'Client créé',
-    waiting_list_client_deleted: 'Client supprimé',
-    waiting_list_client_permanently_deleted: 'Client supprimé définitivement',
-    assigned_client_deleted: 'Assignation supprimée',
-    assignment_request_deleted: 'Demande supprimée',
-    professional_deleted: 'Professionnel supprimé',
-    pending_contact_reminder_sent: 'Rappel automatique envoyé',
-  }
-
-  return value ? labels[value] ?? value : '-'
-}
+function formatAction(value: string | null): string { return auditActionLabel(value) }
 
 function getActionTone(value: string | null): BadgeTone {
   if (!value) return 'muted'
@@ -173,20 +157,16 @@ export default function DirectionJournalAuditPage() {
   const [logs, setLogs] = useState<AuditLogRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [deleteError, setDeleteError] = useState('')
+  const [clinicalNotice, setClinicalNotice] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [actorFilter, setActorFilter] = useState('all')
   const [actionFilter, setActionFilter] = useState('all')
   const [currentPage, setCurrentPage] = useState(0)
-  const [canDeleteAuditLog, setCanDeleteAuditLog] = useState(false)
-  const [logToDelete, setLogToDelete] = useState<AuditLogRow | null>(null)
-  const [deletingLogId, setDeletingLogId] = useState('')
 
   useEffect(() => {
     const loadAuditLogs = async () => {
       setLoading(true)
       setError('')
-      setDeleteError('')
 
       const {
         data: { user },
@@ -200,24 +180,23 @@ export default function DirectionJournalAuditPage() {
 
       const { data: currentProfile, error: currentProfileError } = await supabase
         .from('profiles')
-        .select('role, email')
+        .select('role, platform_access_enabled, administrative_access')
         .eq('id', user.id)
         .limit(1)
         .maybeSingle()
 
-      if (currentProfileError || currentProfile?.role !== 'direction') {
+      if (currentProfileError || !hasDirectionAccess(currentProfile) || currentProfile.platform_access_enabled === false) {
         router.push('/')
         return
       }
 
-      setCanDeleteAuditLog(isSuperAdmin(user, currentProfile))
 
       const auditQuery = supabase
         .from('audit_logs')
         .select(
           'id, created_at, actor_profile_id, actor_name, actor_role, action, entity_type, entity_id, description, metadata'
         )
-      const { data, error: auditError } = await excludeSatisfactionAuditEvents(auditQuery)
+      const { data, error: auditError } = await excludeTemporaryActorAuditEvents(excludeSatisfactionAuditEvents(auditQuery))
         .order('created_at', { ascending: false })
         .limit(500)
 
@@ -227,7 +206,20 @@ export default function DirectionJournalAuditPage() {
         return
       }
 
-      setLogs(((data ?? []) as AuditLogRow[]).filter(isVisibleInAuditJournal))
+      const historical = ((data ?? []) as AuditLogRow[]).filter(isVisibleInAuditJournal)
+      let clinical: AuditLogRow[] = []
+      if (process.env.NEXT_PUBLIC_PEA_CLINICAL_REAL === 'true') {
+        const { data: clinicalData, error: clinicalError } = await supabase.rpc('clinical_audit_journal', { p_limit: 200 })
+        if (clinicalError) {
+          setClinicalNotice('Le journal clinique n’est pas disponible sur cette instance ou pour ce compte.')
+        } else {
+          const events = (clinicalData as { events?: ClinicalAuditEvent[] } | null)?.events
+          if (Array.isArray(events)) clinical = events.map(event => clinicalAuditRow(event))
+          else setClinicalNotice('Le journal clinique a renvoyé une réponse inattendue.')
+        }
+      }
+      setLogs([...historical, ...clinical].filter(log => isActorEventVisibleInJournal(log.actor_profile_id, log.created_at) && isBusinessAuditEvent(log)).sort((left, right) =>
+        (right.created_at ?? '').localeCompare(left.created_at ?? '')))
       setLoading(false)
     }
 
@@ -291,44 +283,6 @@ export default function DirectionJournalAuditPage() {
     safeCurrentPage * AUDIT_PAGE_SIZE + AUDIT_PAGE_SIZE
   )
 
-  const handleDeleteLog = async () => {
-    if (!logToDelete) return
-
-    setDeletingLogId(logToDelete.id)
-    setDeleteError('')
-
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-
-    if (!session?.access_token) {
-      setDeleteError('Session introuvable.')
-      setDeletingLogId('')
-      return
-    }
-
-    const response = await fetch(`/api/direction/audit-logs/${logToDelete.id}`, {
-      method: 'DELETE',
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-      },
-    })
-
-    if (!response.ok) {
-      const body = (await response.json().catch(() => null)) as
-        | { error?: string }
-        | null
-      setDeleteError(body?.error ?? "La suppression de l'entrée a échoué.")
-      setDeletingLogId('')
-      return
-    }
-
-    setLogs((currentLogs) =>
-      currentLogs.filter((currentLog) => currentLog.id !== logToDelete.id)
-    )
-    setLogToDelete(null)
-    setDeletingLogId('')
-  }
 
   return (
     <>
@@ -355,6 +309,7 @@ export default function DirectionJournalAuditPage() {
 
           {!loading && !error && (
             <div className="space-y-5">
+              {clinicalNotice && <p role="status" className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">{clinicalNotice}</p>}
               <section className="grid gap-3 rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-5 shadow-[0_1px_2px_rgba(72,49,30,0.06)] lg:grid-cols-[1fr_0.35fr_0.35fr]">
                 <label className="block text-sm font-medium text-[#5d4a3d]">
                   Recherche
@@ -407,12 +362,6 @@ export default function DirectionJournalAuditPage() {
                 </label>
               </section>
 
-              {deleteError && (
-                <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                  {deleteError}
-                </div>
-              )}
-
               <div className={tableShellClass}>
                 <table className={`${tableClass} w-full min-w-[1120px] table-fixed`}>
                   <colgroup>
@@ -421,7 +370,6 @@ export default function DirectionJournalAuditPage() {
                     <col className="w-[9rem]" />
                     <col className="w-[15rem]" />
                     <col />
-                    {canDeleteAuditLog && <col className="w-[9rem]" />}
                   </colgroup>
                   <thead className={tableHeaderClass}>
                     <tr>
@@ -430,18 +378,14 @@ export default function DirectionJournalAuditPage() {
                       <th className={tableHeadCellClass}>Rôle</th>
                       <th className={tableHeadCellClass}>Action</th>
                       <th className={tableHeadCellClass}>Description</th>
-                      {canDeleteAuditLog && (
-                        <th className={`${tableHeadCellClass} text-right`}>
-                          Actions
-                        </th>
-                      )}
+
                     </tr>
                   </thead>
                   <tbody className={tableBodyClass}>
                     {paginatedLogs.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={canDeleteAuditLog ? 6 : 5}
+                          colSpan={5}
                           className="px-4 py-8"
                         >
                           <EmptyState title="Aucune action trouvée." />
@@ -456,9 +400,7 @@ export default function DirectionJournalAuditPage() {
                             </span>
                           </td>
                           <td className={`${tableCellClass} align-top`}>
-                            <span className="font-medium text-[#332820]">
-                              {formatText(log.actor_name)}
-                            </span>
+                            {log.actor_profile_id && ['professionnel', 'professional', 'supervisor'].includes(log.actor_role ?? '') ? <Link href={'/professionnel/' + encodeURIComponent(log.actor_profile_id)} className="rounded px-1 -ml-1 font-medium text-[#332820] underline decoration-[#cfb89e] underline-offset-4 hover:bg-[#f0e2d2] hover:text-[#8a5633] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#8a5633]" title="Ouvrir la fiche du professionnel">{formatText(log.actor_name)}</Link> : <span className="font-medium text-[#332820]">{formatText(log.actor_name)}</span>}
                           </td>
                           <td className={`${tableCellClass} align-top`}>
                             <Badge
@@ -478,7 +420,7 @@ export default function DirectionJournalAuditPage() {
                           </td>
                           <td className={`${tableCellClass} align-top`}>
                             <p className="break-words leading-6 text-[#6c5a4d]">
-                              {formatText(log.description)}
+                              {auditDescription(log)}
                             </p>
                             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[#8a6f5d]">
                               {getAuditDetails(log).length > 0 ? (
@@ -495,17 +437,7 @@ export default function DirectionJournalAuditPage() {
                               )}
                             </div>
                           </td>
-                          {canDeleteAuditLog && (
-                            <td className={`${tableCellClass} align-top text-right`}>
-                              <button
-                                type="button"
-                                className={`${buttonClass('secondary')} !w-auto justify-center text-sm text-red-700 hover:border-red-200 hover:bg-red-50`}
-                                onClick={() => setLogToDelete(log)}
-                              >
-                                Supprimer
-                              </button>
-                            </td>
-                          )}
+
                         </tr>
                       ))
                     )}
@@ -547,36 +479,6 @@ export default function DirectionJournalAuditPage() {
         </div>
       </main>
 
-      {logToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4">
-          <div className="w-full max-w-md rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-6 shadow-[0_18px_50px_rgba(72,49,30,0.22)]">
-            <h2 className="text-lg font-semibold text-[#332820]">
-              Supprimer cette entrée
-            </h2>
-            <p className="mt-3 text-sm leading-6 text-[#6c5a4d]">
-              Voulez-vous vraiment supprimer cette entrée du journal d&apos;audit ?
-            </p>
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
-              <button
-                type="button"
-                className={buttonClass('secondary')}
-                onClick={() => setLogToDelete(null)}
-                disabled={Boolean(deletingLogId)}
-              >
-                Annuler
-              </button>
-              <button
-                type="button"
-                className={buttonClass('danger')}
-                onClick={handleDeleteLog}
-                disabled={deletingLogId === logToDelete.id}
-              >
-                {deletingLogId === logToDelete.id ? 'Suppression...' : 'Supprimer'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   )
 }

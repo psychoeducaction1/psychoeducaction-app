@@ -1,0 +1,15 @@
+.pilot-private
+.local-clinical
+.env*
+output
+tmp
+*.tsbuildinfo
+.next*
+node_modules
+docs
+scripts/unification
+tests
+supabase
+deployment
+AGENTS.md
+PROJECT_NOTES.md

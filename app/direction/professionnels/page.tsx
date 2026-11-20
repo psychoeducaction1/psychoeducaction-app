@@ -1,4 +1,9 @@
 'use client'
+import { usesUnifiedDirectionNavigation } from '@/lib/directionNavigation'
+import type { MouseEvent } from 'react'
+
+import { hasDirectionAccess } from '@/lib/administrativeAccess'
+
 
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
@@ -18,7 +23,6 @@ import {
 } from '@/components/ui/index'
 import { type ProfessionalCivility } from '@/lib/professionalCivility'
 import { supabase } from '@/lib/supabaseClient'
-import { isSuperAdmin } from '@/lib/superAdmin'
 import {
   getAssignedClientStatus,
   getAssignmentRequestMetrics,
@@ -94,7 +98,14 @@ type AuditActor = {
 export default function DirectionProfessionnelsPage() {
   const router = useRouter()
   const [auditActor, setAuditActor] = useState<AuditActor | null>(null)
-  const [canUseSuperAdminActions, setCanUseSuperAdminActions] = useState(false)
+  const professionalFileBase = usesUnifiedDirectionNavigation(auditActor?.id, !!auditActor, process.env.NEXT_PUBLIC_PEA_CLINICAL_REAL === 'true') ? '/administration/professionnels' : '/professionnel'
+  const professionalFileHref = (id: string) => `${professionalFileBase}/${id}${professionalFileBase === '/administration/professionnels' ? '?tab=requests' : ''}`
+  const openProfessionalFile = (event: MouseEvent<HTMLAnchorElement>, id: string) => {
+    if (professionalFileBase !== '/administration/professionnels' || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return
+    // Dispose the legacy router before entering the clinical history-based shell.
+    event.preventDefault()
+    window.location.assign(professionalFileHref(id))
+  }
   const [rows, setRows] = useState<ProfessionalRow[]>([])
   const [archivedRows, setArchivedRows] = useState<ProfessionalRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -132,10 +143,6 @@ export default function DirectionProfessionnelsPage() {
   ] = useState<string | null>(null)
   const [platformAccessSuccess, setPlatformAccessSuccess] = useState('')
   const [platformAccessError, setPlatformAccessError] = useState('')
-  const [deletingProfessionalId, setDeletingProfessionalId] = useState<
-    string | null
-  >(null)
-  const [deleteProfessionalError, setDeleteProfessionalError] = useState('')
 
   useEffect(() => {
     const loadProfessionals = async () => {
@@ -154,12 +161,12 @@ export default function DirectionProfessionnelsPage() {
 
       const { data: currentProfile, error: currentProfileError } = await supabase
         .from('profiles')
-        .select('role, full_name, email')
+        .select('role, full_name, email, administrative_access')
         .eq('id', user.id)
         .limit(1)
         .maybeSingle()
 
-      if (currentProfileError || currentProfile?.role !== 'direction') {
+      if (currentProfileError || !hasDirectionAccess(currentProfile)) {
         router.push('/')
         return
       }
@@ -169,7 +176,6 @@ export default function DirectionProfessionnelsPage() {
         role: currentProfile.role,
         name: currentProfile.full_name ?? currentProfile.email ?? null,
       })
-      setCanUseSuperAdminActions(isSuperAdmin(user, currentProfile))
 
       const { data: profilesData, error: profilesError } = await supabase
         .from('profiles')
@@ -774,117 +780,6 @@ export default function DirectionProfessionnelsPage() {
     }
   }
 
-  const handleDeleteProfessional = async (professional: ProfessionalRow) => {
-    setDeleteProfessionalError('')
-    setDeletingProfessionalId(professional.id)
-
-    try {
-      const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession()
-
-      if (sessionError || !session?.access_token) {
-        throw new Error('Session introuvable. Veuillez vous reconnecter.')
-      }
-
-      const summaryResponse = await fetch(
-        `/api/direction/professionals/${professional.id}`,
-        {
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        }
-      )
-      const summaryResult = (await summaryResponse.json().catch(() => null)) as
-        | {
-            error?: string
-            summary?: {
-              requestsCount: number
-              assignmentsCount: number
-              clientsCount: number
-              serviceTaken: number
-              serviceNotTaken: number
-              pending: number
-            }
-          }
-        | null
-
-      if (!summaryResponse.ok) {
-        throw new Error(
-          summaryResult?.error ??
-            'Impossible de charger le résumé du professionnel.'
-        )
-      }
-
-      const summary = summaryResult?.summary ?? {
-        requestsCount: 0,
-        assignmentsCount: 0,
-        clientsCount: 0,
-        serviceTaken: 0,
-        serviceNotTaken: 0,
-        pending: 0,
-      }
-
-      if (summary.pending > 0) {
-        throw new Error(
-          `Suppression impossible: ${summary.pending} assignation(s) sont encore en attente.`
-        )
-      }
-
-      const confirmed = window.confirm(
-        [
-          'Supprimer définitivement ce professionnel ?',
-          '',
-          `Nom : ${professional.fullName}`,
-          `Nombre de demandes : ${summary.requestsCount}`,
-          `Nombre d'assignations : ${summary.assignmentsCount}`,
-          `Nombre de clients : ${summary.clientsCount}`,
-          `Services pris : ${summary.serviceTaken}`,
-          `Services non pris : ${summary.serviceNotTaken}`,
-          '',
-          'Cette action supprimera le profil et les données opérationnelles associées.',
-        ].join('\n')
-      )
-
-      if (!confirmed) return
-
-      const deleteResponse = await fetch(
-        `/api/direction/professionals/${professional.id}`,
-        {
-          method: 'DELETE',
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        }
-      )
-      const deleteResult = (await deleteResponse.json().catch(() => null)) as
-        | { error?: string }
-        | null
-
-      if (!deleteResponse.ok) {
-        throw new Error(
-          deleteResult?.error ?? 'Impossible de supprimer le professionnel.'
-        )
-      }
-
-      setRows((currentRows) =>
-        currentRows.filter((row) => row.id !== professional.id)
-      )
-      setArchivedRows((currentRows) =>
-        currentRows.filter((row) => row.id !== professional.id)
-      )
-    } catch (caughtError: unknown) {
-      setDeleteProfessionalError(
-        caughtError instanceof Error
-          ? caughtError.message
-          : 'Impossible de supprimer le professionnel.'
-      )
-    } finally {
-      setDeletingProfessionalId(null)
-    }
-  }
-
   async function updateCivility(row: ProfessionalRow, value: string) {
     if (!['', 'M.', 'Mme'].includes(value)) return
     const civility = (value || null) as ProfessionalCivility | null
@@ -1120,12 +1015,6 @@ export default function DirectionProfessionnelsPage() {
                 </div>
               )}
 
-              {deleteProfessionalError && (
-                <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                  {deleteProfessionalError}
-                </div>
-              )}
-
               <div className="mt-6">
                 <h2 className="text-lg font-semibold text-[#332820]">
                   Professionnels actifs
@@ -1176,12 +1065,15 @@ export default function DirectionProfessionnelsPage() {
                           <tr key={row.id} className={tableRowClass}>
                             <td className="px-4 py-3 align-top text-[#332820]">
                               <Link
-                                href={`/professionnel/${row.id}`}
+                                href={professionalFileHref(row.id)}
+                                onClick={event => openProfessionalFile(event, row.id)}
+                                prefetch={professionalFileBase === '/administration/professionnels' ? false : undefined}
                                 className="font-medium text-[#6d3f1f] underline decoration-[#d9b591] underline-offset-2 hover:decoration-[#9b6a3d]"
                               >
                                 {row.fullName}
                               </Link>
                               {civilitySelect(row)}
+                              <Link href={`/direction/professionnels/${row.id}/apercu`} prefetch={false} className="mt-2 block text-sm font-medium text-[#6d3f1f] underline">Voir l’espace professionnel</Link>
                             </td>
                             <td className={tableCellClass}>{row.email}</td>
                             <td className={tableCellClass}>
@@ -1279,18 +1171,6 @@ export default function DirectionProfessionnelsPage() {
                                     ? 'Désactivation...'
                                     : 'Désactiver'}
                                 </button>
-                                {canUseSuperAdminActions && (
-                                  <button
-                                    type="button"
-                                    onClick={() => void handleDeleteProfessional(row)}
-                                    disabled={deletingProfessionalId === row.id}
-                                    className="inline-flex min-h-9 items-center justify-center rounded-xl border border-red-300 bg-white px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-                                  >
-                                    {deletingProfessionalId === row.id
-                                      ? 'Suppression...'
-                                      : 'Supprimer définitivement'}
-                                  </button>
-                                )}
                               </div>
                             </td>
                           </tr>
@@ -1339,12 +1219,15 @@ export default function DirectionProfessionnelsPage() {
                           <tr key={row.id} className={tableRowClass}>
                             <td className="px-4 py-3 align-top text-[#332820]">
                               <Link
-                                href={`/professionnel/${row.id}`}
+                                href={professionalFileHref(row.id)}
+                                onClick={event => openProfessionalFile(event, row.id)}
+                                prefetch={professionalFileBase === '/administration/professionnels' ? false : undefined}
                                 className="font-medium text-[#6d3f1f] underline decoration-[#d9b591] underline-offset-2 hover:decoration-[#9b6a3d]"
                               >
                                 {row.fullName}
                               </Link>
                               {civilitySelect(row)}
+                              <Link href={`/direction/professionnels/${row.id}/apercu`} prefetch={false} className="mt-2 block text-sm font-medium text-[#6d3f1f] underline">Voir l’espace professionnel</Link>
                             </td>
                             <td className={tableCellClass}>{row.email}</td>
                             <td className={tableCellClass}>
@@ -1412,18 +1295,6 @@ export default function DirectionProfessionnelsPage() {
                                     ? 'Réactivation...'
                                     : 'Réactiver'}
                                 </button>
-                                {canUseSuperAdminActions && (
-                                  <button
-                                    type="button"
-                                    onClick={() => void handleDeleteProfessional(row)}
-                                    disabled={deletingProfessionalId === row.id}
-                                    className="inline-flex min-h-9 items-center justify-center rounded-xl border border-red-300 bg-white px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-                                  >
-                                    {deletingProfessionalId === row.id
-                                      ? 'Suppression...'
-                                      : 'Supprimer définitivement'}
-                                  </button>
-                                )}
                               </div>
                             </td>
                           </tr>

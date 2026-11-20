@@ -1,5 +1,8 @@
 'use client'
 
+import { hasDirectionAccess } from '@/lib/administrativeAccess'
+
+
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { loadClinicalDirectionPage } from '@/lib/clinicalDirectionClient'
@@ -12,6 +15,7 @@ import {
   Users,
 } from 'lucide-react'
 import { AppNav } from '@/components/AppNav'
+import { AssignmentRequestComment } from '@/components/AssignmentRequestComment'
 import {
   Badge,
   buttonClass,
@@ -117,22 +121,24 @@ export function DirectionDashboard({ readOnly = false }: { readOnly?: boolean })
 
       const { data: currentProfile, error: currentProfileError } = await supabase
         .from('profiles')
-        .select('role')
+        .select('role, administrative_access')
         .eq('id', user.id)
         .limit(1)
         .maybeSingle()
 
-      if (!readOnly && (currentProfileError || currentProfile?.role !== 'direction')) {
+      if (!readOnly && (currentProfileError || !hasDirectionAccess(currentProfile))) {
         router.push('/')
         return
       }
 
-      const { data: profilesData, error: profilesError } = snapshot ? { data: snapshot.professionals, error: null } : await supabase
-        .from('profiles')
-        .select('id, full_name, email')
-        .eq('role', 'professionnel')
-        .eq('is_active', true)
-        .order('full_name', { ascending: true })
+      // Independent reads start together, only after the existing role check.
+      const [{ data: profilesData, error: profilesError }, { data: waitingListData, error: waitingListError }] = snapshot
+        ? [{ data: snapshot.professionals, error: null }, { data: snapshot.waitingList, error: null }]
+        : await Promise.all([
+          supabase.from('profiles').select('id, full_name, email')
+            .eq('role', 'professionnel').eq('is_active', true).order('full_name', { ascending: true }),
+          supabase.from('waiting_list_clients').select('status, priority_level'),
+        ])
 
       if (profilesError) {
         setError(profilesError.message)
@@ -142,10 +148,6 @@ export function DirectionDashboard({ readOnly = false }: { readOnly?: boolean })
 
       const professionals = (profilesData ?? []) as Profile[]
       const professionalIds = professionals.map((profile) => profile.id)
-
-      const { data: waitingListData, error: waitingListError } = snapshot ? { data: snapshot.waitingList, error: null } : await supabase
-        .from('waiting_list_clients')
-        .select('status, priority_level')
 
       if (waitingListError) {
         setError(waitingListError.message)
@@ -555,9 +557,7 @@ export function DirectionDashboard({ readOnly = false }: { readOnly?: boolean })
                               )}
                             </div>
                           </div>
-                          <p className="mt-2 text-sm text-[#7a6859]">
-                            {row.requestComment}
-                          </p>
+                          <AssignmentRequestComment comment={row.requestComment} />
                         </div>
                       ))}
                     </div>

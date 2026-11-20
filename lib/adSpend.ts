@@ -25,6 +25,30 @@ export type GoogleAdsIngestPayload = {
 
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 
+function validSpendDate(value: string) {
+  const date = new Date(`${value}T12:00:00Z`)
+  return ISO_DATE_PATTERN.test(value) && !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
+}
+
+export function validateSpendReplacement(platform: AdPlatform, accountId: string, from: string, to: string, currency: string, rows: AdSpendRow[]) {
+  if (!['google_ads', 'meta_ads'].includes(platform) || !/^\d{1,30}$/.test(accountId)) throw new Error('Compte publicitaire invalide.')
+  if (!validSpendDate(from) || !validSpendDate(to) || from > to ||
+    (new Date(to).getTime() - new Date(from).getTime()) / 86_400_000 > 365) throw new Error('Plage de synchronisation invalide (maximum 366 jours).')
+  if (currency !== 'CAD') throw new Error('Le compte publicitaire doit être facturé en CAD.')
+  if (rows.length > 50_000) throw new Error('Rapport publicitaire trop volumineux.')
+  const keys = new Set<string>()
+  for (const row of rows) {
+    const key = `${row.spendDate}:${row.campaignId}`
+    if (row.platform !== platform || row.accountId !== accountId || row.currency !== currency ||
+      !validSpendDate(row.spendDate) || row.spendDate < from || row.spendDate > to ||
+      !/^\d{1,40}$/.test(row.campaignId) || !row.campaignName.trim() || row.campaignName.length > 1_000 ||
+      !Number.isFinite(row.amount) || row.amount < 0 || row.amount >= 1_000_000_000_000 || keys.has(key)) {
+      throw new Error('Rapport publicitaire invalide : compte, date, devise, montant ou doublon.')
+    }
+    keys.add(key)
+  }
+}
+
 export function parseGoogleAdsIngestPayload(value: unknown): GoogleAdsIngestPayload {
   if (!value || typeof value !== 'object') throw new Error('Corps JSON invalide.')
   const payload = value as Partial<GoogleAdsIngestPayload>
@@ -34,7 +58,7 @@ export function parseGoogleAdsIngestPayload(value: unknown): GoogleAdsIngestPayl
   const to = String(payload.to ?? '')
   if (!accountId) throw new Error('Identifiant Google Ads manquant.')
   if (!/^[A-Z]{3}$/.test(currency)) throw new Error('Devise Google Ads invalide.')
-  if (!ISO_DATE_PATTERN.test(from) || !ISO_DATE_PATTERN.test(to) || from > to) {
+  if (!validSpendDate(from) || !validSpendDate(to) || from > to) {
     throw new Error('Plage de dates invalide.')
   }
   if (!Array.isArray(payload.rows) || payload.rows.length > 10000) {
@@ -46,7 +70,7 @@ export function parseGoogleAdsIngestPayload(value: unknown): GoogleAdsIngestPayl
     const campaignId = String(raw?.campaignId ?? '').trim()
     const campaignName = String(raw?.campaignName ?? '').trim()
     const amount = Number(raw?.amount)
-    if (!ISO_DATE_PATTERN.test(date) || date < from || date > to) {
+    if (!validSpendDate(date) || date < from || date > to) {
       throw new Error(`Date invalide à la ligne ${index + 1}.`)
     }
     if (!campaignId || !campaignName || !Number.isFinite(amount) || amount < 0) {

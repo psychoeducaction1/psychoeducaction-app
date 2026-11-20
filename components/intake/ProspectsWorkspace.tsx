@@ -6,6 +6,7 @@ import { ChevronRight, Search, UserCheck } from 'lucide-react'
 import { AppNav } from '@/components/AppNav'
 import { Badge, buttonClass, EmptyState, PageHeader, SectionCard } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
+import { visibleRefresh } from '@/lib/visibleRefresh'
 import { IntakeCalendar } from '@/components/intake/IntakeCalendar'
 import { ProspectAppointments } from '@/components/intake/ProspectAppointments'
 import { ProspectDialog } from '@/components/intake/ProspectDialog'
@@ -123,8 +124,15 @@ export function ProspectsWorkspace({ initialTab, initialProspectId, hasExplicitT
 
   useEffect(() => {
     if (selectedId) return
-    const timer = window.setInterval(() => { void loadProspects(true) }, 60_000)
-    return () => window.clearInterval(timer)
+    const refresh = visibleRefresh(() => loadProspects(true), () => document.visibilityState === 'visible')
+    const tick = () => { void refresh.tick() }
+    const timer = window.setInterval(tick, 60_000)
+    document.addEventListener('visibilitychange', tick)
+    return () => {
+      refresh.stop()
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', tick)
+    }
   }, [selectedId, loadProspects])
 
   const selected = prospects.find((prospect) => prospect.id === selectedId) ?? null
@@ -284,7 +292,7 @@ export function ProspectsWorkspace({ initialTab, initialProspectId, hasExplicitT
               router.replace('/direction/prospects?tab=active&prospect=' + featured.prospect.id, { scroll: false })
             }}>
               <p className="text-lg font-semibold text-[#332820]">{featured.prospect.first_name} {featured.prospect.last_name}</p>
-              <p className="mt-1 text-sm font-semibold text-[#8a5633]">{featured.isRapid ? 'Rappel dès que possible' : dateTime.format(new Date(featured.appointment!.start_at))}</p>
+              <p className="mt-1 text-sm font-semibold text-[#8a5633]">{featured.isRapid ? 'Rappel dès que possible' : 'Rendez-vous le ' + dateTime.format(new Date(featured.appointment!.start_at))}</p>
               <p className="mt-2 text-sm text-[#8a5633]">Ouvrir la fiche →</p>
             </button>
           </SectionCard>}

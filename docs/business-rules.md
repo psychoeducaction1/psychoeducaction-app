@@ -271,7 +271,7 @@ Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workfl
   d'un client deja contacte/desabonne. Les contraintes SQL participent a cette garantie.
 - Journal d'audit: masquer les actions au prefixe exact `satisfaction_` ainsi que les
   entites `satisfaction_import` et `satisfaction_eligible`, avant la limite de lecture.
-  Conserver les autres entrees, y compris avec action/type absent. L'historique des
+  Conserver en base les autres entrees, y compris avec action/type absent. L'historique des
   imports, envois et reponses reste consultable dans Satisfaction. Ce filtre d'affichage
   n'efface aucune trace en base et ne modifie ni les droits ni les envois.
 - Satisfaction: derniere rencontre dans les 30 derniers jours inclusifs selon
@@ -318,3 +318,86 @@ Parcours quotidien: `lib/prospectCallActions.ts`, `supabase/prospect-call-workfl
 - Certains anciens tests lisent le code/SQL: contrat verifie, pas execution prouvee.
 - Le scenario SQL local est sequentiel. Concurrence multi-session, RLS avec JWT distincts
   et parcours navigateur demandent des verifications separees.
+
+## Corrections de rencontres et paiements (870, prepare, activation en attente)
+- Retirer une rencontre propre retire ses notes meme signees des vues normales; les originaux restent proteges.
+- Annuler la facture liee sans credit automatique; preparer un brouillon pour les autres rencontres sans envoi.
+- Ajout, retrait et retablissement des paiements reserves a Direction/administration; aucun mouvement bancaire automatique.
+
+## Calendrier — actions par role (880 preparee, activation en attente)
+- Professionnel: modifier/annuler les rencontres planifiees; corriger ses rencontres effectuees sans motif manuel et avec verification des conflits; une mention technique automatique conserve la trace.
+- Suppression reservee a Direction/administrateurs en contexte administratif, pas aux assistants.
+- Correction: une occurrence, originaux signes et factures existantes conserves; impacts financiers a verifier par administration.
+## Préparation manuelle de la facturation — 17 novembre 2026
+- Réutilisation du panneau de préparation d’origine dans Facturation et paiements; aucune nouvelle règle de calcul.
+- Prestations admissibles à partir du lendemain; commande existante avec clé d’idempotence et détection des lignes déjà facturées.
+- Préparation des honoraires administratifs depuis le professionnel de la prestation; seuls les relevés validés/clôturés sont visibles dans son espace professionnel.
+- Tarif et payeurs issus du mandat; messages explicites pour conditions manquantes et entente non applicable à la date de prestation.
+- Ouverture unique selon la politique du client: nouveaux dossiers traités par le moteur existant, dossiers historiques sans décision à vérifier avant facturation; aucune rétroactivité inventée.
+
+## Préparation manuelle — isolation des dossiers bloqués (900, préparée)
+- Chaque dossier est traité dans une sous-transaction: conditions financières ou entente datée manquantes annulent ce seul dossier, puis le lot continue.
+- Seuls les refus métier connus sont isolés. Une erreur technique inattendue annule encore toute la commande; elle n’est jamais présentée comme un succès partiel.
+- L’accusé du lot conserve la clé d’idempotence et indique le nombre de rencontres préparées et les dossiers bloqués. Le replay restitue ce même résultat.
+- Aucune modification des mandats, tarifs, dates d’entente, signatures ou règles d’ouverture historiques.
+
+## Dates des rencontres et notes — 910 activée le 17 novembre 2026
+- Refuser création/déplacement/changement de rattachement d’une rencontre clinique avant le début connu des mandats du professionnel pour cet épisode, en jour Toronto.
+- Refuser création ou changement de date/rattachement d’une note avant ce début. Utiliser la date de rencontre, jamais la date de rédaction/signature.
+- Les mandats historiques financièrement valides conservent leur couverture; un ancien mandat sans date ne reçoit pas de limite inventée. Le contrôle ne force ni signature ni création d’un mandat absent.
+- Préserver les notes signées, les PDF importés et les rencontres existantes; annulation et signature/cosignature seules ne réécrivent pas les dates et restent soumises aux permissions existantes.
+- Message borné au code métier connu et à une date ISO validée; aucune erreur brute ou texte clinique transmis au navigateur.
+
+## Bibliothèque privée des procédures (activée le 17 novembre 2026)
+- Liste explicite de membres active/can_edit, indépendante de direction, coordination, clinique et paie; compte plateforme actif requis côté API et RLS/RPC.
+- Éditions versionnées avec refus des écrasements concurrents; les documents de procédure ne modifient aucune règle métier.
+- PDF privés versionnés, 3 Mo par fichier, contrôle d’accès à chaque requête, aucune URL publique permanente. Pièces jointes en base: leurs versions consomment le quota PostgreSQL; elles ne remplacent pas le moteur Storage des documents cliniques.
+- Migrations001/002/003 et cinq adhésions explicitement autorisées et appliquées; les déploiements ultérieurs n’activent aucun nouveau membre automatiquement.
+
+## Migration individuelle — 920 activée le 17 novembre 2026
+- Professionnel choisi avant dépôt; chaque validation traite un seul client, sans consommer de capacité ni générer de rencontre/facture/courriel historique.
+- Association fiable ou création, reprise idempotente; champs renseignés remplacent, blancs conservent. États actif/non pris/terminé distincts.
+- Fichier prioritaire pour le tarif; valeurs par défaut135$ psychoéducation/100$ intervention psychoéducative, ajustables avant validation. Payeurs facultatifs à la migration, parts totalisant100% si renseignées; compléter les destinataires financiers avant facturation.
+- Mandats préparés/versionnés et conventions antérieures conservées. Acceptation professionnelle datée séparément de l’ajout graphique; aucun consentement du client ni pouvoir de représentation inventé.
+- Opérateurs explicites requis; aucune extension des rôles globaux ou des droits de gestion des accès des adjointes.
+
+## Migration individuelle — formulaire simplifié (publié le 17 novembre 2026)
+- Détection automatique des colonnes et de la première feuille reconnue; aucun réglage de feuille/en-têtes/identifiants ni correspondance technique dans l’écran. Un export non reconnu est refusé avec une explication plutôt qu’une association inventée.
+- Les coordonnées supplémentaires des requérants nommés sont reprises dans leur fiche; les contacts ambigus ne sont pas attribués par hypothèse. Les propriétés historiques non affichées restent compatibles avec920.
+- La préparation montre les informations utiles et le tarif; textes cliniques/conditions repris automatiquement depuis les paramètres du service à chaque validation, sans édition dans ce formulaire.
+- Seule une réponse serveur confirmant imported retire la fiche de la liste à traiter. Les erreurs restent visibles et les fiches réussies restent au rapport du lot; aucune suppression de client ou de PDF.
+
+- Préparation de migration : à partir de 14 ans à la date courante (Toronto), le client figure une seule fois comme requérant « Lui-même ». Avant 14 ans, les entrées identifiées comme le client sont retirées des requérants. Une naissance inconnue ne permet aucune déduction. Le lien générique du fichier n'est pas distribué à toutes les personnes. Aucun droit de consentement ni nouvelle part de paiement n'est déduit de cette règle. Les coordonnées personnelles modifiées à cet endroit alimentent les coordonnées principales du client.
+
+## Publication requérants — 17 novembre 2026
+
+Correctif 1c47659 : âge de 14 ans inclus, client identifié Lui-même, absence du client parmi les requérants avant 14 ans. Publié sur app.psychoeducaction.com : dpl_6xkFnKEWkqnB2GwMEPZm5tc519T5 (READY et alias vérifiés). Aucun import, migration SQL, courriel ou changement des dossiers existants exécuté. Recette utilisateur différée. Manifeste de référence suivant : output/unification-pilot/docs/migration/REQUESTER_AGE_RELEASE.json ; précédent déploiement conservé pour retour arrière dpl_GU2kGCe7iAtiVRpkTjqbsWyTEZgJ.
+
+## Retour de validation migration — publication du 17 novembre 2026
+
+Correctif 926f408 publié : dpl_9iVW6mXikroyGDrtj3uKz4uXHwn5 READY et domaine vérifié. Confirmation explicite du statut imported, message visible et focalisé, bilan replié pour les lots individuels, conservation de la fiche en erreur. Aucun import ni courriel exécuté ; recette utilisateur différée. Référence du prochain candidat : output/unification-pilot/docs/migration/CLIENT_SAVE_FEEDBACK_RELEASE.json ; retour arrière dpl_6xkFnKEWkqnB2GwMEPZm5tc519T5.
+
+## Retrait des rapports de migration et diagnostic — 17 novembre 2026
+
+930 retire les rapports de l'historique affiché sans supprimer les clients, mandats, PDF, originaux, traces protégées ou références anti-doublon. Action réservée côté serveur au compte Hicham vérifié, actif, super_admin et opérateur de migration activé ; contrôle de version, verrou et confirmation utilisateur. Aucun retrait à l'installation. 940 conserve uniquement les codes métier contrôlés, sans exposer les messages SQL contenant des valeurs.
+
+Autorisation utilisateur obtenue pour 930/940 et publication, sans import ni courriel. Commit 76f59ba, déploiement dpl_99T5qZsLFc3sra7YYFPphRtF6J2Q READY et domaine vérifié. Les empreintes de 24 tables protégées sont restées inchangées lors de l'installation atomique ; zéro rapport retiré, zéro import, zéro courriel, aucun rôle changé. Manifeste suivant : output/unification-pilot/docs/migration/MIGRATION_930_940_RELEASE.json. Retour arrière applicatif : dpl_9iVW6mXikroyGDrtj3uKz4uXHwn5. Diagnostic du refus réel encore attendu lors du prochain essai manuel ; aucune résolution de l'erreur métier n'est affirmée.
+
+## Factures automatiques et envois manuels — preparation 1000
+- Apres la fin effective d une rencontre facturable, la creation de facture ne depend plus du lendemain. Le traitement prepare est periodique (cinq minutes), limite aux professionnels cliniques actives et actifs.
+- Aucune transmission automatique : verification puis confirmation manuelle par la Direction/administration; envoi individuel possible le jour meme. Le lot de la veille utilise la date des rencontres en heure de Toronto et montre toute autre journee incluse dans les factures regroupees.
+- Maintenir l idempotence, les tarifs/payeurs du mandat, les ouvertures uniques et le refus de reprise automatique d un envoi incertain. Les modes restent desactives jusqu a autorisation de migration et publication.
+
+- Journal Direction (preparation 19 novembre 2026) : masquer dans la presentation les notes cliniques et operations techniques (migration, corrections techniques du calendrier, parametres), sans supprimer ni interrompre leurs traces. Conserver les assignations, reservations, resultats de service, annulations et acces. La regle temporaire masquant les essais Hicham est maintenue. Limites de lecture : 500 traces operationnelles et 200 cliniques. La projection 1010 expose uniquement l origine historique enregistree de l annulation (client, professionnel, clinique), sans la deduire de l auteur ni du rendez-vous courant. Sans origine concordante, afficher seulement Rencontre annulee. Aucun droit ni envoi ne change.
+
+- Navigation professionnelle (19 novembre 2026) : un alias lisible ne recharge pas la fiche deja autorisee; une reponse ancienne ne peut pas renvoyer le repertoire vers cette fiche. Les vues administratives et les comptes Hicham, Eve et Thinhinane conservent la projection Clients/Demandes lors du passage entre onglets, avec actualisation en arriere-plan et controle serveur inchange pour chaque action. Aucun stockage persistant de droits ni changement des parcours personnels des autres comptes.
+
+- Premiere ouverture clinique (19 novembre 2026) : le demarrage peut regrouper identite et espace dans une reponse privee sans cache. La meme authentification serveur precede le RPC espace, qui appelle lui-meme clinical_unified_identity et applique les droits existants. Le chargement initial ne doit pas etre relance lorsque cette reponse fournit deja l espace du meme compte et contexte. Les autres parcours d identite et le pilote gardent leur contrat. Les lectures independantes du tableau Direction peuvent etre paralleles apres son controle de role.
+- Le repertoire ne charge pas les editeurs de notes/audio, calendrier et configuration inutilises. Le code de l onglet professionnel choisi peut etre precharge pendant la lecture autorisee du profil, sans precharger de donnees. Les mesures de duree ne contiennent aucun identifiant ni contenu et ne creent pas de journaux supplementaires.
+- Adresse publique : en production controlee, les navigations sur psychoeducaction-app.vercel.app sont redirigees en 308 vers app.psychoeducaction.com, chemin et parametres conserves. Les API, taches planifiees, ecritures et copies isolees gardent leur contrat. Aucun transfert de session ni nouvel origin clinique autorise ; une reconnexion peut etre necessaire sur le domaine officiel.
+- Activation administrative clinique du 19 novembre 2026, autorisee explicitement : Fatima Zahra Benlahcen et Hajar Hragua sont assistantes cliniques administratives (gestion des dossiers et migration), sans super administration ni gestion globale des acces. Direction/contact est operateur de migration. Les roles globaux et la coordination d Eve restent inchanges. Hicham et Thinhinane conservent leur double acces Direction/professionnel et le menu Direction unifie.
+- Reconnaissance de migration (1020, preparee le 20 novembre 2026) : les operateurs de migration deja habilites partagent les seuls recus de destinations importees et encore lisibles, meme si le rapport est masque. Le detail et les ecritures d un lot restent reserves a son proprietaire. Aucun import ou droit nouveau n est cree. Pour une association operationnelle, le professionnel choisi departage les assignations d autres professionnels ; plusieurs suivis du meme professionnel, une naissance contradictoire ou un ancien suivi ferme ne sont jamais confirmes automatiquement.
+- Aide aux blocages de migration : afficher la cause dans la liste et en tete de la fiche. Une naissance contradictoire montre les deux dates, explique la verification et permet seulement de retrouver le champ ou d actualiser les correspondances. Une ancienne assignation fermee demande la decision de la Direction (archive ou nouveau suivi) et permet de passer a la fiche suivante ; aucun bouton ne pretend appliquer un archivage ou une reouverture non pris en charge. Les controles de validation restent bloquants, sans modifier une date ou un dossier automatiquement.
+- Les codes connus d echec de migration ont une explication fixe et une demarche manuelle (identite, tarifs, payeurs, supervision, documents, versions et acces). Une cause inconnue reste explicitement inconnue ; aucun message SQL ou fournisseur brut n est affiche. Les statuts de refus et la verification d un recu apres une reponse incertaine restent inchanges, sans deuxieme ecriture automatique.
+
+- Rencontre non tenue (1030, préparation autorisée) : Direction/administration et professionnels cliniques déjà activés peuvent déclarer une rencontre existante annulée ou une absence, même après réalisation automatique. Sur le compte professionnel, seule sa propre rencontre est admissible. Notes et texte signé conservés avec mention distincte ; conditions acceptées imposées pour les frais, factures annulées sans crédit, paiements conservés et gérés uniquement administrativement. Les honoraires validés exigent une correction préalable. Voir docs/clinical-not-held.md. Aucun compte non activé ne change de parcours.

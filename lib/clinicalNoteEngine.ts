@@ -2,9 +2,10 @@ import { CLINICAL_NOTE_BLUEPRINTS } from '@/lib/clinicalNoteBlueprints'
 import { getClinicalNoteTemplate, isClinicalNoteType } from '@/lib/clinicalNoteTemplates'
 import type { ClinicalNoteType } from '@/lib/clinicalNoteTemplates'
 
-export const CLINICAL_CONTEXT_MAX_CHARS = 8_000
+export const CLINICAL_CONTEXT_MAX_CHARS = 40_000
 export const CLINICAL_FACT_KINDS = ['propos', 'observation', 'intervention', 'reaction', 'hypothese', 'decision', 'administratif', 'risque'] as const
 export const CLINICAL_ALERT_CATEGORIES = ['information_manquante', 'attribution', 'ambiguite', 'contradiction', 'fidelite', 'champ_exercice', 'risque', 'suggestion'] as const
+export const CLINICAL_COMBINED_ALERT_LIMIT = 100
 export type ClinicalSources = { transcript: string; history: string; metadata: string }
 export type ClinicalFact = { id: string; kind: typeof CLINICAL_FACT_KINDS[number]; speaker: string; text: string; source: keyof ClinicalSources; quote: string }
 export type ClinicalAlert = { category: typeof CLINICAL_ALERT_CATEGORIES[number]; priority: 'normal' | 'prioritaire'; text: string; factIds: string[] }
@@ -13,7 +14,8 @@ export type ClinicalParagraph = { text: string; factIds: string[] }
 export type ClinicalTableRow = { cells: string[]; factIds: string[] }
 export type ClinicalSection = { id: string; paragraphs: ClinicalParagraph[]; rows: ClinicalTableRow[] }
 export type ClinicalEngineDraft = { sections: ClinicalSection[]; alerts: ClinicalAlert[] }
-export type ClinicalEngineResult = { formatVersion: 2; noteType: ClinicalNoteType; analysis: ClinicalAnalysis; draft: ClinicalEngineDraft }
+export type ClinicalEngineResult = { formatVersion: 2; noteType: ClinicalNoteType; analysis: ClinicalAnalysis; draft: ClinicalEngineDraft;
+  revision?: { initialDraft: ClinicalEngineDraft; initialAlerts: ClinicalAlert[] } }
 
 const object = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 const keys = (value: Record<string, unknown>, names: string[]) => Object.keys(value).length === names.length && names.every(name => Object.hasOwn(value, name))
@@ -25,7 +27,7 @@ function refs(value: unknown, facts: ClinicalFact[], required: boolean): value i
 }
 
 export function parseClinicalAlerts(value: unknown, facts: ClinicalFact[]): ClinicalAlert[] | null {
-  if (!list(value, 30)) return null
+  if (!list(value, CLINICAL_COMBINED_ALERT_LIMIT)) return null
   for (const item of value) {
     if (!object(item) || !keys(item, ['category', 'priority', 'text', 'factIds']) || !contains(CLINICAL_ALERT_CATEGORIES, item.category)
       || !contains(['normal', 'prioritaire'], item.priority) || !text(item.text, 1_500) || !refs(item.factIds, facts, false)
@@ -36,7 +38,7 @@ export function parseClinicalAlerts(value: unknown, facts: ClinicalFact[]): Clin
 
 // Les citations doivent exister dans la source autorisée. Cela ne prouve pas, à soi seul, la fidélité sémantique.
 export function parseClinicalAnalysis(value: unknown, sources: ClinicalSources): ClinicalAnalysis | null {
-  if (!object(value) || !keys(value, ['facts', 'alerts']) || !list(value.facts, 80)) return null
+  if (!object(value) || !keys(value, ['facts', 'alerts']) || !list(value.facts, 160)) return null
   const ids = new Set<string>()
   for (const item of value.facts) {
     if (!object(item) || !keys(item, ['id', 'kind', 'speaker', 'text', 'source', 'quote']) || !text(item.id, 30)
@@ -77,10 +79,17 @@ export function parseClinicalEngineDraft(value: unknown, type: ClinicalNoteType,
 }
 
 export function parseClinicalEngineResult(value: unknown, sources: ClinicalSources): ClinicalEngineResult | null {
-  if (!object(value) || !keys(value, ['formatVersion', 'noteType', 'analysis', 'draft']) || value.formatVersion !== 2 || !isClinicalNoteType(value.noteType)) return null
+  if (!object(value) || (Object.hasOwn(value, 'revision')
+    ? !keys(value, ['formatVersion', 'noteType', 'analysis', 'draft', 'revision'])
+    : !keys(value, ['formatVersion', 'noteType', 'analysis', 'draft'])) || value.formatVersion !== 2 || !isClinicalNoteType(value.noteType)) return null
   const analysis = parseClinicalAnalysis(value.analysis, sources)
   const draft = analysis && parseClinicalEngineDraft(value.draft, value.noteType, analysis.facts)
-  return analysis && draft ? { formatVersion: 2, noteType: value.noteType, analysis, draft } : null
+  const revision = analysis && object(value.revision) && keys(value.revision, ['initialDraft', 'initialAlerts'])
+    ? { initialDraft: parseClinicalEngineDraft(value.revision.initialDraft, value.noteType, analysis.facts),
+      initialAlerts: parseClinicalAlerts(value.revision.initialAlerts, analysis.facts) } : null
+  if (Object.hasOwn(value, 'revision') && (!revision?.initialDraft || !revision.initialAlerts)) return null
+  return analysis && draft ? { formatVersion: 2, noteType: value.noteType, analysis, draft,
+    ...(revision ? { revision: { initialDraft: revision.initialDraft!, initialAlerts: revision.initialAlerts! } } : {}) } : null
 }
 
 export function clinicalSourceSnapshot(type: ClinicalNoteType | '', sources: ClinicalSources) {

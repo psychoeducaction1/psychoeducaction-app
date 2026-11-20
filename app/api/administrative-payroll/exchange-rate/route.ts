@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isAdministrativePayrollAuthorized } from '@/lib/payrollAccess'
 import { getBearerToken } from '@/lib/superAdminServer'
+import { hasPlatformAccess } from '@/lib/platformAccess'
 
 type FrankfurterRate = {
   date?: unknown
@@ -32,20 +33,22 @@ export async function GET(request: NextRequest) {
   })
   const {
     data: { user },
+    error: authError,
   } = await supabaseServer.auth.getUser()
 
-  if (!user) {
+  if (authError || !user) {
     return NextResponse.json({ error: 'Utilisateur introuvable.' }, { status: 401 })
   }
 
-  const { data: profile } = await supabaseServer
+  const { data: profile, error: profileError } = await supabaseServer
     .from('profiles')
-    .select('role')
+    .select('role, platform_access_enabled, administrative_access')
     .eq('id', user.id)
     .limit(1)
     .maybeSingle()
 
-  if (!isAdministrativePayrollAuthorized({ email: user.email }, profile)) {
+  if (profileError) return NextResponse.json({ error: 'Impossible de vérifier les droits.' }, { status: 500 })
+  if (!hasPlatformAccess(profile) || !isAdministrativePayrollAuthorized({ email: user.email }, profile)) {
     return NextResponse.json({ error: 'Acces refuse.' }, { status: 403 })
   }
 

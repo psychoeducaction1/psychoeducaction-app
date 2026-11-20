@@ -17,8 +17,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_TELEMETRY_DISABLED: '1'
+      PEA_CLINICAL_RUNTIME: real-db
+      PEA_UNIFICATION_PILOT: 'true'
+      PEA_REAL_LOCAL_REHEARSAL: 'true'
+      PEA_REAL_LOCAL_BUILD: 'true'
+      NEXT_PUBLIC_APP_URL: http://127.0.0.1:3110
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:56321
+      PEA_CLINICAL_REAL_SUPABASE_URL: http://127.0.0.1:56321
       NEXT_PUBLIC_SUPABASE_ANON_KEY: build-only-placeholder
+      PEA_CLINICAL_REAL_ANON_KEY: build-only-placeholder
+      PEA_REAL_AI_SERVER_ENABLED: 'false'
+      CLINICAL_NOTES_AI_ENABLED: 'false'
+      PEA_REAL_BILLING_JOB_ENABLED: 'false'
+      PEA_REAL_INVOICE_EMAIL_MODE: disabled
+      PEA_REMOTE_SIGNATURE_TEST_DELIVERY: '0'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -26,4 +39,5 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - run: npm run check:full
+      - run: npm run check
+      - run: npm run build -- --webpack

@@ -99,7 +99,7 @@ export default function ProfessionnelPage() {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('role')
+        .select('role, administrative_access')
         .eq('id', user.id)
         .limit(1)
         .maybeSingle()

@@ -2,8 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { RequestHistoryCard } from '@/components/RequestHistoryCard'
 import { AppNav } from '@/components/AppNav'
-import { Badge, buttonClass, EmptyState, PageHeader } from '@/components/ui/index'
+import { useClinicalAssignmentAccess } from '@/lib/clinical-real/useClinicalAssignmentAccess'
+import { buttonClass, EmptyState, PageHeader } from '@/components/ui/index'
 import { supabase } from '@/lib/supabaseClient'
 import {
   closureReasonOptions,
@@ -163,6 +165,7 @@ function getEstimatedCompletionDate(
 }
 
 export default function ProfessionnelHistoriquePage() {
+  const clinicalAccess = useClinicalAssignmentAccess()
   const router = useRouter()
   const [currentUserId, setCurrentUserId] = useState('')
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null)
@@ -206,7 +209,7 @@ export default function ProfessionnelHistoriquePage() {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('role, full_name, email')
+        .select('role, full_name, email, administrative_access')
         .eq('id', user.id)
         .limit(1)
         .maybeSingle()
@@ -648,109 +651,11 @@ export default function ProfessionnelHistoriquePage() {
               {requestCards.length === 0 ? (
                 <EmptyState title="Aucune demande à afficher." />
               ) : (
-                requestCards.map((card, index) => {
-                  const requestedCount = card.request.requested_count ?? 0
-                  const isCompleted = card.status === 'Completee'
+                requestCards.map((card) => {
                   const isExpanded = expandedRequestIds[card.request.id] === true
 
                   return (
-                    <article
-                      key={`${card.request.id}-${card.request.professional_id}-${
-                        card.request.created_at ?? index
-                      }`}
-                      className="relative rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-4 shadow-[0_1px_2px_rgba(72,49,30,0.06)] sm:p-5"
-                    >
-                      <span className="absolute left-0 top-6 h-10 w-1 rounded-r-full bg-[#c98b52]" />
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge tone={isCompleted ? 'success' : 'warning'}>
-                              {isCompleted ? 'Complétée' : 'Active'}
-                            </Badge>
-                            <span className="text-sm font-medium text-[#8a6f5d]">
-                              {card.durationLabel}
-                            </span>
-                          </div>
-                          <h2 className="mt-3 text-base font-semibold text-[#332820]">
-                            {`Demande du ${formatDate(card.createdDate)}`}
-                          </h2>
-                          <p className="mt-1 text-sm text-[#7a6859]">
-                            {`Complétion estimée : ${formatDate(card.completionDate)}`}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => toggleRequest(card.request.id)}
-                          className={buttonClass('secondary')}
-                        >
-                          {isExpanded
-                            ? 'Masquer les clients'
-                            : 'Voir les clients assignés'}
-                        </button>
-                      </div>
-
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                        <div className="rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-3">
-                          <p className="text-xs font-medium uppercase text-[#8a6f5d]">
-                            {'Demande'}
-                          </p>
-                          <p className="mt-1 text-xl font-semibold text-[#332820]">
-                            {requestedCount}
-                          </p>
-                        </div>
-                        <div className="rounded-xl border border-[#d8e2c7] bg-[#f6faef] p-3">
-                          <p className="text-xs font-medium uppercase text-[#6f7a58]">
-                            Services pris
-                          </p>
-                          <p className="mt-1 text-xl font-semibold text-[#3f4f2d]">
-                            {card.serviceTakenCount}
-                          </p>
-                        </div>
-                        <div className="rounded-xl border border-[#e9cfc5] bg-[#fff6f2] p-3">
-                          <p className="text-xs font-medium uppercase text-[#9a6a59]">
-                            Services non pris
-                          </p>
-                          <p className="mt-1 text-xl font-semibold text-[#6f3f32]">
-                            {card.serviceNotTakenCount}
-                          </p>
-                        </div>
-                        <div className="rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-3">
-                          <p className="text-xs font-medium uppercase text-[#8a6f5d]">
-                            Restant
-                          </p>
-                          <p className="mt-1 text-xl font-semibold text-[#332820]">
-                            {card.remainingCount}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="mt-4 grid gap-3 lg:grid-cols-[0.25fr_0.25fr_0.5fr]">
-                        <div className="rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-3">
-                          <p className="text-xs font-medium uppercase text-[#8a6f5d]">
-                            Pas encore contacté
-                          </p>
-                          <p className="mt-1 text-sm font-semibold text-[#332820]">
-                            {card.notContactedCount}
-                          </p>
-                        </div>
-                        <div className="rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-3">
-                          <p className="text-xs font-medium uppercase text-[#8a6f5d]">
-                            En attente d&apos;une réponse
-                          </p>
-                          <p className="mt-1 text-sm font-semibold text-[#332820]">
-                            {card.pendingCount}
-                          </p>
-                        </div>
-                        <div className="rounded-xl border border-[#eadfd2] bg-[#fbf6ef] p-3">
-                          <p className="text-xs font-medium uppercase text-[#8a6f5d]">
-                            Commentaire
-                          </p>
-                          <p className="mt-1 whitespace-pre-wrap text-sm text-[#332820]">
-                            {card.request.request_comment?.trim() || '-'}
-                          </p>
-                        </div>
-                      </div>
-
+                    <RequestHistoryCard legacyPresentation={!clinicalAccess} key={card.request.id} card={card} isExpanded={isExpanded} onToggle={() => toggleRequest(card.request.id)}>
                       {isExpanded && (
                         <div className="mt-4 rounded-2xl border border-[#eadfd2] bg-white p-4">
                           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -1025,7 +930,7 @@ export default function ProfessionnelHistoriquePage() {
                           )}
                         </div>
                       )}
-                    </article>
+                    </RequestHistoryCard>
                   )
                 })
               )}

@@ -1,8 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { startClinicalRecording } from '@/lib/clinicalNotesRecorder'
+import { CLINICAL_RECORDING_MAX_BYTES, CLINICAL_RECORDING_MAX_SECONDS, startClinicalRecording } from '@/lib/clinicalNotesRecorder'
 import type { ClinicalRecordingEnvironment } from '@/lib/clinicalNotesRecorder'
-import { CLINICAL_AUDIO_MAX_BYTES } from '@/lib/clinicalNotesAi'
 
 class Track extends EventTarget {
   kind: string
@@ -58,6 +57,7 @@ function fixture({ systemAudio = true } = {}) {
     display, microphone, context, counts: () => ({ closed, micRequests, recorders }) }
 }
 const flush = async () => { await Promise.resolve(); await Promise.resolve() }
+const sizedChunk = (size: number) => Object.defineProperty(new Blob(), 'size', { value: size })
 
 test('capture audio seule, deux sources et dernier chunk inclus; toutes les pistes sont arretees', async () => {
   const f = fixture()
@@ -114,21 +114,21 @@ test('fermeture ou annulation active: aucun resultat ni callback tardif', async 
   assert.deepEqual(f.completed, []); assert.deepEqual(f.errors, [])
 })
 
-test('limite de deux minutes: arret automatique et extrait pret a reecouter', async t => {
+test('limite de deux heures: arret automatique et extrait pret a reecouter', async t => {
   t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] })
   const f = fixture()
   await startClinicalRecording(f.options, f.env)
-  t.mock.timers.tick(120_000)
+  t.mock.timers.tick(CLINICAL_RECORDING_MAX_SECONDS * 1000)
   await flush()
   assert.equal(f.completed.length, 1)
-  assert.match(f.completed[0].reason, /deux minutes/)
+  assert.match(f.completed[0].reason, /deux heures/)
   assert.ok(f.tracks.every(track => track.stops === 1))
 })
 
 test('depassement de taille y compris dernier chunk: ecarter le fichier, sans envoi', async () => {
   const f = fixture()
   const capture = await startClinicalRecording(f.options, f.env)
-  f.recorder.ondataavailable?.({ data: new Blob([new Uint8Array(CLINICAL_AUDIO_MAX_BYTES)]) })
+  f.recorder.ondataavailable?.({ data: sizedChunk(CLINICAL_RECORDING_MAX_BYTES) })
   capture.stop()
   await flush()
   assert.deepEqual(f.completed, [])
@@ -225,14 +225,14 @@ test('presentiel: fermeture pendant permission micro en attente ou pendant captu
   }
 })
 
-test('presentiel: limite 120 secondes, un seul indicateur actif et coupure du micro signalee', async t => {
+test('presentiel: limite de deux heures, un seul indicateur actif et coupure du micro signalee', async t => {
   t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] })
   const f = fixture(), levels: Array<{ microphone: number; teams: number }> = []
   await startClinicalRecording({ ...f.options, mode: 'presentiel', onProgress: value => levels.push(value) }, f.env)
-  t.mock.timers.tick(120_000)
+  t.mock.timers.tick(CLINICAL_RECORDING_MAX_SECONDS * 1000)
   await flush()
   assert.equal(f.completed.length, 1)
-  assert.match(f.completed[0].reason, /deux minutes/)
+  assert.match(f.completed[0].reason, /deux heures/)
   assert.ok(levels.length > 0 && levels.every(value => value.microphone > 0 && value.teams === 0))
   assert.equal(f.tracks[2].stops, 1)
   const lost = fixture()
@@ -246,7 +246,7 @@ test('presentiel: limite 120 secondes, un seul indicateur actif et coupure du mi
 test('presentiel: depassement de taille ecarte le fichier entier comme en Teams', async () => {
   const f = fixture()
   await startClinicalRecording({ ...f.options, mode: 'presentiel' }, f.env)
-  f.recorder.ondataavailable?.({ data: new Blob([new Uint8Array(CLINICAL_AUDIO_MAX_BYTES + 1)]) })
+  f.recorder.ondataavailable?.({ data: sizedChunk(CLINICAL_RECORDING_MAX_BYTES + 1) })
   await flush()
   assert.deepEqual(f.completed, [])
   assert.equal(f.errors.length, 1)

@@ -1,15 +1,15 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, ShieldAlert, Trash2 } from 'lucide-react'
 import { Badge, buttonClass, EmptyState, SectionCard } from '@/components/ui/index'
 import {
   addLocalDays,
   dateKeyInToronto,
-  dateTimeInputToUtcInToronto,
   startOfLocalWeek,
   torontoLocalToUtc,
 } from '@/lib/publicIntakeSchedule'
+import { torontoLocalInstant } from '@/lib/clinical-calendar/time'
 import { appointmentStatusLabels, prospectDateTime as dateTime, type IntakeAppointment } from '@/lib/prospectsWorkspace'
 
 type Appointment = IntakeAppointment & {
@@ -33,6 +33,22 @@ type RapidCallback = {
 const inputClass = 'w-full rounded-xl border border-[#dfd0bf] bg-white px-3 py-2 text-sm text-[#332820] shadow-sm outline-none focus:border-[#c98b52] focus:ring-2 focus:ring-[#ead2bd]'
 const timeOnly = new Intl.DateTimeFormat('fr-CA', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Toronto' })
 const dayTitle = new Intl.DateTimeFormat('fr-CA', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/Toronto' })
+type Occurrence = '' | 'earlier' | 'later'
+
+function BlockTimeField({ label, value, occurrence, onChange, onOccurrence }: {
+  label: string; value: string; occurrence: Occurrence; onChange: (value: string) => void; onOccurrence: (value: Occurrence) => void
+}) {
+  let repeated = false
+  try { repeated = torontoLocalInstant(value, 'earlier') !== torontoLocalInstant(value, 'later') } catch { /* Validated on save. */ }
+  return <div className="grid gap-2">
+    <label className="text-sm font-semibold text-[#5d4a3d]">{label}<input type="datetime-local" className={`${inputClass} mt-2`} value={value} onChange={event => onChange(event.target.value)} /></label>
+    {repeated && <label className="text-sm font-semibold text-[#5d4a3d]">Heure répétée · {label.toLowerCase()}
+      <select className={inputClass} value={occurrence} onChange={event => onOccurrence(event.target.value as Occurrence)}>
+        <option value="">Choisir l’occurrence</option><option value="earlier">Première occurrence</option><option value="later">Deuxième occurrence</option>
+      </select>
+    </label>}
+  </div>
+}
 
 export function IntakeCalendar({ authenticatedFetch, onSelectProspect, refreshVersion }: {
   authenticatedFetch: (url: string, init?: RequestInit) => Promise<Response>
@@ -47,12 +63,17 @@ export function IntakeCalendar({ authenticatedFetch, onSelectProspect, refreshVe
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [blockError, setBlockError] = useState('')
   const [message, setMessage] = useState('')
+  const [calendarRevision, setCalendarRevision] = useState(0)
+  const calendarRequest = useRef(0)
   const [showBlockForm, setShowBlockForm] = useState(false)
   const tomorrowDate = addLocalDays(dateKeyInToronto(new Date()), 1)
   const [blockForm, setBlockForm] = useState({
     startAt: `${tomorrowDate}T09:00`,
     endAt: `${tomorrowDate}T09:30`,
+    startOccurrence: '' as Occurrence,
+    endOccurrence: '' as Occurrence,
     reason: '',
   })
 
@@ -72,6 +93,7 @@ export function IntakeCalendar({ authenticatedFetch, onSelectProspect, refreshVe
   )
 
   const loadCalendar = useCallback(async () => {
+    const requestId = ++calendarRequest.current
     setLoading(true)
     setError('')
     try {
@@ -79,6 +101,7 @@ export function IntakeCalendar({ authenticatedFetch, onSelectProspect, refreshVe
         `/api/direction/intake-calendar?from=${encodeURIComponent(range.from.toISOString())}&to=${encodeURIComponent(range.to.toISOString())}`
       )
       const payload = await response.json()
+      if (requestId !== calendarRequest.current) return
       if (!response.ok) setError(payload.error ?? 'Chargement impossible.')
       else {
         setAppointments(payload.appointments ?? [])
@@ -86,20 +109,22 @@ export function IntakeCalendar({ authenticatedFetch, onSelectProspect, refreshVe
         setCallbacks(payload.rapidCallbacks ?? [])
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Chargement impossible.')
-    } finally { setLoading(false) }
+      if (requestId === calendarRequest.current) setError(caught instanceof Error ? caught.message : 'Chargement impossible.')
+    } finally { if (requestId === calendarRequest.current) setLoading(false) }
   }, [authenticatedFetch, range.from, range.to])
 
-  useEffect(() => { void loadCalendar() }, [loadCalendar, refreshVersion])
+  useEffect(() => { void loadCalendar(); return () => { calendarRequest.current += 1 } }, [loadCalendar, refreshVersion, calendarRevision])
 
   const createBlock = async () => {
-    setSaving(true); setError(''); setMessage('')
+    setSaving(true); setBlockError(''); setMessage('')
     try {
+      const startAt = torontoLocalInstant(blockForm.startAt, blockForm.startOccurrence || undefined)
+      const endAt = torontoLocalInstant(blockForm.endAt, blockForm.endOccurrence || undefined)
+      if (endAt <= startAt) throw new Error('La fin doit suivre le début de la plage.')
       const response = await authenticatedFetch('/api/direction/intake-calendar/blocks', {
         method: 'POST',
         body: JSON.stringify({
-          startAt: dateTimeInputToUtcInToronto(blockForm.startAt).toISOString(),
-          endAt: dateTimeInputToUtcInToronto(blockForm.endAt).toISOString(),
+          startAt, endAt,
           reason: blockForm.reason,
         }),
       })
@@ -107,9 +132,9 @@ export function IntakeCalendar({ authenticatedFetch, onSelectProspect, refreshVe
       if (!response.ok) throw new Error(payload.error ?? 'Blocage impossible.')
       setShowBlockForm(false)
       setMessage('La plage est maintenant bloquée.')
-      await loadCalendar()
+      setCalendarRevision(current => current + 1)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Blocage impossible.')
+      setBlockError(caught instanceof Error ? caught.message : 'Blocage impossible.')
     }
     setSaving(false)
   }
@@ -121,7 +146,7 @@ export function IntakeCalendar({ authenticatedFetch, onSelectProspect, refreshVe
       const response = await authenticatedFetch(`/api/direction/intake-calendar/blocks/${id}`, { method: 'DELETE' })
       const payload = await response.json()
       if (!response.ok) setError(payload.error ?? 'Suppression impossible.')
-      else { setMessage('Le blocage a été retiré.'); await loadCalendar() }
+      else { setMessage('Le blocage a été retiré.'); setCalendarRevision(current => current + 1) }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Suppression impossible.')
     } finally { setSaving(false) }
@@ -129,7 +154,7 @@ export function IntakeCalendar({ authenticatedFetch, onSelectProspect, refreshVe
 
   return (
     <>
-      <div className="mb-5 flex justify-end"><button type="button" className={buttonClass('primary')} onClick={() => setShowBlockForm(true)}>Bloquer une plage</button></div>
+      <div className="mb-5 flex justify-end"><button type="button" className={buttonClass('primary')} onClick={() => { setBlockError(''); setShowBlockForm(true) }}>Bloquer une plage</button></div>
       {error && <div className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
       {message && <div className="mb-5 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-800">{message}</div>}
 
@@ -167,7 +192,7 @@ export function IntakeCalendar({ authenticatedFetch, onSelectProspect, refreshVe
                 <h2 className="text-sm font-semibold capitalize text-[#5d4a3d]">{dayTitle.format(torontoLocalToUtc(day, 12, 0))}</h2>
                 <div className="mt-3 space-y-2">
                   {dayAppointments.map((appointment) => <button key={appointment.id} type="button" onClick={() => onSelectProspect(appointment.prospect_id, appointment.id)} className={`w-full rounded-lg border p-3 text-left text-sm ${appointment.status === 'scheduled' ? 'border-[#d8b992] bg-[#fff8ef]' : 'border-[#e4ddd5] bg-[#f5f2ee] opacity-70'}`}><span className="font-semibold text-[#332820]">{timeOnly.format(new Date(appointment.start_at))}</span><span className="ml-2 text-xs">{appointmentStatusLabels[appointment.status]}</span><span className="mt-1 block break-words text-[#6c5a4d]">{[appointment.prospect?.first_name, appointment.prospect?.last_name].filter(Boolean).join(' ') || 'Prospect'}</span>{appointment.prospect?.potential_duplicate && <span className="mt-1 block text-xs font-semibold text-[#a34d2f]">Doublon potentiel</span>}</button>)}
-                  {dayBlocks.map((block) => <div key={block.id} className="rounded-lg border border-dashed border-[#9a8b80] bg-[#f4f0ec] p-3 text-sm text-[#5d4a3d]"><div className="flex items-start justify-between gap-2"><span className="font-semibold">Bloqué</span><button type="button" title="Retirer" onClick={() => void deleteBlock(block.id)}><Trash2 className="h-4 w-4" /></button></div><p className="mt-1">{timeOnly.format(new Date(block.start_at))} à {timeOnly.format(new Date(block.end_at))}</p>{block.reason && <p className="mt-1 text-xs">{block.reason}</p>}</div>)}
+                  {dayBlocks.map((block) => <div key={block.id} className="rounded-lg border border-dashed border-[#9a8b80] bg-[#f4f0ec] p-3 text-sm text-[#5d4a3d]"><div className="flex items-start justify-between gap-2"><span className="font-semibold">Bloqué</span><button type="button" title="Retirer" onClick={() => void deleteBlock(block.id)}><Trash2 className="h-4 w-4" /></button></div><p className="mt-1">{dateKeyInToronto(new Date(block.start_at)) === day && dateKeyInToronto(new Date(block.end_at)) === day ? `${timeOnly.format(new Date(block.start_at))} à ${timeOnly.format(new Date(block.end_at))}` : `${dateTime.format(new Date(block.start_at))} au ${dateTime.format(new Date(block.end_at))}`}</p>{block.reason && <p className="mt-1 text-xs">{block.reason}</p>}</div>)}
                   {!dayAppointments.length && !dayBlocks.length && <p className="py-6 text-center text-xs text-[#9a887a]">Aucun élément</p>}
                 </div>
               </div>
@@ -177,7 +202,18 @@ export function IntakeCalendar({ authenticatedFetch, onSelectProspect, refreshVe
       </section>
 
       {showBlockForm && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"><div className="w-full max-w-lg rounded-2xl border border-[#eadfd2] bg-[#fffdf9] p-6 shadow-xl">
-        <><h2 className="text-xl font-semibold text-[#332820]">Bloquer une plage</h2><div className="mt-5 grid gap-4 sm:grid-cols-2"><label className="text-sm font-semibold text-[#5d4a3d]">Début<input type="datetime-local" className={`${inputClass} mt-2`} value={blockForm.startAt} onChange={(event) => setBlockForm({ ...blockForm, startAt: event.target.value })} /></label><label className="text-sm font-semibold text-[#5d4a3d]">Fin<input type="datetime-local" className={`${inputClass} mt-2`} value={blockForm.endAt} onChange={(event) => setBlockForm({ ...blockForm, endAt: event.target.value })} /></label></div><label className="mt-4 block text-sm font-semibold text-[#5d4a3d]">Motif facultatif<input className={`${inputClass} mt-2`} value={blockForm.reason} onChange={(event) => setBlockForm({ ...blockForm, reason: event.target.value })} /></label><div className="mt-6 flex justify-end gap-2"><button type="button" className={buttonClass('secondary')} onClick={() => setShowBlockForm(false)}>Annuler</button><button type="button" disabled={saving} className={buttonClass('primary')} onClick={() => void createBlock()}>Enregistrer</button></div></>
+        <h2 className="text-xl font-semibold text-[#332820]">Bloquer une plage</h2>
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          <BlockTimeField label="Début" value={blockForm.startAt} occurrence={blockForm.startOccurrence}
+            onChange={value => setBlockForm(current => ({ ...current, startAt: value, startOccurrence: '' }))}
+            onOccurrence={value => setBlockForm(current => ({ ...current, startOccurrence: value }))} />
+          <BlockTimeField label="Fin" value={blockForm.endAt} occurrence={blockForm.endOccurrence}
+            onChange={value => setBlockForm(current => ({ ...current, endAt: value, endOccurrence: '' }))}
+            onOccurrence={value => setBlockForm(current => ({ ...current, endOccurrence: value }))} />
+        </div>
+        <label className="mt-4 block text-sm font-semibold text-[#5d4a3d]">Motif facultatif<input className={`${inputClass} mt-2`} value={blockForm.reason} onChange={event => setBlockForm({ ...blockForm, reason: event.target.value })} /></label>
+        {blockError && <p role="alert" className="mt-3 text-sm text-red-700">{blockError}</p>}
+        <div className="mt-6 flex justify-end gap-2"><button type="button" className={buttonClass('secondary')} onClick={() => setShowBlockForm(false)}>Annuler</button><button type="button" disabled={saving} className={buttonClass('primary')} onClick={() => void createBlock()}>Enregistrer</button></div>
       </div></div>}
     </>
   )
